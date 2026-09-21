@@ -20,10 +20,10 @@ from hrms_plugin.schema.introspector import (
     SchemaIntrospector,
 )
 from hrms_plugin.schema.mapping import (
+    TRANSFORMS,
     EntityMapping,
     FieldMap,
     MappingError,
-    TRANSFORMS,
     resolve_path,
 )
 from hrms_plugin.schema.prober import (

@@ -36,6 +36,9 @@ addopts = "-q --import-mode=importlib"
 testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::pytest.PytestDeprecationWarning",
+]
 
 [tool.ruff]
 line-length = 120

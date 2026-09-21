@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField, FieldDataType
 from hrms_plugin.schema.synthesizer import MappingSynthesizer

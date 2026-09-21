@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pydantic import BaseModel, Field
 
 from hrms_plugin.schema.canonical import EntityType
-from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField, FieldDataType
+from hrms_plugin.schema.introspector import DiscoveredEntity, FieldDataType
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
 
 __all__ = [

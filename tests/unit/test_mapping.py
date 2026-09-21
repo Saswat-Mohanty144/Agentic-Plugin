@@ -5,13 +5,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-import pytest
-
 from hrms_plugin.schema.mapping import (
+    TRANSFORMS,
     EntityMapping,
     FieldMap,
-    MappingError,
-    TRANSFORMS,
     resolve_path,
 )
 

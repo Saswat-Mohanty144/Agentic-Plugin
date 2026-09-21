@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from hrms_plugin.schema.introspector import (
-    DiscoveredEntity,
     FieldDataType,
-    IntrospectionResult,
     SchemaIntrospector,
 )
 
