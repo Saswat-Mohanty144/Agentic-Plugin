@@ -11,11 +11,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 __all__ = [
     "EntityType",
     "SourceRef",
+    "CanonicalEntity",
     "CanonicalCandidate",
     "CanonicalRequisition",
     "CanonicalEmployee",
@@ -196,3 +197,14 @@ class CanonicalAsset:
     status: str = "IN_USE"
     issued_on: Optional[date] = None
     raw: Dict[str, Any] = field(default_factory=dict)
+
+
+CanonicalEntity = Union[
+    CanonicalCandidate,
+    CanonicalRequisition,
+    CanonicalEmployee,
+    CanonicalLeaveRequest,
+    CanonicalLeaveBalance,
+    CanonicalPunch,
+    CanonicalAsset,
+]
