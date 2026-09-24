@@ -195,13 +195,13 @@ CANONICAL_SPECIFICATIONS: Dict[str, Dict[str, Dict[str, Any]]] = {
             "required": True,
         },
         "work_email": {
-            "synonyms": ["work_email", "email", "office_email", "official_email", "corporate_email"],
+            "synonyms": ["work_email", "email", "office_email", "official_email", "corporate_email", "mail_addr", "mail", "user_email"],
             "transform": "strip",
             "preferred_types": [FieldDataType.STRING],
             "required": True,
         },
         "joining_date": {
-            "synonyms": ["joining_date", "date_of_joining", "doj", "hire_date", "employment_date", "start_date"],
+            "synonyms": ["joining_date", "date_of_joining", "doj", "hire_date", "employment_date", "start_date", "join_dt", "join_date"],
             "transform": "date",
             "preferred_types": [FieldDataType.DATE, FieldDataType.DATETIME, FieldDataType.STRING],
         },
@@ -425,8 +425,8 @@ class MappingSynthesizer:
         # Compound Name Match (e.g. first_name + last_name -> full_name)
         if compound and len(compound) == 2:
             f1, f2 = compound[0], compound[1]
-            h1 = cls._find_field_by_synonyms([f1, "first", "fname"], discovered)
-            h2 = cls._find_field_by_synonyms([f2, "last", "lname"], discovered)
+            h1 = cls._find_field_by_synonyms([f1, "first", "fname", "emp_fname", "emp_first_name"], discovered)
+            h2 = cls._find_field_by_synonyms([f2, "last", "lname", "emp_lname", "emp_last_name"], discovered)
             if h1 and h2 and (target_name not in discovered.fields):
                 return (h1, h2), 0.95, "join_names", f"Compound fields ({h1} + {h2})", {}
 

@@ -49,6 +49,10 @@ class EntityType(str, Enum):
     ASSET = "ASSET"
 
 
+# Domain alias
+CanonicalDomain = EntityType
+
+
 @dataclass(frozen=True)
 class SourceRef:
     """Represents where a record lives in the host HRMS system."""
