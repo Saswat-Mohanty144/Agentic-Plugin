@@ -1,6 +1,7 @@
 """Unit tests for Leave and Attendance Specialist Agent."""
 
 import pytest
+
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 
 

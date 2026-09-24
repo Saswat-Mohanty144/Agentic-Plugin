@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import re
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
-from hrms_plugin.agents.compliance import ComplianceAgent, ComplianceAuditReport
-from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent, LeaveDeductionResult, TravelAnomaly
-from hrms_plugin.agents.recruitment import RecruitmentAgent, AtsScoreBreakdown, BiasAuditResult
-from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent, IndiaSalaryStructure, UaeSalaryStructure, UaeEosbCalculation
+from hrms_plugin.agents.compliance import ComplianceAgent
+from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
+from hrms_plugin.agents.recruitment import RecruitmentAgent
+from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
 
 
@@ -62,11 +62,19 @@ class SupervisorAgent:
             return UserIntent.PAYROLL_EOSB, 0.95
 
         # Salary & CTC structuring
-        if any(w in msg for w in ["salary structure", "ctc breakdown", "calculate salary", "take home", "gross to net", "pf deduction"]):
+        payroll_keywords = [
+            "salary structure", "ctc breakdown", "calculate salary",
+            "take home", "gross to net", "pf deduction"
+        ]
+        if any(w in msg for w in payroll_keywords):
             return UserIntent.PAYROLL_STRUCTURE, 0.92
 
         # Compliance audits
-        if any(w in msg for w in ["compliance", "labor law", "wps audit", "violation", "statutory audit", "probation limit"]):
+        compliance_keywords = [
+            "compliance", "labor law", "wps audit",
+            "violation", "statutory audit", "probation limit"
+        ]
+        if any(w in msg for w in compliance_keywords):
             return UserIntent.COMPLIANCE_AUDIT, 0.90
 
         # Leave application & balance
@@ -74,7 +82,11 @@ class SupervisorAgent:
             return UserIntent.LEAVE_APPLY, 0.92
 
         # Attendance & travel anomaly
-        if any(w in msg for w in ["impossible travel", "punch anomaly", "check-in location", "ghost punch", "attendance fraud"]):
+        anomaly_keywords = [
+            "impossible travel", "punch anomaly", "check-in location",
+            "ghost punch", "attendance fraud"
+        ]
+        if any(w in msg for w in anomaly_keywords):
             return UserIntent.ATTENDANCE_ANOMALY, 0.94
 
         # ATS candidate scoring
@@ -107,20 +119,28 @@ class SupervisorAgent:
             ctc = float(ctx.get("annual_ctc") or ctx.get("ctc") or 1200000.0)
             if jur == Jurisdiction.UAE:
                 res_uae = self.payroll_agent.structure_uae_salary(monthly_gross=ctc / 12.0)
+                reply = (
+                    f"Structured UAE Monthly Salary of AED {res_uae.monthly_gross:,.2f} with "
+                    f"Basic AED {res_uae.basic_wage:,.2f} and Housing AED {res_uae.housing_allowance:,.2f}."
+                )
                 return AgentResponse(
                     intent=intent,
                     routed_agent="StatutoryPayrollAgent",
-                    reply_text=f"Structured UAE Monthly Salary of AED {res_uae.monthly_gross:,.2f} with Basic AED {res_uae.basic_wage:,.2f} and Housing AED {res_uae.housing_allowance:,.2f}.",
+                    reply_text=reply,
                     confidence_score=confidence,
                     structured_data=res_uae.model_dump(),
                     statutory_citations=res_uae.statutory_citations,
                 )
             else:
                 res_in = self.payroll_agent.structure_india_salary(annual_ctc=ctc)
+                reply = (
+                    f"Computed India CTC of INR {res_in.annual_ctc:,.2f}. "
+                    f"Monthly Gross: INR {res_in.gross_salary:,.2f}, Net Take-Home: INR {res_in.net_take_home:,.2f}."
+                )
                 return AgentResponse(
                     intent=intent,
                     routed_agent="StatutoryPayrollAgent",
-                    reply_text=f"Computed India CTC of INR {res_in.annual_ctc:,.2f}. Monthly Gross: INR {res_in.gross_salary:,.2f}, Net Take-Home: INR {res_in.net_take_home:,.2f}.",
+                    reply_text=reply,
                     confidence_score=confidence,
                     structured_data=res_in.model_dump(),
                     statutory_citations=res_in.statutory_citations,
@@ -131,10 +151,14 @@ class SupervisorAgent:
             basic = float(ctx.get("basic_wage_monthly") or ctx.get("basic") or 15000.0)
             tenure = float(ctx.get("tenure_years") or ctx.get("tenure") or 3.5)
             eosb_res = self.payroll_agent.calculate_uae_eosb(basic_wage_monthly=basic, tenure_years=tenure)
+            reply = (
+                f"Calculated UAE End of Service Gratuity: AED {eosb_res.total_eosb_gratuity:,.2f} "
+                f"for {eosb_res.tenure_years} years of service."
+            )
             return AgentResponse(
                 intent=intent,
                 routed_agent="StatutoryPayrollAgent",
-                reply_text=f"Calculated UAE End of Service Gratuity: AED {eosb_res.total_eosb_gratuity:,.2f} for {eosb_res.tenure_years} years of service.",
+                reply_text=reply,
                 confidence_score=confidence,
                 structured_data=eosb_res.model_dump(),
                 statutory_citations=[eosb_res.statutory_citation],
@@ -144,8 +168,14 @@ class SupervisorAgent:
         elif intent == UserIntent.COMPLIANCE_AUDIT:
             tenant_id = str(ctx.get("tenant_id", "TENANT-01"))
             employees = ctx.get("employees", [])
-            audit_res = self.compliance_agent.audit_employees(tenant_id=tenant_id, jurisdiction=jur, employees=employees)
-            status_text = "COMPLIANT (0 violations)" if audit_res.is_compliant else f"NON-COMPLIANT ({audit_res.violations_count} violations detected)"
+            audit_res = self.compliance_agent.audit_employees(
+                tenant_id=tenant_id, jurisdiction=jur, employees=employees
+            )
+            status_text = (
+                "COMPLIANT (0 violations)"
+                if audit_res.is_compliant
+                else f"NON-COMPLIANT ({audit_res.violations_count} violations detected)"
+            )
             return AgentResponse(
                 intent=intent,
                 routed_agent="ComplianceAgent",
@@ -172,10 +202,14 @@ class SupervisorAgent:
                 current_balance=cur_bal,
             )
             decision = "Approved" if leave_res.is_approved else f"Rejected ({leave_res.rejection_reason})"
+            reply = (
+                f"Leave application of {req_days} days {leave_type} for {emp_id}: "
+                f"{decision}. Remaining balance: {leave_res.remaining_balance} days."
+            )
             return AgentResponse(
                 intent=intent,
                 routed_agent="LeaveAttendanceAgent",
-                reply_text=f"Leave application of {req_days} days {leave_type} for {emp_id}: {decision}. Remaining balance: {leave_res.remaining_balance} days.",
+                reply_text=reply,
                 confidence_score=confidence,
                 structured_data=leave_res.model_dump(),
             )
@@ -205,10 +239,14 @@ class SupervisorAgent:
                 required_experience_years=req_exp,
                 candidate_experience_years=cand_exp,
             )
+            reply = (
+                f"ATS Candidate Score: {ats_res.composite_score}/100. "
+                f"Recommendation: {ats_res.recommendation}. {ats_res.explanation}"
+            )
             return AgentResponse(
                 intent=intent,
                 routed_agent="RecruitmentAgent",
-                reply_text=f"ATS Candidate Score: {ats_res.composite_score}/100. Recommendation: {ats_res.recommendation}. {ats_res.explanation}",
+                reply_text=reply,
                 confidence_score=confidence,
                 structured_data=ats_res.model_dump(),
             )
@@ -217,7 +255,11 @@ class SupervisorAgent:
         elif intent == UserIntent.RECRUITMENT_BIAS:
             jd_text = str(ctx.get("jd_text", message))
             bias_res = self.recruitment_agent.audit_job_description_bias(jd_text)
-            reply = "No exclusionary or biased terms detected." if not bias_res.has_bias else f"Detected {len(bias_res.detected_terms)} biased term(s). Suggested inclusive rewrites applied."
+            reply = (
+                "No exclusionary or biased terms detected."
+                if not bias_res.has_bias
+                else f"Detected {len(bias_res.detected_terms)} biased term(s). Suggested inclusive rewrites applied."
+            )
             return AgentResponse(
                 intent=intent,
                 routed_agent="RecruitmentAgent",
@@ -244,6 +286,9 @@ class SupervisorAgent:
         return AgentResponse(
             intent=UserIntent.GENERAL_HR,
             routed_agent="SupervisorAgent",
-            reply_text=f"Received HR inquiry: '{message}'. How can I assist with Payroll, Compliance, Leave, Attendance, or Recruitment?",
+            reply_text=(
+                f"Received HR inquiry: '{message}'. How can I assist with Payroll, "
+                "Compliance, Leave, Attendance, or Recruitment?"
+            ),
             confidence_score=confidence,
         )

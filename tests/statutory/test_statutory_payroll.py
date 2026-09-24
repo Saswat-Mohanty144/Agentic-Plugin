@@ -1,7 +1,7 @@
 """Tier 3 Invariant Tests: Statutory Payroll and Decimal Precision Arithmetic."""
 
-from decimal import Decimal
 import pytest
+
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 
 
@@ -19,7 +19,7 @@ def test_india_salary_structure_decimal_exactness(payroll_agent):
     assert res.monthly_ctc == 100000.0
     assert res.basic_salary == 40000.0
     assert res.hra == 20000.0
-    
+
 
 
     # Employee PF = 12% of 40,000 = 4,800.00

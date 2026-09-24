@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field
 
 # Gender-coded and exclusionary keywords dictionary
 GENDER_BIAS_MAP: Dict[str, str] = {
@@ -129,7 +129,8 @@ class RecruitmentAgent:
 
         explanation = (
             f"Candidate scored {composite:.1f}/100. Skills match: {len(matched_skills)}/{len(required_skills)} "
-            f"({skills_score:.1f}%). Experience: {candidate_experience_years} yrs vs {required_experience_years} yrs required ({exp_score:.1f}%)."
+            f"({skills_score:.1f}%). Experience: {candidate_experience_years} yrs vs "
+            f"{required_experience_years} yrs required ({exp_score:.1f}%)."
         )
 
         return AtsScoreBreakdown(

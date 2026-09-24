@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
-from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
-from hrms_plugin.schema.canonical import EntityType, CanonicalDomain
+from hrms_plugin.rag.store import StatutoryKnowledgeBase
+from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
-from hrms_plugin.schema.mapping import EntityMapping, FieldMap
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
 from hrms_plugin.security.audit import HostAuditGateway
 from hrms_plugin.security.masking import PiiMaskingGateway

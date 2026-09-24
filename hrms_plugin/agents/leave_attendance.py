@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -103,6 +104,10 @@ class LeaveAttendanceAgent:
                 requires_manager_override=True,
             )
         else:
+            reason = (
+                f"Insufficient balance: requested {requested_days} days "
+                f"but only {current_balance} days available."
+            )
             return LeaveDeductionResult(
                 employee_id=employee_id,
                 leave_type=leave_type,
@@ -110,7 +115,7 @@ class LeaveAttendanceAgent:
                 current_balance=current_balance,
                 remaining_balance=current_balance,
                 is_approved=False,
-                rejection_reason=f"Insufficient balance: requested {requested_days} days but only {current_balance} days available.",
+                rejection_reason=reason,
             )
 
     def detect_impossible_travel(
@@ -119,11 +124,7 @@ class LeaveAttendanceAgent:
         punch2: Dict[str, Any],
         max_realistic_speed_kmh: float = 850.0,
     ) -> TravelAnomaly:
-        """Analyze two successive check-in punch coordinates to detect impossible physical travel.
-
-        Uses Haversine distance and elapsed time. Speeds exceeding commercial aviation threshold
-        or impossible ground transit trigger an anomaly flag.
-        """
+        """Analyze two successive check-in punch coordinates to detect impossible physical travel."""
         lat1 = float(punch1.get("latitude") or punch1.get("lat") or 0.0)
         lon1 = float(punch1.get("longitude") or punch1.get("lng") or 0.0)
         t1_str = str(punch1.get("timestamp") or punch1.get("created_at"))
@@ -132,12 +133,10 @@ class LeaveAttendanceAgent:
         lon2 = float(punch2.get("longitude") or punch2.get("lng") or 0.0)
         t2_str = str(punch2.get("timestamp") or punch2.get("created_at"))
 
-        # Parse ISO timestamps
         try:
             dt1 = datetime.fromisoformat(t1_str.replace("Z", "+00:00"))
             dt2 = datetime.fromisoformat(t2_str.replace("Z", "+00:00"))
         except Exception:
-            # Fallback if unparseable
             return TravelAnomaly(
                 is_anomaly=False,
                 speed_kmh=0.0,
@@ -158,7 +157,6 @@ class LeaveAttendanceAgent:
         else:
             speed = distance_km / delta_hours
 
-        # If distance > 10 km and speed > max_realistic_speed_kmh, it's impossible travel
         is_anomaly = bool(distance_km > 5.0 and speed > max_realistic_speed_kmh)
 
         if is_anomaly:
@@ -167,7 +165,10 @@ class LeaveAttendanceAgent:
                 f"({speed:.1f} km/h), exceeding maximum realistic transit threshold of {max_realistic_speed_kmh} km/h."
             )
         else:
-            explanation = f"Travel speed of {speed:.1f} km/h across {distance_km:.1f} km is within physically plausible parameters."
+            explanation = (
+                f"Travel speed of {speed:.1f} km/h across {distance_km:.1f} km "
+                "is within physically plausible parameters."
+            )
 
         return TravelAnomaly(
             is_anomaly=is_anomaly,

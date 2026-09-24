@@ -1,6 +1,7 @@
 """Unit tests for Compliance Auditor Agent."""
 
 import pytest
+
 from hrms_plugin.agents.compliance import ComplianceAgent, ViolationSeverity
 from hrms_plugin.rag.store import Jurisdiction
 
@@ -14,10 +15,12 @@ def test_uae_probation_period_audit(compliance_agent):
     """Test detection of illegal probation duration (> 180 days) under UAE labor law."""
     employees = [
         {"id": "EMP-001", "first_name": "Ahmed", "last_name": "Ali", "probation_days": 120},  # Compliant
-        {"id": "EMP-002", "first_name": "Tariq", "last_name": "Mansoor", "probation_days": 240},  # Non-compliant (>180)
+        {"id": "EMP-002", "first_name": "Tariq", "last_name": "Mansoor", "probation_days": 240},  # Non-compliant
     ]
 
-    report = compliance_agent.audit_employees(tenant_id="TENANT-DXB", jurisdiction=Jurisdiction.UAE, employees=employees)
+    report = compliance_agent.audit_employees(
+        tenant_id="TENANT-DXB", jurisdiction=Jurisdiction.UAE, employees=employees
+    )
 
     assert report.is_compliant is False
     assert report.violations_count == 1
@@ -38,7 +41,9 @@ def test_india_mandatory_pf_audit(compliance_agent):
         {"id": "EMP-102", "first_name": "Suresh", "basic_salary": 14000.0, "is_pf_enrolled": True},   # Compliant
     ]
 
-    report = compliance_agent.audit_employees(tenant_id="TENANT-BLR", jurisdiction=Jurisdiction.INDIA, employees=employees)
+    report = compliance_agent.audit_employees(
+        tenant_id="TENANT-BLR", jurisdiction=Jurisdiction.INDIA, employees=employees
+    )
 
     assert report.is_compliant is False
     assert report.violations_count == 1

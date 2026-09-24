@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, List, Optional
+from decimal import ROUND_HALF_UP, Decimal
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
@@ -68,33 +69,28 @@ class StatutoryPayrollAgent:
         cap_pf_at_ceiling: bool = False,
         pt_amount: float = 200.0,
     ) -> IndiaSalaryStructure:
-        """Compute exact gross-to-net salary breakdown under Indian labor statutes.
-
-        All arithmetic is performed with Python Decimal to prevent floating point penny drift.
-        """
+        """Compute exact gross-to-net salary breakdown under Indian labor statutes."""
         ann_ctc = _d(annual_ctc)
         mon_ctc = _d(ann_ctc / Decimal("12.0"))
 
         # Basic Salary
         basic = _d(mon_ctc * (_d(basic_percent) / Decimal("100.0")))
-        
+
         # HRA (typically 50% of basic or 20% of CTC)
         hra = _d(mon_ctc * (_d(hra_percent) / Decimal("100.0")))
 
-        # EPF Calculations
-        # EPF wage ceiling is INR 15,000
+        # EPF Calculations (EPF wage ceiling is INR 15,000)
         pf_wage_base = min(basic, Decimal("15000.00")) if cap_pf_at_ceiling else basic
-        
+
         # Employee PF: 12% of basic
         emp_pf = _d(pf_wage_base * Decimal("0.12"))
 
         # Employer PF: 12% total -> 8.33% to EPS (capped at 15000 ceiling = 1250) + remainder to EPF
         eps_base = min(pf_wage_base, Decimal("15000.00"))
         employer_eps = _d(eps_base * (_d("8.33") / Decimal("100.0")))
-        # Capping EPS at maximum 1250 INR per month statutory limit
         if employer_eps > Decimal("1250.00"):
             employer_eps = Decimal("1250.00")
-            
+
         employer_pf_total = _d(pf_wage_base * Decimal("0.12"))
         employer_epf = _d(employer_pf_total - employer_eps)
 
@@ -107,7 +103,6 @@ class StatutoryPayrollAgent:
         # Special Allowance is the balancing component
         special_allowance = _d(gross - basic - hra)
         if special_allowance < Decimal("0.00"):
-            # Rebalance if gross is smaller than basic + hra
             special_allowance = Decimal("0.00")
             gross = _d(basic + hra)
 
@@ -192,14 +187,7 @@ class StatutoryPayrollAgent:
         basic_wage_monthly: float | Decimal,
         tenure_years: float,
     ) -> UaeEosbCalculation:
-        """Compute End of Service Benefits (EOSB) under UAE Federal Decree-Law No. 33 of 2021 (Article 51).
-
-        Rules:
-        - Less than 1 year: 0 gratuity.
-        - 1 to 5 years: 21 days' basic wage per year (using 21/30 monthly wage per year).
-        - Above 5 years: 21 days/year for first 5 yrs + 30 days/year for additional years.
-        - Maximum cap: 2 years' total basic wage (24 * monthly basic).
-        """
+        """Compute End of Service Benefits (EOSB) under UAE Federal Decree-Law No. 33 of 2021 (Article 51)."""
         basic = _d(basic_wage_monthly)
         years = Decimal(str(tenure_years))
 
@@ -225,9 +213,11 @@ class StatutoryPayrollAgent:
             total_eosb = max_cap
             breakdown += f" (Capped at 2 years' basic wage statutory limit of AED {max_cap})"
 
-        citation = self.kb.format_citation(
-            [c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE) if "Article 51" in c.section_or_article][0]
-        )
+        matching = [
+            c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
+            if "Article 51" in c.section_or_article
+        ]
+        citation = self.kb.format_citation(matching[0]) if matching else "UAE Federal Decree-Law No. 33 of 2021"
 
         return UaeEosbCalculation(
             tenure_years=float(years),
@@ -236,4 +226,3 @@ class StatutoryPayrollAgent:
             formula_breakdown=breakdown,
             statutory_citation=citation,
         )
-

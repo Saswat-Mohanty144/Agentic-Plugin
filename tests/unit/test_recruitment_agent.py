@@ -1,6 +1,7 @@
 """Unit tests for Recruitment Specialist Agent."""
 
 import pytest
+
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 
 
@@ -33,7 +34,7 @@ def test_ats_candidate_scoring(recruitment_agent):
         "Holds a Bachelor of Science in Computer Science."
     )
     skills = ["Python", "FastAPI", "PostgreSQL", "Kubernetes", "Redis"]  # 3 of 5 matched (60%)
-    
+
     score = recruitment_agent.score_candidate(
         resume_text=resume,
         required_skills=skills,

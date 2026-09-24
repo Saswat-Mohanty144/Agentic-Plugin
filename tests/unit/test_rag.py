@@ -1,6 +1,7 @@
 """Unit tests for Statutory Knowledge Base & RAG Corpus."""
 
 import pytest
+
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
 
 

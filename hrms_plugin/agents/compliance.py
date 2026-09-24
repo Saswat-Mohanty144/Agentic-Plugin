@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
@@ -60,7 +61,7 @@ class ComplianceAgent:
 
         for emp in employees:
             emp_id = str(emp.get("id") or emp.get("employee_id") or "UNKNOWN")
-            
+
             # 1. Check Probation Period (UAE: max 6 months / 180 days)
             if jur == Jurisdiction.UAE:
                 probation_days = emp.get("probation_days") or emp.get("probation_period_days")
@@ -69,7 +70,11 @@ class ComplianceAgent:
                         c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                         if "Article 9" in c.section_or_article
                     ]
-                    cit_str = self.kb.format_citation(citations[0]) if citations else "UAE Federal Decree-Law No. 33 of 2021, Article 9"
+                    cit_str = (
+                        self.kb.format_citation(citations[0])
+                        if citations
+                        else "UAE Federal Decree-Law No. 33 of 2021, Article 9"
+                    )
                     violations.append(
                         ComplianceViolation(
                             violation_id=f"VIO-PROB-{emp_id}",
@@ -78,8 +83,14 @@ class ComplianceAgent:
                             jurisdiction=jur,
                             entity_type="EMPLOYEE",
                             entity_id=emp_id,
-                            summary=f"Probation period of {probation_days} days exceeds statutory maximum of 6 months (180 days).",
-                            detailed_findings=f"Employee {emp.get('first_name', '')} {emp.get('last_name', '')} has probation set to {probation_days} days. UAE Labor Law strictly caps probation at 180 days without extension.",
+                            summary=(
+                                f"Probation period of {probation_days} days exceeds statutory "
+                                "maximum of 6 months (180 days)."
+                            ),
+                            detailed_findings=(
+                                f"Employee {emp.get('first_name', '')} {emp.get('last_name', '')} has probation "
+                                f"set to {probation_days} days. UAE Labor Law strictly caps probation at 180 days."
+                            ),
                             statutory_citation=cit_str,
                             penalty_risk="Administrative fines from MoHRE up to AED 10,000.",
                             remediation_recommendation="Reduce probation period to statutory limit of 180 days.",
@@ -96,7 +107,11 @@ class ComplianceAgent:
                         c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.INDIA)
                         if "Provident Funds" in c.act_name
                     ]
-                    cit_str = self.kb.format_citation(citations[0]) if citations else "EPF & MP Act, 1952, Section 6"
+                    cit_str = (
+                        self.kb.format_citation(citations[0])
+                        if citations
+                        else "EPF & MP Act, 1952, Section 6"
+                    )
                     violations.append(
                         ComplianceViolation(
                             violation_id=f"VIO-PF-{emp_id}",
@@ -106,10 +121,15 @@ class ComplianceAgent:
                             entity_type="EMPLOYEE",
                             entity_id=emp_id,
                             summary="Employee earning <= INR 15,000 basic is not enrolled in statutory Provident Fund.",
-                            detailed_findings=f"Employee has monthly basic wage INR {basic:.2f} (< 15,000 threshold) but PF coverage is disabled.",
+                            detailed_findings=(
+                                f"Employee has monthly basic wage INR {basic:.2f} (< 15,000 threshold) "
+                                "but PF coverage is disabled."
+                            ),
                             statutory_citation=cit_str,
                             penalty_risk="Penal damages under Section 14B up to 25% + IPC 406 liability.",
-                            remediation_recommendation="Enable statutory EPF contribution (12% employee + 12% employer).",
+                            remediation_recommendation=(
+                                "Enable statutory EPF contribution (12% employee + 12% employer)."
+                            ),
                             remediation_patch={"is_pf_enrolled": True, "pf_applicable": True},
                         )
                     )
@@ -149,7 +169,11 @@ class ComplianceAgent:
                     c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                     if "Article 17" in c.section_or_article
                 ]
-                cit_str = self.kb.format_citation(citations[0]) if citations else "UAE Federal Decree-Law No. 33 of 2021, Article 17"
+                cit_str = (
+                    self.kb.format_citation(citations[0])
+                    if citations
+                    else "UAE Federal Decree-Law No. 33 of 2021, Article 17"
+                )
                 violations.append(
                     ComplianceViolation(
                         violation_id=f"VIO-OT-{emp_id}-{date_str}",
@@ -158,11 +182,17 @@ class ComplianceAgent:
                         jurisdiction=jur,
                         entity_type="PUNCH_LOG",
                         entity_id=emp_id,
-                        summary=f"Daily working hours of {daily_hours}h exceeds statutory cap of 10 hours (8h standard + 2h max overtime).",
-                        detailed_findings=f"Employee logged {daily_hours} hours on {date_str}. UAE Article 17 prohibits daily working time exceeding 10 hours including overtime.",
+                        summary=(
+                            f"Daily working hours of {daily_hours}h exceeds statutory cap of 10 hours "
+                            "(8h standard + 2h max overtime)."
+                        ),
+                        detailed_findings=(
+                            f"Employee logged {daily_hours} hours on {date_str}. UAE Article 17 "
+                            "prohibits daily working time exceeding 10 hours including overtime."
+                        ),
                         statutory_citation=cit_str,
                         penalty_risk="MoHRE labor inspector citation and company fine.",
-                        remediation_recommendation="Cap payable regular + overtime hours at 10 hours and issue operational alert.",
+                        remediation_recommendation="Cap payable regular + overtime hours at 10 hours and issue alert.",
                         remediation_patch={"total_hours": 10.0, "excess_overtime_flag": True},
                     )
                 )
@@ -203,7 +233,11 @@ class ComplianceAgent:
                     c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                     if "Wages Protection" in c.act_name
                 ]
-                cit_str = self.kb.format_citation(citations[0]) if citations else "Ministerial Resolution No. 43 of 2022 on WPS"
+                cit_str = (
+                    self.kb.format_citation(citations[0])
+                    if citations
+                    else "Ministerial Resolution No. 43 of 2022 on WPS"
+                )
                 violations.append(
                     ComplianceViolation(
                         violation_id=f"VIO-WPS-QUOTA-{tenant_id}",
@@ -212,11 +246,17 @@ class ComplianceAgent:
                         jurisdiction=jur,
                         entity_type="PAYROLL",
                         entity_id=str(payroll_batch.get("batch_id", "BATCH-01")),
-                        summary=f"WPS payment coverage is {paid_pct:.1f}%, failing the statutory 90% minimum threshold.",
-                        detailed_findings=f"Only {paid_employees} of {total_employees} employees are included in the salary disbursement file.",
+                        summary=(
+                            f"WPS payment coverage is {paid_pct:.1f}%, failing the statutory 90% minimum threshold."
+                        ),
+                        detailed_findings=(
+                            f"Only {paid_employees} of {total_employees} employees are included in disbursement file."
+                        ),
                         statutory_citation=cit_str,
                         penalty_risk="Immediate block on MoHRE portal for issuing new work permits & company fines.",
-                        remediation_recommendation="Include missing active employees in the SIF (Salary Information File) generation.",
+                        remediation_recommendation=(
+                            "Include missing active employees in the SIF (Salary Information File) generation."
+                        ),
                         remediation_patch={"include_all_active_employees": True},
                     )
                 )
@@ -227,7 +267,11 @@ class ComplianceAgent:
                     c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                     if "Wages Protection" in c.act_name
                 ]
-                cit_str = self.kb.format_citation(citations[0]) if citations else "Ministerial Resolution No. 43 of 2022 on WPS"
+                cit_str = (
+                    self.kb.format_citation(citations[0])
+                    if citations
+                    else "Ministerial Resolution No. 43 of 2022 on WPS"
+                )
                 violations.append(
                     ComplianceViolation(
                         violation_id=f"VIO-WPS-DELAY-{tenant_id}",
@@ -236,11 +280,17 @@ class ComplianceAgent:
                         jurisdiction=jur,
                         entity_type="PAYROLL",
                         entity_id=str(payroll_batch.get("batch_id", "BATCH-01")),
-                        summary=f"Payroll disbursement is delayed by {days_after_cutoff} days (> 15-day statutory limit).",
-                        detailed_findings="MoHRE requires wages to be transferred within 15 days from the due date of the salary period.",
+                        summary=f"Payroll disbursement is delayed by {days_after_cutoff} days (> 15-day limit).",
+                        detailed_findings=(
+                            "MoHRE requires wages to be transferred within 15 days from the period due date."
+                        ),
                         statutory_citation=cit_str,
-                        penalty_risk="Administrative fine of AED 1,000 per delayed worker and corporate rating downgrade.",
-                        remediation_recommendation="Execute SIF bank transfer immediately to avoid automated sanctions.",
+                        penalty_risk=(
+                            "Administrative fine of AED 1,000 per delayed worker and corporate rating downgrade."
+                        ),
+                        remediation_recommendation=(
+                            "Execute SIF bank transfer immediately to avoid automated sanctions."
+                        ),
                     )
                 )
 

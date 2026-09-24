@@ -1,6 +1,7 @@
 """Unit tests for Multi-Agent Supervisor."""
 
 import pytest
+
 from hrms_plugin.agents.supervisor import SupervisorAgent, UserIntent
 from hrms_plugin.rag.store import Jurisdiction
 

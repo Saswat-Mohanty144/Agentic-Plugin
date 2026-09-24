@@ -1,6 +1,7 @@
 """Tier 4 Tests: Schema Drift, Field Mutation Invariance & Robustness Fuzzing."""
 
 import pytest
+
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
@@ -26,8 +27,20 @@ def prober():
 def test_schema_drift_field_renaming_resilience(introspector, synthesizer):
     """Test that the synthesizer can still align mutated field names (e.g. 'emp_fname' -> 'firstName')."""
     mutated_samples = [
-        {"emp_id": "E100", "emp_fname": "John", "emp_lname": "Doe", "mail_addr": "john@corp.com", "join_dt": "2023-01-15"},
-        {"emp_id": "E101", "emp_fname": "Jane", "emp_lname": "Smith", "mail_addr": "jane@corp.com", "join_dt": "2023-02-20"},
+        {
+            "emp_id": "E100",
+            "emp_fname": "John",
+            "emp_lname": "Doe",
+            "mail_addr": "john@corp.com",
+            "join_dt": "2023-01-15",
+        },
+        {
+            "emp_id": "E101",
+            "emp_fname": "Jane",
+            "emp_lname": "Smith",
+            "mail_addr": "jane@corp.com",
+            "join_dt": "2023-02-20",
+        },
     ]
 
     discovered = introspector.introspect_json_samples("Employee", mutated_samples)

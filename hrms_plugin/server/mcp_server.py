@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
 from pydantic import BaseModel
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
-from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
+from hrms_plugin.rag.store import StatutoryKnowledgeBase
 
 
 class McpToolDefinition(BaseModel):
@@ -34,11 +34,16 @@ class HrmsMcpServer:
         return [
             McpToolDefinition(
                 name="hrms_query_labor_statutes",
-                description="Search statutory labor laws and legal gazette citations across India, UAE, Saudi Arabia, and US.",
+                description=(
+                    "Search statutory labor laws and legal gazette citations across India, UAE, Saudi Arabia, and US."
+                ),
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "query": {"type": "string", "description": "Legal topic, e.g. overtime, maternity, probation, gratuity"},
+                        "query": {
+                            "type": "string",
+                            "description": "Legal topic, e.g. overtime, maternity, probation, gratuity",
+                        },
                         "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"], "default": "IN"},
                     },
                     "required": ["query"],
