@@ -87,7 +87,74 @@ class HrmsMcpServer:
                     "required": ["jurisdiction", "employees"],
                 },
             ),
+            McpToolDefinition(
+                name="hrms_score_candidate_ats",
+                description="Score candidate resume against job requisitions with explainable rubric.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "resume_text": {"type": "string"},
+                        "required_skills": {"type": "array", "items": {"type": "string"}},
+                        "required_experience_years": {"type": "number", "default": 3.0},
+                        "candidate_experience_years": {"type": "number", "default": 3.0},
+                    },
+                    "required": ["resume_text", "required_skills"],
+                },
+            ),
+            McpToolDefinition(
+                name="hrms_audit_job_description",
+                description="Audit job descriptions for exclusionary/biased language and EEO compliance.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "jd_text": {"type": "string", "description": "Full job description text"},
+                    },
+                    "required": ["jd_text"],
+                },
+            ),
+            McpToolDefinition(
+                name="hrms_evaluate_leave_request",
+                description="Evaluate employee leave requests against allocated balances and statutory rules.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "employee_id": {"type": "string"},
+                        "leave_type": {"type": "string", "default": "ANNUAL"},
+                        "requested_days": {"type": "number", "default": 2.0},
+                        "current_balance": {"type": "number", "default": 10.0},
+                    },
+                    "required": ["employee_id", "requested_days"],
+                },
+            ),
+            McpToolDefinition(
+                name="hrms_detect_impossible_travel",
+                description="Evaluate two consecutive GPS attendance punches for impossible travel velocity.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "punch1": {
+                            "type": "object",
+                            "properties": {
+                                "lat": {"type": "number"},
+                                "lng": {"type": "number"},
+                                "timestamp": {"type": "string"},
+                            },
+                        },
+                        "punch2": {
+                            "type": "object",
+                            "properties": {
+                                "lat": {"type": "number"},
+                                "lng": {"type": "number"},
+                                "timestamp": {"type": "string"},
+                            },
+                        },
+                    },
+                    "required": ["punch1", "punch2"],
+                },
+            ),
         ]
+
+
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute MCP tool invocation."""
@@ -130,5 +197,35 @@ class HrmsMcpServer:
             report = self.compliance.audit_employees(tenant_id=tenant_id, jurisdiction=jur, employees=emps)
             return report.model_dump()
 
+        elif name == "hrms_score_candidate_ats":
+            res = self.recruitment.score_candidate(
+                resume_text=arguments.get("resume_text", ""),
+                required_skills=arguments.get("required_skills", []),
+                required_experience_years=float(arguments.get("required_experience_years", 3.0)),
+                candidate_experience_years=float(arguments.get("candidate_experience_years", 3.0)),
+            )
+            return res.model_dump()
+
+        elif name == "hrms_audit_job_description":
+            res = self.recruitment.audit_job_description_bias(arguments.get("jd_text", ""))
+            return res.model_dump()
+
+        elif name == "hrms_evaluate_leave_request":
+            res = self.leave.evaluate_leave_request(
+                employee_id=arguments.get("employee_id", "EMP-001"),
+                leave_type=arguments.get("leave_type", "ANNUAL"),
+                requested_days=float(arguments.get("requested_days", 1.0)),
+                current_balance=float(arguments.get("current_balance", 10.0)),
+            )
+            return res.model_dump()
+
+        elif name == "hrms_detect_impossible_travel":
+            res = self.leave.detect_impossible_travel(
+                punch1=arguments.get("punch1", {}),
+                punch2=arguments.get("punch2", {}),
+            )
+            return res.model_dump()
+
         else:
             raise ValueError(f"Unknown MCP tool: {name}")
+
