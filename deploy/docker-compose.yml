@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  hrms-plugin-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: hrms-agentic-plugin-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DEFAULT_JURISDICTION=UAE
+      - HOST_HRMS_BASE_URL=http://host.docker.internal:5000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  hrms-sdk-static:
+    image: nginx:alpine
+    container_name: hrms-agentic-plugin-sdk
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ../sdk:/usr/share/nginx/html:ro
+    depends_on:
+      - hrms-plugin-api
