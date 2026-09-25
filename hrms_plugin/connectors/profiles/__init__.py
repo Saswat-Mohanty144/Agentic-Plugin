@@ -4,14 +4,21 @@ from __future__ import annotations
 
 from typing import Dict, Type
 
+from hrms_plugin.connectors.profiles.bamboohr import BambooHRProfile
 from hrms_plugin.connectors.profiles.base_profile import VendorProfile
+from hrms_plugin.connectors.profiles.frappe import FrappeProfile
 from hrms_plugin.connectors.profiles.generic import GenericProfile
 from hrms_plugin.connectors.profiles.iceipts import IceiptsProfile, extract_jwt_user_id
+from hrms_plugin.connectors.profiles.workday import WorkdayProfile
 
 _PROFILES: Dict[str, Type[VendorProfile]] = {
     "generic": GenericProfile,
     "iceipts": IceiptsProfile,
     "iceipts_hrms": IceiptsProfile,
+    "frappe": FrappeProfile,
+    "erpnext": FrappeProfile,
+    "bamboohr": BambooHRProfile,
+    "workday": WorkdayProfile,
 }
 
 
@@ -26,6 +33,9 @@ __all__ = [
     "VendorProfile",
     "GenericProfile",
     "IceiptsProfile",
+    "FrappeProfile",
+    "BambooHRProfile",
+    "WorkdayProfile",
     "extract_jwt_user_id",
     "get_vendor_profile",
 ]

@@ -20,8 +20,6 @@ def test_india_salary_structure_decimal_exactness(payroll_agent):
     assert res.basic_salary == 40000.0
     assert res.hra == 20000.0
 
-
-
     # Employee PF = 12% of 40,000 = 4,800.00
     assert res.employee_pf == 4800.0
     # Employer PF total = 12% of 40,000 = 4,800.00 (EPS: 8.33% of 15000 = 1249.50, EPF remainder = 3550.50)

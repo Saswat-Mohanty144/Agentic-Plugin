@@ -88,8 +88,17 @@ class PiiMaskingGateway:
     ) -> Dict[str, Any]:
         """Deep mask dictionaries containing sensitive fields like compensation or national IDs."""
         keys_to_mask = sensitive_keys or {
-            "aadhaar", "pan", "ssn", "emirates_id", "national_id",
-            "bank_account", "account_number", "iban", "salary", "basic_salary", "ctc"
+            "aadhaar",
+            "pan",
+            "ssn",
+            "emirates_id",
+            "national_id",
+            "bank_account",
+            "account_number",
+            "iban",
+            "salary",
+            "basic_salary",
+            "ctc",
         }
 
         masked_record: Dict[str, Any] = {}
@@ -125,7 +134,8 @@ class PiiMaskingGateway:
             elif isinstance(v, list):
                 masked_record[k] = [
                     self.mask_record_dict(item, tenant_id=tenant_id, sensitive_keys=keys_to_mask)
-                    if isinstance(item, dict) else item
+                    if isinstance(item, dict)
+                    else item
                     for item in v
                 ]
             else:

@@ -1,6 +1,5 @@
 """Unit tests for the CLI utility and extended MCP tool suite."""
 
-
 from hrms_plugin.cli import main
 from hrms_plugin.server.mcp_server import HrmsMcpServer
 
@@ -11,7 +10,6 @@ def test_cli_calculate_eosb(capsys):
     captured = capsys.readouterr().out
     assert "UAE Statutory EOSB Calculation" in captured
     assert "Gratuity Payable: AED 47,250.00" in captured
-
 
 
 def test_cli_calculate_salary_india(capsys):
@@ -28,7 +26,6 @@ def test_cli_check_bias(capsys):
     captured = capsys.readouterr().out
     assert "Recruitment Bias & Inclusivity Audit" in captured
     assert "Biased Terms Found: 1" in captured
-
 
 
 def test_mcp_extended_tools():

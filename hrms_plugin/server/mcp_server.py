@@ -154,8 +154,6 @@ class HrmsMcpServer:
             ),
         ]
 
-
-
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute MCP tool invocation."""
         if name == "hrms_query_labor_statutes":
@@ -228,4 +226,3 @@ class HrmsMcpServer:
 
         else:
             raise ValueError(f"Unknown MCP tool: {name}")
-

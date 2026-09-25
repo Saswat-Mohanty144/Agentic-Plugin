@@ -135,7 +135,6 @@ STATUTORY_CORPUS: List[LegalCitation] = [
         },
         penalty_or_consequence="Imprisonment not less than 3 months extending up to 1 year and fines.",
     ),
-
     # =========================================================================
     # UAE STATUTES
     # =========================================================================
@@ -200,7 +199,6 @@ STATUTORY_CORPUS: List[LegalCitation] = [
             "Automated block on new work permits, license freeze, and fines of AED 1,000 per delayed worker."
         ),
     ),
-
     # =========================================================================
     # SAUDI ARABIA STATUTES
     # =========================================================================
@@ -229,7 +227,6 @@ STATUTORY_CORPUS: List[LegalCitation] = [
             "SAR 100,000 and temporary portal block."
         ),
     ),
-
     # =========================================================================
     # UNITED STATES STATUTES
     # =========================================================================

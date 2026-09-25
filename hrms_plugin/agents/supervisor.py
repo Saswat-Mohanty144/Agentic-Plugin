@@ -63,16 +63,24 @@ class SupervisorAgent:
 
         # Salary & CTC structuring
         payroll_keywords = [
-            "salary structure", "ctc breakdown", "calculate salary",
-            "take home", "gross to net", "pf deduction"
+            "salary structure",
+            "ctc breakdown",
+            "calculate salary",
+            "take home",
+            "gross to net",
+            "pf deduction",
         ]
         if any(w in msg for w in payroll_keywords):
             return UserIntent.PAYROLL_STRUCTURE, 0.92
 
         # Compliance audits
         compliance_keywords = [
-            "compliance", "labor law", "wps audit",
-            "violation", "statutory audit", "probation limit"
+            "compliance",
+            "labor law",
+            "wps audit",
+            "violation",
+            "statutory audit",
+            "probation limit",
         ]
         if any(w in msg for w in compliance_keywords):
             return UserIntent.COMPLIANCE_AUDIT, 0.90
@@ -83,8 +91,11 @@ class SupervisorAgent:
 
         # Attendance & travel anomaly
         anomaly_keywords = [
-            "impossible travel", "punch anomaly", "check-in location",
-            "ghost punch", "attendance fraud"
+            "impossible travel",
+            "punch anomaly",
+            "check-in location",
+            "ghost punch",
+            "attendance fraud",
         ]
         if any(w in msg for w in anomaly_keywords):
             return UserIntent.ATTENDANCE_ANOMALY, 0.94
@@ -185,7 +196,8 @@ class SupervisorAgent:
                 statutory_citations=[v.statutory_citation for v in audit_res.violations],
                 suggested_actions=[
                     {"action": "REMEDIATE_PATCH", "violation_id": v.violation_id, "patch": v.remediation_patch}
-                    for v in audit_res.violations if v.remediation_patch
+                    for v in audit_res.violations
+                    if v.remediation_patch
                 ],
             )
 

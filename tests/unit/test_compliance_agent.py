@@ -38,7 +38,7 @@ def test_india_mandatory_pf_audit(compliance_agent):
     """Test detection of missing statutory PF enrollment for low-wage earners in India."""
     employees = [
         {"id": "EMP-101", "first_name": "Ramesh", "basic_salary": 14000.0, "is_pf_enrolled": False},  # Non-compliant
-        {"id": "EMP-102", "first_name": "Suresh", "basic_salary": 14000.0, "is_pf_enrolled": True},   # Compliant
+        {"id": "EMP-102", "first_name": "Suresh", "basic_salary": 14000.0, "is_pf_enrolled": True},  # Compliant
     ]
 
     report = compliance_agent.audit_employees(

@@ -65,9 +65,7 @@ def test_prober_detects_schema_drift_nullability_failure(prober):
         vendor="custom",
         entity_type=EntityType.EMPLOYEE.value,
         id_path="id",
-        fields=(
-            FieldMap(target="email", source="official_email", required=True),
-        ),
+        fields=(FieldMap(target="email", source="official_email", required=True),),
     )
 
     # Mutated payload where official_email is missing or null

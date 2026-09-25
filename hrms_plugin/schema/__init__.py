@@ -13,6 +13,12 @@ from hrms_plugin.schema.canonical import (
     EntityType,
     SourceRef,
 )
+from hrms_plugin.schema.drift import (
+    DriftEvent,
+    DriftSeverity,
+    SchemaDriftInterceptor,
+    SchemaDriftWarning,
+)
 from hrms_plugin.schema.introspector import (
     DiscoveredEntity,
     DiscoveredField,
@@ -73,4 +79,9 @@ __all__ = [
     "ProbeIssue",
     "ProbeReport",
     "ShadowProber",
+    # Drift
+    "DriftEvent",
+    "DriftSeverity",
+    "SchemaDriftInterceptor",
+    "SchemaDriftWarning",
 ]

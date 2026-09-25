@@ -139,9 +139,7 @@ class SchemaIntrospector:
         return result
 
     @classmethod
-    def introspect_json_samples(
-        cls, entity_name: str, samples: List[Dict[str, Any]]
-    ) -> DiscoveredEntity:
+    def introspect_json_samples(cls, entity_name: str, samples: List[Dict[str, Any]]) -> DiscoveredEntity:
         if not samples:
             return DiscoveredEntity(name=entity_name)
 
@@ -293,9 +291,7 @@ class SchemaIntrospector:
         return None
 
     @classmethod
-    def _infer_field_from_samples(
-        cls, key: str, samples: List[Dict[str, Any]]
-    ) -> DiscoveredField:
+    def _infer_field_from_samples(cls, key: str, samples: List[Dict[str, Any]]) -> DiscoveredField:
         non_null_values = []
         is_nullable = False
 

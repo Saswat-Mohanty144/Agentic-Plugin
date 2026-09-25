@@ -12,9 +12,9 @@ from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
 
 class ViolationSeverity(str, Enum):
     CRITICAL = "CRITICAL"  # Statutory penalty, legal liability, wage protection suspension
-    HIGH = "HIGH"          # Labor code non-conformance, overtime cap breach
-    MEDIUM = "MEDIUM"      # Documentation / policy discrepancy
-    LOW = "LOW"            # Advisory / best-practice warning
+    HIGH = "HIGH"  # Labor code non-conformance, overtime cap breach
+    MEDIUM = "MEDIUM"  # Documentation / policy discrepancy
+    LOW = "LOW"  # Advisory / best-practice warning
 
 
 class ComplianceViolation(BaseModel):
@@ -67,7 +67,8 @@ class ComplianceAgent:
                 probation_days = emp.get("probation_days") or emp.get("probation_period_days")
                 if probation_days and float(probation_days) > 180:
                     citations = [
-                        c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
+                        c
+                        for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                         if "Article 9" in c.section_or_article
                     ]
                     cit_str = (
@@ -104,14 +105,11 @@ class ComplianceAgent:
                 is_pf_enrolled = emp.get("is_pf_enrolled", emp.get("pf_applicable", True))
                 if basic > 0 and basic <= 15000 and not is_pf_enrolled:
                     citations = [
-                        c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.INDIA)
+                        c
+                        for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.INDIA)
                         if "Provident Funds" in c.act_name
                     ]
-                    cit_str = (
-                        self.kb.format_citation(citations[0])
-                        if citations
-                        else "EPF & MP Act, 1952, Section 6"
-                    )
+                    cit_str = self.kb.format_citation(citations[0]) if citations else "EPF & MP Act, 1952, Section 6"
                     violations.append(
                         ComplianceViolation(
                             violation_id=f"VIO-PF-{emp_id}",
@@ -166,7 +164,8 @@ class ComplianceAgent:
             # Check Overtime Caps (UAE: max 2 hours overtime on top of 8h standard = 10h max per day)
             if jur == Jurisdiction.UAE and daily_hours > 10.0:
                 citations = [
-                    c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
+                    c
+                    for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                     if "Article 17" in c.section_or_article
                 ]
                 cit_str = (
@@ -230,7 +229,8 @@ class ComplianceAgent:
             paid_pct = (paid_employees / total_employees) * 100.0 if total_employees > 0 else 100.0
             if paid_pct < 90.0:
                 citations = [
-                    c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
+                    c
+                    for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                     if "Wages Protection" in c.act_name
                 ]
                 cit_str = (
@@ -264,7 +264,8 @@ class ComplianceAgent:
             # 2. 15-day deadline check
             if days_after_cutoff > 15:
                 citations = [
-                    c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
+                    c
+                    for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
                     if "Wages Protection" in c.act_name
                 ]
                 cit_str = (

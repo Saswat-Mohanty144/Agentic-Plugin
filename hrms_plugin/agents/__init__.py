@@ -28,6 +28,7 @@ from hrms_plugin.agents.supervisor import (
     SupervisorAgent,
     UserIntent,
 )
+from hrms_plugin.agents.voice import VoiceAgent
 
 __all__ = [
     "ComplianceAgent",
@@ -48,4 +49,5 @@ __all__ = [
     "AgentResponse",
     "SupervisorAgent",
     "UserIntent",
+    "VoiceAgent",
 ]

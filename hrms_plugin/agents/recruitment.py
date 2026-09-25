@@ -60,10 +60,12 @@ class RecruitmentAgent:
         for term, replacement in GENDER_BIAS_MAP.items():
             pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
             if pattern.search(lowered):
-                detected.append({
-                    "flagged_term": term,
-                    "replacement_recommendation": replacement,
-                })
+                detected.append(
+                    {
+                        "flagged_term": term,
+                        "replacement_recommendation": replacement,
+                    }
+                )
                 rewritten = pattern.sub(f"[{replacement}]", rewritten)
 
         return BiasAuditResult(
@@ -95,11 +97,7 @@ class RecruitmentAgent:
                 missing_skills.append(skill)
 
         # 1. Skills Score (0 - 100)
-        skills_score = (
-            (len(matched_skills) / len(required_skills) * 100.0)
-            if required_skills
-            else 100.0
-        )
+        skills_score = (len(matched_skills) / len(required_skills) * 100.0) if required_skills else 100.0
 
         # 2. Experience Score (0 - 100)
         if required_experience_years <= 0:

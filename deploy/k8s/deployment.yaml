@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hrms-agentic-plugin
+  labels:
+    app.kubernetes.io/name: hrms-agentic-plugin
+    app.kubernetes.io/component: intelligence-sidecar
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hrms-agentic-plugin
+  template:
+    metadata:
+      labels:
+        app: hrms-agentic-plugin
+    spec:
+      containers:
+        - name: plugin-api
+          image: ghcr.io/your-org/hrms-agentic-plugin:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: HOST_HRMS_BASE_URL
+              value: "http://iceipts-hrms-service:5000"
+            - name: HRMS_VENDOR_PROFILE
+              value: "iceipts"
+            - name: PORT
+              value: "8000"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hrms-plugin-secrets
+                  key: jwt-secret
+                  optional: true
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20

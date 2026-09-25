@@ -166,10 +166,7 @@ class StatutoryPayrollAgent:
         daily_basic = _d(basic / Decimal("30.0"))
         monthly_eosb = _d((daily_basic * Decimal("21.0")) / Decimal("12.0"))
 
-        citations = [
-            self.kb.format_citation(c)
-            for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
-        ]
+        citations = [self.kb.format_citation(c) for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)]
 
         return UaeSalaryStructure(
             monthly_gross=float(gross),
@@ -214,8 +211,7 @@ class StatutoryPayrollAgent:
             breakdown += f" (Capped at 2 years' basic wage statutory limit of AED {max_cap})"
 
         matching = [
-            c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE)
-            if "Article 51" in c.section_or_article
+            c for c in self.kb.get_citations_by_jurisdiction(Jurisdiction.UAE) if "Article 51" in c.section_or_article
         ]
         citation = self.kb.format_citation(matching[0]) if matching else "UAE Federal Decree-Law No. 33 of 2021"
 

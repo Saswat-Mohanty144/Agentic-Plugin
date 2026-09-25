@@ -196,8 +196,14 @@ CANONICAL_SPECIFICATIONS: Dict[str, Dict[str, Dict[str, Any]]] = {
         },
         "work_email": {
             "synonyms": [
-                "work_email", "email", "office_email", "official_email",
-                "corporate_email", "mail_addr", "mail", "user_email",
+                "work_email",
+                "email",
+                "office_email",
+                "official_email",
+                "corporate_email",
+                "mail_addr",
+                "mail",
+                "user_email",
             ],
             "transform": "strip",
             "preferred_types": [FieldDataType.STRING],
@@ -205,8 +211,14 @@ CANONICAL_SPECIFICATIONS: Dict[str, Dict[str, Dict[str, Any]]] = {
         },
         "joining_date": {
             "synonyms": [
-                "joining_date", "date_of_joining", "doj", "hire_date",
-                "employment_date", "start_date", "join_dt", "join_date",
+                "joining_date",
+                "date_of_joining",
+                "doj",
+                "hire_date",
+                "employment_date",
+                "start_date",
+                "join_dt",
+                "join_date",
             ],
             "transform": "date",
             "preferred_types": [FieldDataType.DATE, FieldDataType.DATETIME, FieldDataType.STRING],

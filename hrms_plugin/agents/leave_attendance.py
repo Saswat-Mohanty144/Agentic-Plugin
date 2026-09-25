@@ -16,10 +16,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     delta_phi = math.radians(lat2 - lat1)
     delta_lambda = math.radians(lon2 - lon1)
 
-    a = (
-        math.sin(delta_phi / 2.0) ** 2
-        + math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2)
-    )
+    a = math.sin(delta_phi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2)
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
     return r * c
 
@@ -104,10 +101,7 @@ class LeaveAttendanceAgent:
                 requires_manager_override=True,
             )
         else:
-            reason = (
-                f"Insufficient balance: requested {requested_days} days "
-                f"but only {current_balance} days available."
-            )
+            reason = f"Insufficient balance: requested {requested_days} days but only {current_balance} days available."
             return LeaveDeductionResult(
                 employee_id=employee_id,
                 leave_type=leave_type,

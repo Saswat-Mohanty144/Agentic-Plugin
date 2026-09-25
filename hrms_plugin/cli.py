@@ -93,7 +93,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"Net Monthly Take-Home: INR {res_in.net_take_home:,.2f}")
         return 0
 
-
     elif args.command == "audit-compliance":
         comp = ComplianceAgent(kb=kb)
         employees = []
@@ -133,7 +132,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             print("No exclusionary terms detected. The job description is gender-neutral and EEO compliant.")
         return 0
-
 
     return 0
 

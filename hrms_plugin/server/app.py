@@ -145,9 +145,9 @@ def synthesize_mapping(req: SynthesizeRequest):
     domain_enum = EntityType(req.domain.upper())
     # Create synthetic DiscoveredEntity from fields
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
+
     discovered_fields_dict = {
-        f["name"]: DiscoveredField(name=f["name"], path=f.get("path", f["name"]))
-        for f in req.discovered_fields
+        f["name"]: DiscoveredField(name=f["name"], path=f.get("path", f["name"])) for f in req.discovered_fields
     }
     discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
     mapping, report = synthesizer.synthesize(
@@ -223,6 +223,7 @@ def get_compliance_diagnosis(
     ]
 
     from hrms_plugin.rag.store import Jurisdiction
+
     jur_enum = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
     audit_res = compliance_agent.audit_employees(
         tenant_id=tenant_id,
@@ -232,33 +233,35 @@ def get_compliance_diagnosis(
 
     action_items = []
     for v in audit_res.violations:
-        action_items.append({
-            "id": v.violation_id,
-            "severity": v.severity,
-            "title": f"Statutory Violation: {v.rule_name}",
-            "description": v.description,
-            "affected_count": 1,
-            "action_type": "APPLY_STATUTORY_REMEDIATION",
-            "statutory_ref": v.statutory_citation,
-            "jurisdiction": jur_enum.value,
-            "requires_human_approval": True,
-            "suggested_fix": {
-                "label": "1-Click Auto Fix",
-                "target_endpoint": "/api/employees/update",
-                "method": "PATCH",
-            },
-            "remediation_patch": {
-                "action_type": "UPDATE_RECORD",
-                "entity_id": v.employee_id or "EMP-101",
-                "target_endpoint": "/api/employees/update",
-                "http_method": "PATCH",
-                "diff_preview": {
-                    "statutory_alignment": {"from": "NON_COMPLIANT", "to": "RESOLVED"},
+        action_items.append(
+            {
+                "id": v.violation_id,
+                "severity": v.severity,
+                "title": f"Statutory Violation: {v.rule_name}",
+                "description": v.description,
+                "affected_count": 1,
+                "action_type": "APPLY_STATUTORY_REMEDIATION",
+                "statutory_ref": v.statutory_citation,
+                "jurisdiction": jur_enum.value,
+                "requires_human_approval": True,
+                "suggested_fix": {
+                    "label": "1-Click Auto Fix",
+                    "target_endpoint": "/api/employees/update",
+                    "method": "PATCH",
                 },
-                "direct_payload": v.remediation_patch or {},
-                "remediation_summary": f"Align records with {v.statutory_citation}",
-            },
-        })
+                "remediation_patch": {
+                    "action_type": "UPDATE_RECORD",
+                    "entity_id": v.employee_id or "EMP-101",
+                    "target_endpoint": "/api/employees/update",
+                    "http_method": "PATCH",
+                    "diff_preview": {
+                        "statutory_alignment": {"from": "NON_COMPLIANT", "to": "RESOLVED"},
+                    },
+                    "direct_payload": v.remediation_patch or {},
+                    "remediation_summary": f"Align records with {v.statutory_citation}",
+                },
+            }
+        )
 
     score = 92 if audit_res.is_compliant else max(50, 100 - (len(audit_res.violations) * 15))
 
@@ -304,8 +307,5 @@ def legacy_chat_adapter(
         "success": True,
         "reply": resp.reply_text,
         "statutory_citations": resp.statutory_citations,
-        "tool_calls": [
-            {"tool": resp.routed_agent, "args": {"intent": resp.intent.value}}
-        ],
+        "tool_calls": [{"tool": resp.routed_agent, "args": {"intent": resp.intent.value}}],
     }
-

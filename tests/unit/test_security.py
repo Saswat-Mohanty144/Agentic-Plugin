@@ -86,14 +86,20 @@ def test_separation_of_duties_self_approval(rbac_enforcer):
     manager = AuthContext(user_id="MGR-001", tenant_id="T1", role=UserRole.DEPARTMENT_MANAGER)
 
     # Manager approving peer's leave -> Allowed
-    assert rbac_enforcer.validate_separation_of_duties(
-        manager, target_employee_id="EMP-002", action=Permission.APPROVE_LEAVE
-    ) is True
+    assert (
+        rbac_enforcer.validate_separation_of_duties(
+            manager, target_employee_id="EMP-002", action=Permission.APPROVE_LEAVE
+        )
+        is True
+    )
 
     # Manager approving their own leave -> Blocked
-    assert rbac_enforcer.validate_separation_of_duties(
-        manager, target_employee_id="MGR-001", action=Permission.APPROVE_LEAVE
-    ) is False
+    assert (
+        rbac_enforcer.validate_separation_of_duties(
+            manager, target_employee_id="MGR-001", action=Permission.APPROVE_LEAVE
+        )
+        is False
+    )
 
 
 def test_host_audit_headers_creation(audit_gateway):

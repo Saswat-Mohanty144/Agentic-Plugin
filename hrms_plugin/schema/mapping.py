@@ -166,9 +166,7 @@ class FieldMap:
 
         fn = TRANSFORMS.get(self.transform)
         if fn is None:
-            raise MappingError(
-                f"{self.target}: unknown transform {self.transform!r}. Available: {sorted(TRANSFORMS)}"
-            )
+            raise MappingError(f"{self.target}: unknown transform {self.transform!r}. Available: {sorted(TRANSFORMS)}")
         value = fn(raw)
 
         if value is not None and self.values:
@@ -178,9 +176,7 @@ class FieldMap:
         if value in (None, "", []):
             value = self.default
         if self.required and value in (None, "", []):
-            raise MappingError(
-                f"required field {self.target!r} is empty; looked in {list(paths)}"
-            )
+            raise MappingError(f"required field {self.target!r} is empty; looked in {list(paths)}")
         return value
 
 
@@ -199,9 +195,7 @@ class EntityMapping:
     def external_id(self, payload: Dict[str, Any]) -> str:
         value = resolve_path(payload, self.id_path)
         if value in (None, ""):
-            raise MappingError(
-                f"{self.vendor}/{self.entity_type}: no id at path {self.id_path!r}."
-            )
+            raise MappingError(f"{self.vendor}/{self.entity_type}: no id at path {self.id_path!r}.")
         return str(value)
 
     def version(self, payload: Dict[str, Any]) -> Optional[str]:
@@ -230,9 +224,7 @@ class EntityMapping:
     def to_vendor(self, canonical: Dict[str, Any]) -> Dict[str, Any]:
         """Project canonical fields back onto vendor write paths."""
         if not self.writeback:
-            raise MappingError(
-                f"{self.vendor}/{self.entity_type} is read-only: no writeback mapping"
-            )
+            raise MappingError(f"{self.vendor}/{self.entity_type} is read-only: no writeback mapping")
         payload: Dict[str, Any] = {}
         for canonical_field, vendor_path in self.writeback.items():
             if canonical_field not in canonical:

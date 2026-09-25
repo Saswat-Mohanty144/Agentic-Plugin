@@ -128,4 +128,3 @@ def test_e2e_zero_shot_schema_adaptation_lifecycle(client):
     canonical_targets = [fm["canonical_target"] for fm in synth_data["field_mappings"]]
     assert "work_email" in canonical_targets
     assert "full_name" in canonical_targets
-
