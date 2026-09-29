@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from hrms_plugin.agents.compliance import ComplianceAgent
@@ -13,6 +16,7 @@ from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
+from hrms_plugin.agents.voice import VoiceAgent
 from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
@@ -20,6 +24,9 @@ from hrms_plugin.schema.synthesizer import MappingSynthesizer
 from hrms_plugin.security.audit import HostAuditGateway
 from hrms_plugin.security.masking import PiiMaskingGateway
 from hrms_plugin.security.rbac import AuthContext, Permission, RbacPolicyEnforcer, UserRole
+from hrms_plugin.storage.mapping_store import MappingStore
+from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
+from hrms_plugin.storage.vault_store import PiiVaultStore
 
 app = FastAPI(
     title="Agentic HRMS AI Plugin Service",
@@ -49,7 +56,14 @@ supervisor = SupervisorAgent(
     leave_agent=leave_agent,
     recruitment_agent=recruitment_agent,
 )
-pii_gateway = PiiMaskingGateway()
+voice_agent = VoiceAgent()
+
+# Persistent storage singletons
+_storage = SqliteKeyValueStore(".hrms_data/plugin_storage.db")
+vault_store = PiiVaultStore(backend=_storage)
+mapping_store = MappingStore(backend=_storage)
+
+pii_gateway = PiiMaskingGateway(store=vault_store)
 rbac_enforcer = RbacPolicyEnforcer()
 audit_gateway = HostAuditGateway()
 introspector = SchemaIntrospector()
@@ -62,6 +76,26 @@ class ChatRequest(BaseModel):
     jurisdiction: str = "IN"
     context: Optional[Dict[str, Any]] = None
     mask_pii: bool = True
+    agentic: bool = False
+    history: Optional[List[Dict[str, str]]] = None
+
+
+class VoiceTranscribeRequest(BaseModel):
+    audio_base64: str
+    language_code: Optional[str] = "en-IN"
+
+
+class VoiceSynthesizeRequest(BaseModel):
+    text: str
+    target_language: Optional[str] = "en-IN"
+    speaker: Optional[str] = "meera"
+
+
+class VoiceTurnRequest(BaseModel):
+    audio_base64: str
+    user_id: str = "USR-001"
+    jurisdiction: str = "IN"
+    language_code: Optional[str] = "en-IN"
 
 
 class IntrospectRequest(BaseModel):
@@ -93,26 +127,107 @@ def healthz():
 
 
 @app.post("/v1/chat", response_model=AgentResponse)
-def chat_endpoint(
+async def chat_endpoint(
     req: ChatRequest,
     x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
 ):
-    """Unified conversational AI copilot endpoint with automatic PII masking and intent routing."""
+    """Unified conversational AI copilot endpoint with automatic PII masking and agentic tool reasoning."""
     text_to_process = req.message
     if req.mask_pii:
         text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=x_tenant_id)
 
-    response = supervisor.process_message(
-        message=text_to_process,
-        jurisdiction=req.jurisdiction,
-        context=req.context,
-    )
+    if req.agentic:
+        response = await supervisor.process_agentic(
+            message=text_to_process,
+            jurisdiction=req.jurisdiction,
+            context=req.context,
+            tenant_id=x_tenant_id,
+            history=req.history,
+        )
+    else:
+        response = supervisor.process_message(
+            message=text_to_process,
+            jurisdiction=req.jurisdiction,
+            context=req.context,
+        )
 
     # De-tokenize if masked
     if req.mask_pii:
         response.reply_text = pii_gateway.unmask_text(response.reply_text, tenant_id=x_tenant_id)
 
     return response
+
+
+@app.post("/v1/chat/stream")
+async def chat_stream_endpoint(
+    req: ChatRequest,
+    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+):
+    """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
+
+    async def event_generator():
+        text_to_process = req.message
+        if req.mask_pii:
+            text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=x_tenant_id)
+
+        async for chunk in supervisor.stream_agentic(
+            message=text_to_process,
+            jurisdiction=req.jurisdiction,
+            context=req.context,
+            tenant_id=x_tenant_id,
+        ):
+            yield f"data: {json.dumps(chunk)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/v1/voice/transcribe")
+async def voice_transcribe(req: VoiceTranscribeRequest):
+    """Transcribe base64 audio bytes via Sarvam AI Saaras model."""
+    audio_bytes = base64.b64decode(req.audio_base64)
+    res = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
+    return res
+
+
+@app.post("/v1/voice/synthesize")
+async def voice_synthesize(req: VoiceSynthesizeRequest):
+    """Synthesize text into natural voice audio via Sarvam AI Bulbul model."""
+    res = await voice_agent.synthesize_speech(
+        text=req.text,
+        target_language=req.target_language,
+        speaker=req.speaker,
+    )
+    return res
+
+
+@app.post("/v1/voice/turn")
+async def voice_turn(req: VoiceTurnRequest, x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id")):
+    """Full-duplex multimodal turn: Audio In -> Transcribe -> ReAct Agent Brain -> Spoken Audio Out."""
+    audio_bytes = base64.b64decode(req.audio_base64)
+    stt = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
+    transcript = stt.get("transcript", "")
+
+    # Run agentic turn
+    agent_res = await supervisor.process_agentic(
+        message=transcript,
+        jurisdiction=req.jurisdiction,
+        tenant_id=x_tenant_id,
+    )
+
+    # Synthesize spoken voice reply
+    tts = await voice_agent.synthesize_speech(
+        text=agent_res.reply_text,
+        target_language=stt.get("language_code", "en-IN"),
+    )
+
+    return {
+        "transcript_in": transcript,
+        "reply_text": agent_res.reply_text,
+        "reply_audio_base64": tts.get("audio_base64"),
+        "routed_agent": agent_res.routed_agent,
+        "statutory_citations": agent_res.statutory_citations,
+        "suggested_actions": agent_res.suggested_actions,
+    }
 
 
 @app.post("/v1/schema/introspect")
@@ -140,10 +255,12 @@ def introspect_schema(req: IntrospectRequest):
 
 
 @app.post("/v1/schema/synthesize")
-def synthesize_mapping(req: SynthesizeRequest):
+def synthesize_mapping(
+    req: SynthesizeRequest,
+    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+):
     """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
     domain_enum = EntityType(req.domain.upper())
-    # Create synthetic DiscoveredEntity from fields
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
 
     discovered_fields_dict = {
@@ -154,7 +271,52 @@ def synthesize_mapping(req: SynthesizeRequest):
         discovered=discovered,
         canonical_type=domain_enum,
     )
+    mapping_store.save_mapping(tenant_id=x_tenant_id, mapping=mapping)
     return report.model_dump()
+
+
+@app.post("/v1/schema/synthesize/agentic")
+async def synthesize_mapping_agentic(
+    req: SynthesizeRequest,
+    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+):
+    """Synthesize FieldMap with LLM semantic reasoning over ambiguous/vendor host fields."""
+    domain_enum = EntityType(req.domain.upper())
+    from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
+
+    discovered_fields_dict = {
+        f["name"]: DiscoveredField(name=f["name"], path=f.get("path", f["name"])) for f in req.discovered_fields
+    }
+    discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
+    mapping, report = await synthesizer.synthesize_agentic(
+        discovered=discovered,
+        canonical_type=domain_enum,
+    )
+    mapping_store.save_mapping(tenant_id=x_tenant_id, mapping=mapping)
+    return report.model_dump()
+
+
+@app.get("/v1/schema/mappings")
+def list_schema_mappings(x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id")):
+    """List all persisted dynamic entity mappings for this tenant."""
+    return {
+        "tenant_id": x_tenant_id,
+        "mappings": mapping_store.list_mappings(x_tenant_id),
+    }
+
+
+@app.get("/v1/schema/mappings/{vendor}/{entity_type}")
+def get_schema_mapping(
+    vendor: str,
+    entity_type: str,
+    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+):
+    """Retrieve the exact compiled FieldMap for a given vendor and entity type."""
+    mapping = mapping_store.load_mapping(x_tenant_id, vendor, entity_type)
+    if not mapping:
+        raise HTTPException(status_code=404, detail=f"No mapping found for {vendor}/{entity_type}")
+    from hrms_plugin.storage.mapping_store import entity_mapping_to_dict
+    return entity_mapping_to_dict(mapping)
 
 
 @app.post("/v1/remediate/execute")

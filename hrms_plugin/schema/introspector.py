@@ -263,7 +263,29 @@ class SchemaIntrospector:
         segments = [s for s in path_url.strip("/").split("/") if s and not s.startswith("{")]
         if not segments:
             return "Root"
-        candidate = segments[0]
+        # Filter out common technical API prefix segments
+        filtered = [
+            s
+            for s in segments
+            if s.lower()
+            not in (
+                "api",
+                "v1",
+                "v2",
+                "v3",
+                "v4",
+                "rest",
+                "services",
+                "service",
+                "endpoint",
+                "endpoints",
+                "hrms",
+                "app",
+                "server",
+                "hrmsserver",
+            )
+        ]
+        candidate = filtered[0] if filtered else segments[-1]
         if candidate.endswith("ies"):
             candidate = candidate[:-3] + "y"
         elif candidate.endswith("s") and not candidate.endswith("ss"):

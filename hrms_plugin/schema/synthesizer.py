@@ -325,6 +325,237 @@ CANONICAL_SPECIFICATIONS: Dict[str, Dict[str, Dict[str, Any]]] = {
             "preferred_types": [FieldDataType.STRING],
         },
     },
+    EntityType.PAYSLIP.value: {
+        "employee_ref": {
+            "synonyms": [
+                "employee_id", "emp_id", "employeeId", "employee_ref",
+                "empId", "worker_id", "employee_code", "emp_code",
+            ],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "month": {
+            "synonyms": ["month", "payroll_month", "pay_month", "period_month"],
+            "transform": "int",
+            "preferred_types": [FieldDataType.INTEGER, FieldDataType.NUMBER, FieldDataType.STRING],
+            "required": True,
+        },
+        "year": {
+            "synonyms": ["year", "payroll_year", "pay_year", "period_year"],
+            "transform": "int",
+            "preferred_types": [FieldDataType.INTEGER, FieldDataType.NUMBER, FieldDataType.STRING],
+            "required": True,
+        },
+        "basic_salary": {
+            "synonyms": ["basic", "basic_salary", "basic_pay", "base_salary", "base_pay", "basicWage"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "gross_salary": {
+            "synonyms": [
+                "gross", "gross_salary", "gross_pay", "total_earnings", "earnings_total", "total_gross",
+            ],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "net_pay": {
+            "synonyms": [
+                "net", "net_pay", "net_salary", "take_home", "take_home_pay", "disbursed_amount", "net_amount",
+            ],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "total_deductions": {
+            "synonyms": ["deductions", "total_deductions", "deductions_total"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+        },
+        "total_allowances": {
+            "synonyms": ["allowances", "total_allowances", "allowances_total"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+        },
+        "currency": {
+            "synonyms": ["currency", "currency_code", "curr"],
+            "transform": "strip",
+            "default": "USD",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "payslip_url": {
+            "synonyms": ["pdf_url", "payslip_url", "document_url", "download_url", "file_url"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "status": {
+            "synonyms": ["status", "payment_status", "state"],
+            "transform": "upper",
+            "preferred_types": [FieldDataType.STRING],
+            "enum_map": {
+                "PAID": "PAID",
+                "COMPLETED": "PAID",
+                "PENDING": "PENDING",
+                "DRAFT": "DRAFT",
+            },
+        },
+    },
+    EntityType.LEAVE_BALANCE.value: {
+        "employee_ref": {
+            "synonyms": ["employee_id", "emp_id", "employeeId", "employee_ref", "empId"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "leave_type": {
+            "synonyms": ["leave_type", "leave_type_id", "type", "category"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "allocated_days": {
+            "synonyms": ["allocated", "allocated_days", "annual_allocation", "entitlement", "total_allocated"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "used_days": {
+            "synonyms": ["used", "used_days", "taken", "leaves_taken", "consumed_days"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "remaining_days": {
+            "synonyms": ["remaining", "remaining_days", "balance", "leave_balance", "available_days"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "fiscal_year": {
+            "synonyms": ["fiscal_year", "year", "period", "validity_year"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING, FieldDataType.INTEGER],
+        },
+    },
+    EntityType.EXPENSE_CLAIM.value: {
+        "employee_ref": {
+            "synonyms": ["employee_id", "emp_id", "employeeId", "claimant_id", "user_id"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "claim_type": {
+            "synonyms": ["claim_type", "expense_type", "category", "type"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "amount": {
+            "synonyms": ["amount", "total_amount", "claim_amount", "expense_amount"],
+            "transform": "decimal",
+            "preferred_types": [FieldDataType.NUMBER, FieldDataType.INTEGER, FieldDataType.STRING],
+            "required": True,
+        },
+        "currency": {
+            "synonyms": ["currency", "currency_code", "curr"],
+            "transform": "strip",
+            "default": "USD",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "claim_date": {
+            "synonyms": ["claim_date", "expense_date", "date", "incurred_on"],
+            "transform": "date",
+            "preferred_types": [FieldDataType.DATE, FieldDataType.DATETIME, FieldDataType.STRING],
+        },
+        "description": {
+            "synonyms": ["description", "remarks", "purpose", "notes"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "status": {
+            "synonyms": ["status", "approval_status", "claim_status"],
+            "transform": "upper",
+            "preferred_types": [FieldDataType.STRING],
+            "enum_map": {
+                "DRAFT": "DRAFT",
+                "PENDING": "PENDING",
+                "APPROVED": "APPROVED",
+                "REJECTED": "REJECTED",
+                "REIMBURSED": "REIMBURSED",
+            },
+        },
+    },
+    EntityType.ASSET.value: {
+        "asset_tag": {
+            "synonyms": ["asset_tag", "tag", "asset_id", "barcode", "inventory_number"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "asset_type": {
+            "synonyms": ["asset_type", "category", "type", "device_type"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "model": {
+            "synonyms": ["model", "model_number", "device_model", "name"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "serial_number": {
+            "synonyms": ["serial_number", "serial", "imei", "service_tag"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "assigned_to": {
+            "synonyms": ["assigned_to", "assigned_to_id", "employee_id", "owner_id", "user_id"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "status": {
+            "synonyms": ["status", "state", "asset_status"],
+            "transform": "upper",
+            "preferred_types": [FieldDataType.STRING],
+            "enum_map": {
+                "IN_USE": "IN_USE",
+                "ASSIGNED": "IN_USE",
+                "AVAILABLE": "AVAILABLE",
+                "MAINTENANCE": "MAINTENANCE",
+                "RETIRED": "RETIRED",
+            },
+        },
+    },
+    EntityType.ATTENDANCE_REQUEST.value: {
+        "employee_ref": {
+            "synonyms": ["employee_id", "emp_id", "employeeId", "user_id"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+            "required": True,
+        },
+        "request_date": {
+            "synonyms": ["request_date", "date", "attendance_date", "log_date"],
+            "transform": "date",
+            "preferred_types": [FieldDataType.DATE, FieldDataType.DATETIME, FieldDataType.STRING],
+            "required": True,
+        },
+        "reason": {
+            "synonyms": ["reason", "remarks", "explanation"],
+            "transform": "strip",
+            "preferred_types": [FieldDataType.STRING],
+        },
+        "status": {
+            "synonyms": ["status", "approval_status", "state"],
+            "transform": "upper",
+            "preferred_types": [FieldDataType.STRING],
+            "enum_map": {
+                "PENDING": "PENDING",
+                "APPROVED": "APPROVED",
+                "REJECTED": "REJECTED",
+            },
+        },
+    },
 }
 
 
@@ -340,10 +571,29 @@ class MappingSynthesizer:
     ) -> Tuple[EntityMapping, SynthesisReport]:
         entity_key = canonical_type.value if isinstance(canonical_type, EntityType) else str(canonical_type)
         spec = CANONICAL_SPECIFICATIONS.get(entity_key)
+
+        # Dynamic fallback: if entity type is custom or not pre-defined, construct dynamic spec
         if not spec:
-            raise ValueError(
-                f"Unsupported canonical entity type: {entity_key}. Available: {list(CANONICAL_SPECIFICATIONS.keys())}"
-            )
+            spec = {}
+            for fname, fobj in discovered.fields.items():
+                transform = "strip"
+                if fobj.data_type == FieldDataType.INTEGER:
+                    transform = "int"
+                elif fobj.data_type == FieldDataType.NUMBER:
+                    transform = "decimal"
+                elif fobj.data_type == FieldDataType.DATE:
+                    transform = "date"
+                elif fobj.data_type == FieldDataType.DATETIME:
+                    transform = "datetime"
+                elif fobj.data_type == FieldDataType.BOOLEAN:
+                    transform = "bool"
+
+                spec[fname] = {
+                    "synonyms": [fname, fname.lower(), fname.replace("_", "")],
+                    "transform": transform,
+                    "preferred_types": [fobj.data_type],
+                    "required": fobj.is_required,
+                }
 
         # Resolve ID field
         id_path = discovered.id_field
@@ -524,3 +774,88 @@ class MappingSynthesizer:
                         out[h_val] = c_v
                         break
         return out
+
+    @classmethod
+    async def synthesize_agentic(
+        cls,
+        discovered: DiscoveredEntity,
+        canonical_type: EntityType | str,
+        llm_gateway: Optional[Any] = None,
+        vendor: str = "custom",
+    ) -> Tuple[EntityMapping, SynthesisReport]:
+        """Synthesize schema mappings with LLM semantic reasoning over ambiguous/vendor fields."""
+        mapping, report = cls.synthesize(discovered, canonical_type, vendor=vendor)
+
+        if not report.unmapped_canonical_fields or not report.unmapped_host_fields:
+            return mapping, report
+
+        try:
+            import json
+
+            from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass
+
+            gateway = llm_gateway or LLMGateway()
+
+            prompt = (
+                f"You are a Senior Data Architect mapping host HRMS fields to Canonical Domain Models.\n"
+                f"Domain: {report.entity_type}\n"
+                f"Unmapped Canonical Fields Needed: {report.unmapped_canonical_fields}\n"
+                f"Available Unmapped Host Fields: {report.unmapped_host_fields}\n"
+                f"Provide a JSON object where keys are the canonical field names, and values are objects with "
+                f"'host_field' (the best matching host field), 'confidence' (float 0.0 to 1.0), "
+                f"and 'rationale' (short reason).\n"
+                f"Return only valid JSON."
+            )
+
+            llm_res = await gateway.chat(
+                messages=[ChatMessage(role="user", content=prompt)],
+                task_class=TaskClass.EXTRACTION,
+            )
+            res_text = llm_res.content.strip()
+            if res_text.startswith("```json"):
+                res_text = res_text[7:]
+            if res_text.startswith("```"):
+                res_text = res_text[3:]
+            if res_text.endswith("```"):
+                res_text = res_text[:-3]
+
+            parsed = json.loads(res_text.strip())
+            new_field_maps = list(mapping.fields)
+            synthesized_fms = list(report.field_mappings)
+
+            for can_field, match_info in parsed.items():
+                if can_field in report.unmapped_canonical_fields and isinstance(match_info, dict):
+                    h_field = match_info.get("host_field")
+                    conf = float(match_info.get("confidence", 0.85))
+                    rat = str(match_info.get("rationale", "LLM Semantic Match"))
+                    if h_field in report.unmapped_host_fields and h_field in discovered.fields:
+                        f_map = FieldMap(
+                            canonical=can_field,
+                            host=discovered.fields[h_field].path,
+                            transform="string",
+                        )
+                        new_field_maps.append(f_map)
+                        synthesized_fms.append(
+                            SynthesizedFieldMap(
+                                canonical_target=can_field,
+                                host_source_path=discovered.fields[h_field].path,
+                                transform="string",
+                                confidence=conf,
+                                rationale=rat,
+                            )
+                        )
+                        report.unmapped_canonical_fields.remove(can_field)
+                        report.unmapped_host_fields.remove(h_field)
+
+            upgraded_mapping = EntityMapping(
+                vendor=mapping.vendor,
+                entity_type=mapping.entity_type,
+                id_path=mapping.id_path,
+                fields=tuple(new_field_maps),
+                writeback=mapping.writeback,
+            )
+            report.field_mappings = synthesized_fms
+            report.average_confidence = sum(f.confidence for f in synthesized_fms) / max(1, len(synthesized_fms))
+            return upgraded_mapping, report
+        except Exception:
+            return mapping, report

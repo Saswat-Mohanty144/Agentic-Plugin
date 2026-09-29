@@ -24,6 +24,9 @@ __all__ = [
     "CanonicalLeaveBalance",
     "CanonicalPunch",
     "CanonicalAsset",
+    "CanonicalPayslip",
+    "CanonicalExpenseClaim",
+    "CanonicalAttendanceRequest",
     "CanonicalError",
 ]
 
@@ -203,6 +206,52 @@ class CanonicalAsset:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class CanonicalPayslip:
+    source_ref: SourceRef
+    tenant_id: str
+    employee_ref: str
+    month: int
+    year: int
+    basic_salary: Decimal
+    gross_salary: Decimal
+    net_pay: Decimal
+    total_deductions: Decimal = Decimal("0.00")
+    total_allowances: Decimal = Decimal("0.00")
+    currency: str = "USD"
+    payslip_url: Optional[str] = None
+    status: Optional[str] = "PAID"
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class CanonicalExpenseClaim:
+    source_ref: SourceRef
+    tenant_id: str
+    employee_ref: str
+    claim_type: str
+    amount: Decimal
+    currency: str = "USD"
+    claim_date: Optional[date] = None
+    description: Optional[str] = None
+    receipt_urls: List[str] = field(default_factory=list)
+    status: str = "PENDING"
+    approved_by: Optional[str] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class CanonicalAttendanceRequest:
+    source_ref: SourceRef
+    tenant_id: str
+    employee_ref: str
+    request_date: date
+    reason: Optional[str] = None
+    status: str = "PENDING"
+    approved_by: Optional[str] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+
 CanonicalEntity = Union[
     CanonicalCandidate,
     CanonicalRequisition,
@@ -211,4 +260,7 @@ CanonicalEntity = Union[
     CanonicalLeaveBalance,
     CanonicalPunch,
     CanonicalAsset,
+    CanonicalPayslip,
+    CanonicalExpenseClaim,
+    CanonicalAttendanceRequest,
 ]

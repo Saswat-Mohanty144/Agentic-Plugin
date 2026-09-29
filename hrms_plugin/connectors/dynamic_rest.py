@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Type
 
 import httpx
 
+from hrms_plugin.connectors.auth import AuthStrategy
 from hrms_plugin.connectors.base import (
     BaseHRMSConnector,
     ConnectorConfig,
@@ -20,6 +21,7 @@ from hrms_plugin.connectors.base import (
 )
 from hrms_plugin.connectors.concurrency import IdempotencyManager, compute_idempotency_key
 from hrms_plugin.connectors.profiles import VendorProfile, get_vendor_profile
+from hrms_plugin.connectors.resilience import CircuitBreaker, TokenBucketRateLimiter
 from hrms_plugin.schema.canonical import (
     CanonicalAsset,
     CanonicalCandidate,
@@ -58,12 +60,18 @@ class DynamicRESTConnector(BaseHRMSConnector):
         profile: Optional[VendorProfile] = None,
         mappings: Optional[Dict[EntityType, EntityMapping]] = None,
         idempotency_manager: Optional[IdempotencyManager] = None,
+        auth_strategy: Optional[AuthStrategy] = None,
+        rate_limiter: Optional[TokenBucketRateLimiter] = None,
+        circuit_breaker: Optional[CircuitBreaker] = None,
         client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         super().__init__(config)
         self.profile = profile or get_vendor_profile(config.vendor_name)
         self.mappings = mappings or {}
         self.idempotency = idempotency_manager or IdempotencyManager()
+        self.auth_strategy = auth_strategy
+        self.rate_limiter = rate_limiter
+        self.circuit_breaker = circuit_breaker or CircuitBreaker(vendor_name=config.vendor_name)
 
         if client is not None:
             self._client = client
@@ -96,23 +104,39 @@ class DynamicRESTConnector(BaseHRMSConnector):
         json_data: Optional[Any] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> httpx.Response:
-        """Execute an HTTP request with retry logic for transient errors."""
+        """Execute an HTTP request with rate limiting, circuit breaker, and retry logic for transient errors."""
         url = path if path.startswith("http") else f"{self.config.base_url}{path}"
         max_attempts = max(1, self.config.max_retries)
         last_error: Optional[Exception] = None
 
+        # Build request headers including dynamic auth strategy
+        req_headers = dict(headers or {})
+        if self.auth_strategy:
+            auth_hdrs = await self.auth_strategy.get_headers()
+            req_headers.update(auth_hdrs)
+
         for attempt in range(1, max_attempts + 1):
             try:
+                # 1. Enforce circuit breaker health
+                if self.circuit_breaker:
+                    await self.circuit_breaker.before_request()
+
+                # 2. Enforce token-bucket rate limits
+                if self.rate_limiter:
+                    await self.rate_limiter.acquire()
+
                 response = await self._client.request(
                     method=method,
                     url=url,
-                    headers=headers,
+                    headers=req_headers,
                     json=json_data,
                     params=params,
                 )
 
                 # Retry on transient server errors (502, 503, 504, 429)
                 if response.status_code in (429, 502, 503, 504) and attempt < max_attempts:
+                    if self.circuit_breaker and response.status_code >= 500:
+                        await self.circuit_breaker.record_failure(Exception(f"Transient HTTP {response.status_code}"))
                     backoff = self.config.backoff_factor * (2 ** (attempt - 1))
                     logger.warning(
                         "[connector:%s] transient status %d on %s %s (attempt %d/%d). Retrying in %.2fs...",
@@ -127,10 +151,17 @@ class DynamicRESTConnector(BaseHRMSConnector):
                     await asyncio.sleep(backoff)
                     continue
 
+                if response.is_success and self.circuit_breaker:
+                    await self.circuit_breaker.record_success()
+                elif response.status_code >= 500 and self.circuit_breaker:
+                    await self.circuit_breaker.record_failure(Exception(f"Server error HTTP {response.status_code}"))
+
                 return response
 
             except (httpx.ConnectError, httpx.ReadError) as net_err:
                 last_error = net_err
+                if self.circuit_breaker:
+                    await self.circuit_breaker.record_failure(net_err)
                 if attempt < max_attempts:
                     backoff = self.config.backoff_factor * (2 ** (attempt - 1))
                     logger.warning(
@@ -146,6 +177,8 @@ class DynamicRESTConnector(BaseHRMSConnector):
                     await asyncio.sleep(backoff)
                     continue
             except httpx.TimeoutException as timeout_err:
+                if self.circuit_breaker:
+                    await self.circuit_breaker.record_failure(timeout_err)
                 raise HRMSTimeoutError(
                     message=f"Request to {method} {url} timed out after {self.config.timeout_seconds}s",
                     vendor=self.config.vendor_name,

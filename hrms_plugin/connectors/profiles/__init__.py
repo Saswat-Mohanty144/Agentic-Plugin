@@ -6,6 +6,7 @@ from typing import Dict, Type
 
 from hrms_plugin.connectors.profiles.bamboohr import BambooHRProfile
 from hrms_plugin.connectors.profiles.base_profile import VendorProfile
+from hrms_plugin.connectors.profiles.dynamic import DynamicVendorProfile
 from hrms_plugin.connectors.profiles.frappe import FrappeProfile
 from hrms_plugin.connectors.profiles.generic import GenericProfile
 from hrms_plugin.connectors.profiles.iceipts import IceiptsProfile, extract_jwt_user_id
@@ -13,6 +14,7 @@ from hrms_plugin.connectors.profiles.workday import WorkdayProfile
 
 _PROFILES: Dict[str, Type[VendorProfile]] = {
     "generic": GenericProfile,
+    "dynamic": DynamicVendorProfile,
     "iceipts": IceiptsProfile,
     "iceipts_hrms": IceiptsProfile,
     "frappe": FrappeProfile,
@@ -32,6 +34,7 @@ def get_vendor_profile(vendor_name: str, **kwargs) -> VendorProfile:
 __all__ = [
     "VendorProfile",
     "GenericProfile",
+    "DynamicVendorProfile",
     "IceiptsProfile",
     "FrappeProfile",
     "BambooHRProfile",

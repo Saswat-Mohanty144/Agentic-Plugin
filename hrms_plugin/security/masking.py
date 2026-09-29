@@ -29,9 +29,10 @@ class PiiMaskingGateway:
         "PHONE": re.compile(r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b"),
     }
 
-    def __init__(self):
-        # In-memory ephemeral vault keyed by token string
+    def __init__(self, store: Optional[Any] = None):
+        # In-memory ephemeral vault keyed by token string for sub-millisecond retrieval
         self._vault: Dict[str, PiiVaultEntry] = {}
+        self.store = store
 
     def mask_text(
         self,
@@ -61,6 +62,9 @@ class PiiMaskingGateway:
                         existing_token = t
                         break
 
+                if not existing_token and self.store:
+                    existing_token = self.store.find_existing_token(raw_val, tenant_id=tenant_id)
+
                 if not existing_token:
                     token_id = uuid.uuid4().hex[:8].upper()
                     token_str = f"[VAULT_{entity_type}_{token_id}]"
@@ -71,6 +75,13 @@ class PiiMaskingGateway:
                         tenant_id=tenant_id,
                     )
                     self._vault[token_str] = entry
+                    if self.store:
+                        self.store.store_token(
+                            token_str=token_str,
+                            original_value=raw_val,
+                            entity_type=entity_type,
+                            tenant_id=tenant_id,
+                        )
                     generated_entries.append(entry)
                 else:
                     token_str = existing_token
@@ -114,6 +125,8 @@ class PiiMaskingGateway:
                         tenant_id=tenant_id,
                     )
                     self._vault[token_str] = entry
+                    if self.store:
+                        self.store.store_token(token_str, v, k.upper(), tenant_id)
                     masked_record[k] = token_str
                 else:
                     text_masked, _ = self.mask_text(v, tenant_id=tenant_id)
@@ -128,6 +141,8 @@ class PiiMaskingGateway:
                     tenant_id=tenant_id,
                 )
                 self._vault[token_str] = entry
+                if self.store:
+                    self.store.store_token(token_str, str(v), k.upper(), tenant_id)
                 masked_record[k] = token_str
             elif isinstance(v, dict):
                 masked_record[k] = self.mask_record_dict(v, tenant_id=tenant_id, sensitive_keys=keys_to_mask)
@@ -149,4 +164,20 @@ class PiiMaskingGateway:
         for token_str, entry in self._vault.items():
             if entry.tenant_id == tenant_id and token_str in unmasked:
                 unmasked = unmasked.replace(token_str, entry.original_value)
+
+        # If tokens remain and store is configured, fetch persisted tenant tokens
+        if "[VAULT_" in unmasked and self.store:
+            stored_tokens = self.store.get_all_for_tenant(tenant_id)
+            for token_str, data in stored_tokens.items():
+                if token_str in unmasked:
+                    orig = data.get("original_value", "")
+                    unmasked = unmasked.replace(token_str, orig)
+                    # Cache in memory
+                    self._vault[token_str] = PiiVaultEntry(
+                        token=token_str,
+                        original_value=orig,
+                        entity_type=data.get("entity_type", "PII"),
+                        tenant_id=tenant_id,
+                    )
+
         return unmasked

@@ -11,6 +11,19 @@ from hrms_plugin.agents.leave_attendance import (
     LeaveDeductionResult,
     TravelAnomaly,
 )
+from hrms_plugin.agents.offboarding import (
+    FinalSettlementStatement,
+    FnfTimelineAudit,
+    OffboardingAgent,
+    OffboardingClearance,
+)
+from hrms_plugin.agents.onboarding import (
+    DocumentChecklistResult,
+    OfferEvaluationResult,
+    OnboardingAgent,
+    ProvisioningPlanResult,
+)
+from hrms_plugin.agents.orchestrator import AgenticOrchestrator
 from hrms_plugin.agents.recruitment import (
     AtsScoreBreakdown,
     BiasAuditResult,
@@ -27,6 +40,12 @@ from hrms_plugin.agents.supervisor import (
     AgentResponse,
     SupervisorAgent,
     UserIntent,
+)
+from hrms_plugin.agents.tools import AgenticToolRegistry
+from hrms_plugin.agents.travel_expense import (
+    ExpenseAuditReport,
+    ExpenseViolation,
+    TravelExpenseAgent,
 )
 from hrms_plugin.agents.voice import VoiceAgent
 
@@ -50,4 +69,17 @@ __all__ = [
     "SupervisorAgent",
     "UserIntent",
     "VoiceAgent",
+    "AgenticOrchestrator",
+    "AgenticToolRegistry",
+    "OnboardingAgent",
+    "OfferEvaluationResult",
+    "DocumentChecklistResult",
+    "ProvisioningPlanResult",
+    "OffboardingAgent",
+    "FnfTimelineAudit",
+    "FinalSettlementStatement",
+    "OffboardingClearance",
+    "TravelExpenseAgent",
+    "ExpenseAuditReport",
+    "ExpenseViolation",
 ]

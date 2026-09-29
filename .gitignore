@@ -64,3 +64,9 @@ dist/
 Thumbs.db
 *.swp
 *.swo
+
+# Local plugin storage & databases
+.hrms_data/
+*.db
+*.sqlite
+*.sqlite3

@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from hrms_plugin.connectors.auth import (
+    ApiKeyAuth,
+    AuthStrategy,
+    BasicAuth,
+    OAuth2TokenManager,
+)
 from hrms_plugin.connectors.base import (
     BaseHRMSConnector,
     ConnectorConfig,
@@ -30,6 +36,12 @@ from hrms_plugin.connectors.profiles import (
     extract_jwt_user_id,
     get_vendor_profile,
 )
+from hrms_plugin.connectors.resilience import (
+    CircuitBreaker,
+    CircuitBreakerOpenError,
+    CircuitState,
+    TokenBucketRateLimiter,
+)
 
 __all__ = [
     "BaseHRMSConnector",
@@ -52,4 +64,12 @@ __all__ = [
     "IceiptsProfile",
     "extract_jwt_user_id",
     "get_vendor_profile",
+    "AuthStrategy",
+    "ApiKeyAuth",
+    "BasicAuth",
+    "OAuth2TokenManager",
+    "TokenBucketRateLimiter",
+    "CircuitBreaker",
+    "CircuitState",
+    "CircuitBreakerOpenError",
 ]

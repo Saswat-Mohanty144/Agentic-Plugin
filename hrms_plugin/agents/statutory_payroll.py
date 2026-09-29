@@ -55,6 +55,14 @@ class UaeEosbCalculation(BaseModel):
     statutory_citation: str
 
 
+class IndiaGratuityCalculation(BaseModel):
+    tenure_years: float
+    last_drawn_basic: float
+    gratuity_amount: float
+    formula_breakdown: str
+    statutory_citation: str
+
+
 class StatutoryPayrollAgent:
     """Specialist agent responsible for mathematical accuracy and statutory payroll structuring."""
 
@@ -219,6 +227,41 @@ class StatutoryPayrollAgent:
             tenure_years=float(years),
             basic_wage_monthly=float(basic),
             total_eosb_gratuity=float(total_eosb),
+            formula_breakdown=breakdown,
+            statutory_citation=citation,
+        )
+
+    def calculate_india_gratuity(
+        self,
+        last_drawn_basic: float | Decimal,
+        tenure_years: float,
+    ) -> IndiaGratuityCalculation:
+        """Compute Gratuity under India Payment of Gratuity Act, 1972 Section 4 (15/26 formula)."""
+        basic = _d(last_drawn_basic)
+        years = Decimal(str(tenure_years))
+
+        if years < Decimal("5.0"):
+            total_gratuity = Decimal("0.00")
+            breakdown = "Service tenure less than 5 years. No statutory gratuity entitled."
+        else:
+            # Formula: (15 * basic * years) / 26
+            total_gratuity = _d((Decimal("15") * basic * years) / Decimal("26"))
+            breakdown = (
+                f"Tenure: {years:.2f} yrs. Calculation: (15 * {basic} * {years:.2f}) / 26 = INR {total_gratuity}"
+            )
+
+        # Statutory Cap: INR 2,000,000 (20 Lakhs)
+        max_cap = Decimal("2000000.00")
+        if total_gratuity > max_cap:
+            total_gratuity = max_cap
+            breakdown += f" (Capped at statutory ceiling of INR {max_cap:,.2f})"
+
+        citation = "Payment of Gratuity Act, 1972, Section 4 (15/26 Formula & 20 Lakh Statutory Ceiling)"
+
+        return IndiaGratuityCalculation(
+            tenure_years=float(years),
+            last_drawn_basic=float(basic),
+            gratuity_amount=float(total_gratuity),
             formula_breakdown=breakdown,
             statutory_citation=citation,
         )

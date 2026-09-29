@@ -15,6 +15,9 @@
       this.apiUrl = this.getAttribute('data-api-url') || 'http://localhost:8000';
       this.isOpen = false;
       this.currentContext = {};
+      this.mediaRecorder = null;
+      this.audioChunks = [];
+      this.isRecording = false;
     }
 
     connectedCallback() {
@@ -52,6 +55,68 @@
       }
     }
 
+    async toggleVoiceRecording() {
+      const micBtn = this.shadowRoot.querySelector('#mic-btn');
+      if (this.isRecording) {
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+          this.mediaRecorder.stop();
+        }
+        this.isRecording = false;
+        if (micBtn) micBtn.classList.remove('recording');
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.audioChunks = [];
+        this.mediaRecorder = new MediaRecorder(stream);
+        this.mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) this.audioChunks.push(e.data);
+        };
+        this.mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Audio = reader.result.split(',')[1];
+            this.sendVoiceAudio(base64Audio);
+          };
+          stream.getTracks().forEach((track) => track.stop());
+        };
+        this.mediaRecorder.start();
+        this.isRecording = true;
+        if (micBtn) micBtn.classList.add('recording');
+      } catch (err) {
+        this.appendMessage('assistant', `⚠️ Microphone unavailable: ${err.message}`);
+      }
+    }
+
+    async sendVoiceAudio(base64Audio) {
+      this.appendMessage('user', '🎙️ [Spoken Audio Message]');
+      try {
+        const res = await fetch(`${this.apiUrl}/v1/voice/turn`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tenant-Id': this.tenantId,
+          },
+          body: JSON.stringify({
+            audio_base64: base64Audio,
+            user_id: 'USR-COPILOT',
+            jurisdiction: 'IN',
+          }),
+        });
+        const data = await res.json();
+        this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations);
+        if (data.reply_audio_base64) {
+          const audio = new Audio('data:audio/wav;base64,' + data.reply_audio_base64);
+          audio.play().catch(() => {});
+        }
+      } catch (err) {
+        this.appendMessage('assistant', `⚠️ Voice processing error: ${err.message}`);
+      }
+    }
+
     async sendMessage() {
       const input = this.shadowRoot.querySelector('#chat-input');
       const text = (input.value || '').trim();
@@ -70,22 +135,27 @@
           body: JSON.stringify({
             message: text,
             context: this.currentContext,
+            agentic: true,
           }),
         });
 
         const data = await res.json();
-        this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations);
+        this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations, data.thought_process);
       } catch (err) {
         this.appendMessage('assistant', `⚠️ Could not reach AI sidecar: ${err.message}`);
       }
     }
 
-    appendMessage(sender, text, actions = [], citations = []) {
+    appendMessage(sender, text, actions = [], citations = [], thoughts = []) {
       const chatLogs = this.shadowRoot.querySelector('#chat-logs');
       const msgDiv = document.createElement('div');
       msgDiv.className = `msg ${sender}`;
       
-      let html = `<div class="bubble">${text}</div>`;
+      let html = '';
+      if (thoughts && thoughts.length > 0) {
+        html += `<div class="thought-box"><small>💭 ${thoughts[thoughts.length - 1]}</small></div>`;
+      }
+      html += `<div class="bubble">${text}</div>`;
 
       if (citations && citations.length > 0) {
         html += `<div class="citations"><small>📚 Statutory Citations:</small><ul>`;
@@ -267,6 +337,16 @@
             cursor: pointer;
             font-weight: 500;
           }
+          .thought-box {
+            background: #ede9fe;
+            border-left: 3px solid #8b5cf6;
+            padding: 4px 8px;
+            margin-bottom: 4px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #5b21b6;
+            font-style: italic;
+          }
           .action-btn:hover {
             background: #059669;
           }
@@ -285,7 +365,34 @@
             font-size: 13px;
             outline: none;
           }
-          .input-box button {
+          #mic-btn {
+            background: #f1f5f9;
+            color: #475569;
+            border: 1px solid #cbd5e1;
+            padding: 0 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+          }
+          #mic-btn:hover {
+            background: #e2e8f0;
+            color: #1e293b;
+          }
+          #mic-btn.recording {
+            background: #ef4444;
+            color: white;
+            border-color: #dc2626;
+            animation: pulse-ring 1.5s infinite;
+          }
+          @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+          }
+          .input-box button#send-btn {
             background: #4f46e5;
             color: white;
             border: none;
@@ -312,13 +419,22 @@
             </div>
           </div>
           <div class="input-box">
-            <input type="text" id="chat-input" placeholder="Type a message..." />
+            <input type="text" id="chat-input" placeholder="Type or speak a message..." />
+            <button id="mic-btn" title="Voice AI (Sarvam / Whisper)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
             <button id="send-btn">Send</button>
           </div>
         </div>
       `;
 
       this.shadowRoot.querySelector('#launcher').addEventListener('click', () => this.toggleDrawer());
+      this.shadowRoot.querySelector('#mic-btn').addEventListener('click', () => this.toggleVoiceRecording());
       this.shadowRoot.querySelector('#send-btn').addEventListener('click', () => this.sendMessage());
       this.shadowRoot.querySelector('#chat-input').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') this.sendMessage();
