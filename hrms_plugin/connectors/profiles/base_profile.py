@@ -63,3 +63,12 @@ class VendorProfile(ABC):
                 if val and isinstance(val, str):
                     return val
         return default
+
+    def heal_payload_from_error(
+        self,
+        payload: Dict[str, Any],
+        entity_type: EntityType,
+        error_msg: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Attempt to heal or augment a rejected wire payload based on vendor error feedback."""
+        return None

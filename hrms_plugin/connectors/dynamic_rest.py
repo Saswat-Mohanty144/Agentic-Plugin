@@ -252,7 +252,14 @@ class DynamicRESTConnector(BaseHRMSConnector):
             canonical_data["source_ref"] = SourceRef(
                 vendor=self.config.vendor_name,
                 entity_type=entity_type,
-                external_id=str(source_id or raw_dict.get("id") or raw_dict.get("job_id") or "unknown"),
+                external_id=str(
+                    source_id
+                    or raw_dict.get("id")
+                    or raw_dict.get("name")
+                    or raw_dict.get("pkId")
+                    or raw_dict.get("job_id")
+                    or "unknown"
+                ),
                 version=str(raw_dict.get("version") or raw_dict.get("updatedAt") or "1"),
             )
 
@@ -366,6 +373,37 @@ class DynamicRESTConnector(BaseHRMSConnector):
             self.idempotency.store_result(idempotency_key, entity)
             return entity
 
+        except HRMSValidationError as val_err:
+            healed = self.profile.heal_payload_from_error(
+                payload=wire_payload,
+                entity_type=entity_type,
+                error_msg=val_err.message,
+            )
+            if healed and healed != wire_payload:
+                logger.info(
+                    "[connector:%s] self-healing writeback for %s after error: %s",
+                    self.config.vendor_name,
+                    entity_type.value,
+                    val_err.message,
+                )
+                try:
+                    retry_res = await self._send_request(
+                        method="POST", path=path, headers=headers, json_data=healed
+                    )
+                    retry_body = self._handle_response_status(retry_res, action="create", entity_type=entity_type)
+                    retry_unwrapped = self.profile.unwrap_response(
+                        retry_body, action="create", entity_type=entity_type
+                    )
+                    created_record = retry_unwrapped if isinstance(retry_unwrapped, dict) else retry_body
+                    entity = self._to_canonical(created_record, entity_type)
+                    self.idempotency.store_result(idempotency_key, entity)
+                    return entity
+                except Exception:
+                    self.idempotency.release_on_failure(idempotency_key)
+                    raise
+            self.idempotency.release_on_failure(idempotency_key)
+            raise
+
         except Exception:
             self.idempotency.release_on_failure(idempotency_key)
             raise
@@ -379,7 +417,7 @@ class DynamicRESTConnector(BaseHRMSConnector):
         expected_version: Optional[str] = None,
         **kwargs: Any,
     ) -> CanonicalEntity:
-        """Update an existing entity with optional optimistic version checking."""
+        """Update an existing entity with optional optimistic version checking and self-healing."""
         path = self.profile.endpoint_for(entity_type, "update", entity_id=entity_id, auth_token=auth_token, **kwargs)
         headers = self.profile.prepare_headers(auth_token=auth_token)
         if expected_version:
@@ -392,12 +430,32 @@ class DynamicRESTConnector(BaseHRMSConnector):
             auth_token=auth_token,
         )
 
-        response = await self._send_request(method="PATCH", path=path, headers=headers, json_data=wire_payload)
-        body = self._handle_response_status(response, action="update", entity_type=entity_type)
-        unwrapped = self.profile.unwrap_response(body, action="update", entity_type=entity_type)
+        try:
+            response = await self._send_request(method="PATCH", path=path, headers=headers, json_data=wire_payload)
+            body = self._handle_response_status(response, action="update", entity_type=entity_type)
+            unwrapped = self.profile.unwrap_response(body, action="update", entity_type=entity_type)
 
-        updated_record = unwrapped if isinstance(unwrapped, dict) else body
-        return self._to_canonical(updated_record, entity_type, source_id=entity_id)
+            updated_record = unwrapped if isinstance(unwrapped, dict) else body
+            return self._to_canonical(updated_record, entity_type, source_id=entity_id)
+        except HRMSValidationError as val_err:
+            healed = self.profile.heal_payload_from_error(
+                payload=wire_payload,
+                entity_type=entity_type,
+                error_msg=val_err.message,
+            )
+            if healed and healed != wire_payload:
+                logger.info(
+                    "[connector:%s] self-healing update for %s after error: %s",
+                    self.config.vendor_name,
+                    entity_type.value,
+                    val_err.message,
+                )
+                retry_res = await self._send_request(method="PATCH", path=path, headers=headers, json_data=healed)
+                retry_body = self._handle_response_status(retry_res, action="update", entity_type=entity_type)
+                retry_unwrapped = self.profile.unwrap_response(retry_body, action="update", entity_type=entity_type)
+                updated_record = retry_unwrapped if isinstance(retry_unwrapped, dict) else retry_body
+                return self._to_canonical(updated_record, entity_type, source_id=entity_id)
+            raise
 
     async def delete_entity(
         self,

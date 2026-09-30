@@ -238,3 +238,48 @@ async def test_dynamic_rest_connector_error_hierarchy():
             await connector.fetch_entity(EntityType.EMPLOYEE, "bad-request")
         assert val_err.value.status_code == 400
         assert "departmentId must be a valid UUID" in str(val_err.value)
+
+
+@pytest.mark.asyncio
+async def test_self_healing_writeback_contract():
+    """Verify that DynamicRESTConnector autonomously heals missing mandatory attributes and retries."""
+    from hrms_plugin.connectors.profiles.frappe import FrappeProfile
+
+    attempts = 0
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        body = json.loads(request.content.decode("utf-8"))
+
+        # 1st attempt: missing naming_series -> reject with 400
+        if "naming_series" not in body or not body["naming_series"]:
+            return httpx.Response(400, json={"message": "Mandatory field 'naming_series' missing"})
+
+        # 2nd attempt: naming_series healed -> accept with 201
+        return httpx.Response(
+            201,
+            json={
+                "data": {
+                    "name": "HR-EMP-007",
+                    "employee_name": "Kiran Rao",
+                    "naming_series": body["naming_series"],
+                }
+            },
+        )
+
+    transport = httpx.MockTransport(mock_handler)
+    client = httpx.AsyncClient(transport=transport, base_url="http://localhost:8000")
+    config = ConnectorConfig(base_url="http://localhost:8000", vendor_name="frappe")
+    profile = FrappeProfile(company="Acme Corp")
+
+    async with DynamicRESTConnector(config=config, profile=profile, client=client) as connector:
+        # Canonical payload intentionally omitting company
+        payload = {
+            "first_name": "Kiran",
+            "last_name": "Rao",
+        }
+        # The connector should self-heal and succeed on the retry!
+        created = await connector.create_entity(EntityType.EMPLOYEE, payload)
+        assert attempts == 2
+        assert created.source_ref.external_id == "HR-EMP-007"

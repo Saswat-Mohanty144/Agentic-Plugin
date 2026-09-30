@@ -80,3 +80,21 @@ def test_mcp_server_tool_listing_and_invocation(mcp_server):
     )
     # 5 yrs * 21 days * 400 AED = 42,000 AED
     assert res["total_eosb_gratuity"] == 42000.0
+
+
+def test_generate_requisition_archetypes_endpoint(client):
+    """Test /api/requisitions/generate-archetypes endpoint called by hrms-next."""
+    payload = {
+        "prompt": "Senior Full Stack React and Python Engineer",
+        "location": "Bangalore / Remote",
+    }
+    res = client.post("/api/requisitions/generate-archetypes", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+    assert len(data["archetypes"]) == 3
+    first = data["archetypes"][0]
+    assert "jobData" in first
+    assert "React" in first["jobData"]["requirements"] or "Python" in first["jobData"]["requirements"]
+    assert first["jobData"]["location"] == "Bangalore / Remote"
+    assert first["jobData"]["minSalary"] > 0

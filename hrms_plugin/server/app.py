@@ -471,3 +471,130 @@ def legacy_chat_adapter(
         "statutory_citations": resp.statutory_citations,
         "tool_calls": [{"tool": resp.routed_agent, "args": {"intent": resp.intent.value}}],
     }
+
+
+class GenerateArchetypesRequest(BaseModel):
+    prompt: str
+    location: Optional[str] = "Remote"
+    options: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/requisitions/generate-archetypes")
+@app.post("/v1/requisitions/generate-archetypes")
+def generate_requisition_archetypes(req: GenerateArchetypesRequest):
+    """Generate multi-archetype job requisition proposals for Next.js SmartRequisitionArchetypeSelector."""
+    p = req.prompt.strip()
+    loc = req.location or "Hybrid / Flexible"
+
+    # Extract keywords
+    words = [w.capitalize() for w in p.split() if len(w) > 2]
+    main_title = p.title() if p else "Software Engineer"
+    skills = [w for w in words if w.lower() not in ("senior", "junior", "lead", "engineer", "manager", "developer")]
+    if not skills:
+        skills = ["Python", "FastAPI", "React", "PostgreSQL", "System Design"]
+
+    archetypes = [
+        {
+            "id": "arch-specialist",
+            "name": f"Domain Specialist ({main_title})",
+            "badge": "High Depth & Velocity",
+            "tagline": "Deep specialized technical mastery and independent problem-solving.",
+            "summary": (
+                f"Engineered for high-impact ownership of {main_title} initiatives. "
+                "Focuses on architectural integrity, clean execution, and technical excellence."
+            ),
+            "skills_display": skills[:4] + ["Architecture", "Problem Solving"],
+            "benefits_display": ["Health Insurance", "Remote Flexibility", "Learning Budget", "Performance Bonus"],
+            "jobData": {
+                "title": main_title,
+                "department": "Engineering",
+                "type": "Full Time",
+                "jobMode": "Hybrid",
+                "location": loc,
+                "shifts": "General Shift (9 AM - 6 PM)",
+                "description": f"Seeking a passionate {main_title} to build scalable, mission-critical systems.",
+                "experience": "4-7 Years",
+                "education": "Bachelor's or Master's in Computer Science or equivalent",
+                "salary": 140000,
+                "minSalary": 120000,
+                "maxSalary": 160000,
+                "validTill": "2026-12-31",
+                "position": 1,
+                "minthreshold": 70,
+                "matchthreshold": 85,
+                "jobDescription": f"As a {main_title}, you will design, implement, and maintain scalable solutions.",
+                "requirements": f"Proven expertise in {', '.join(skills[:3])}. Strong architectural problem-solving.",
+                "responsibilities": (
+                    "Drive technical roadmap and feature delivery. Collaborate cross-functionally with product teams."
+                ),
+            },
+        },
+        {
+            "id": "arch-lead",
+            "name": f"Team Lead / Staff ({main_title})",
+            "badge": "Strategic Leadership",
+            "tagline": "Drives engineering standards, mentorship, and cross-functional alignment.",
+            "summary": (
+                f"Combines technical depth in {main_title} with squad leadership and mentorship capabilities."
+            ),
+            "skills_display": skills[:3] + ["Team Leadership", "Code Review", "Sprint Planning"],
+            "benefits_display": ["Comprehensive Health", "Stock Options (ESOPs)", "Executive Coaching"],
+            "jobData": {
+                "title": f"Lead {main_title}",
+                "department": "Engineering",
+                "type": "Full Time",
+                "jobMode": "Hybrid",
+                "location": loc,
+                "shifts": "General Shift",
+                "description": f"Lead and inspire a high-performing squad delivering on {main_title} priorities.",
+                "experience": "7-10 Years",
+                "education": "Bachelor's Degree in relevant discipline",
+                "salary": 180000,
+                "minSalary": 160000,
+                "maxSalary": 210000,
+                "validTill": "2026-12-31",
+                "position": 1,
+                "minthreshold": 75,
+                "matchthreshold": 90,
+                "jobDescription": f"Lead the development and engineering practices for our {main_title} squad.",
+                "requirements": "Demonstrated track record of technical leadership and team development.",
+                "responsibilities": "Mentor engineers, review pull requests, and ensure delivery SLA compliance.",
+            },
+        },
+        {
+            "id": "arch-fast-builder",
+            "name": f"Agile Builder ({main_title})",
+            "badge": "Rapid Prototyping",
+            "tagline": "Pragmatic, high-velocity contributor who ships early and iterates fast.",
+            "summary": "Tailored for early-stage feature discovery, MVP shipping, and customer feedback loops.",
+            "skills_display": skills[:3] + ["Rapid Iteration", "Full Stack", "Git"],
+            "benefits_display": ["Wellness Stipend", "Flexible Hours", "Latest MacBook Pro"],
+            "jobData": {
+                "title": main_title,
+                "department": "Product Engineering",
+                "type": "Full Time",
+                "jobMode": "Remote",
+                "location": loc,
+                "shifts": "Flexible Hours",
+                "description": f"Ship customer-facing features at high speed as a {main_title}.",
+                "experience": "2-5 Years",
+                "education": "Relevant degree or demonstrated open-source portfolio",
+                "salary": 110000,
+                "minSalary": 95000,
+                "maxSalary": 130000,
+                "validTill": "2026-12-31",
+                "position": 2,
+                "minthreshold": 60,
+                "matchthreshold": 75,
+                "jobDescription": f"Hands-on execution and high-tempo delivery across {main_title} features.",
+                "requirements": "Strong bias for action and ability to write maintainable code quickly.",
+                "responsibilities": "Build, test, and deploy features in bi-weekly sprint cycles.",
+            },
+        },
+    ]
+
+    return {
+        "success": True,
+        "prompt": p,
+        "archetypes": archetypes,
+    }

@@ -11,6 +11,7 @@ from hrms_plugin.connectors.profiles.frappe import FrappeProfile
 from hrms_plugin.connectors.profiles.generic import GenericProfile
 from hrms_plugin.connectors.profiles.iceipts import IceiptsProfile, extract_jwt_user_id
 from hrms_plugin.connectors.profiles.workday import WorkdayProfile
+from hrms_plugin.connectors.profiles.zoho import ZohoProfile
 
 _PROFILES: Dict[str, Type[VendorProfile]] = {
     "generic": GenericProfile,
@@ -21,6 +22,8 @@ _PROFILES: Dict[str, Type[VendorProfile]] = {
     "erpnext": FrappeProfile,
     "bamboohr": BambooHRProfile,
     "workday": WorkdayProfile,
+    "zoho": ZohoProfile,
+    "zoho_people": ZohoProfile,
 }
 
 
@@ -39,6 +42,7 @@ __all__ = [
     "FrappeProfile",
     "BambooHRProfile",
     "WorkdayProfile",
+    "ZohoProfile",
     "extract_jwt_user_id",
     "get_vendor_profile",
 ]

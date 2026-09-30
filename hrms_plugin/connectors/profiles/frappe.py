@@ -118,3 +118,24 @@ class FrappeProfile(VendorProfile):
                 payload["company"] = self.company
 
         return payload
+
+    def heal_payload_from_error(
+        self,
+        payload: Dict[str, Any],
+        entity_type: EntityType,
+        error_msg: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Remediate common Frappe validation rejections (missing company or naming series)."""
+        healed = dict(payload)
+        modified = False
+        err_lower = error_msg.lower()
+
+        if "company" in err_lower and "company" not in healed:
+            healed["company"] = self.company
+            modified = True
+
+        if "naming_series" in err_lower and "naming_series" not in healed:
+            healed["naming_series"] = "EMP-" if entity_type == EntityType.EMPLOYEE else "HR-"
+            modified = True
+
+        return healed if modified else None
