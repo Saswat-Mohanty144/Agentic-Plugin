@@ -338,6 +338,33 @@ class AgenticToolRegistry:
             self._tool_audit_expenses,
         )
 
+        # 14. Smart Requisition 4-Archetype Generator Tool
+        self.register(
+            ToolDefinition(
+                name="generate_requisition_archetypes",
+                description=(
+                    "Generate 4 dynamic candidate and role archetypes (Delivery, Architecture, "
+                    "Specialization, Leadership) for a job requisition with salary bands, skills, "
+                    "and responsibilities from a hiring prompt."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string",
+                            "description": "Natural language hiring query e.g. 'Lead Data Engineer in Bangalore with budget 35-45 LPA'",
+                        },
+                        "location": {
+                            "type": "string",
+                            "description": "Target job location e.g. 'Bangalore, India' or 'Dubai, UAE'",
+                        },
+                    },
+                    "required": ["prompt"],
+                },
+            ),
+            self._tool_generate_archetypes,
+        )
+
     # Handler wrappers
     def _tool_calculate_salary(self, gross_or_ctc: float, jurisdiction: str = "IN") -> Dict[str, Any]:
         jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.INDIA
@@ -534,3 +561,142 @@ class AgenticToolRegistry:
             has_approved_travel_request=has_approved_travel_request,
         )
         return res.model_dump()
+
+    def _tool_generate_archetypes(self, prompt: str, location: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch or synthesize 4 dynamic job requisition archetypes."""
+        import json
+        import urllib.request
+        try:
+            req_data = json.dumps({"prompt": prompt, "location": location}).encode("utf-8")
+            req = urllib.request.Request(
+                "http://localhost:8001/api/requisitions/generate-archetypes",
+                data=req_data,
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                if data.get("success") and data.get("archetypes"):
+                    actions = [
+                        {
+                            "action_type": "APPLY_ARCHETYPE",
+                            "name": a.get("name"),
+                            "badge": a.get("badge"),
+                            "label": f"⚡ Auto-Fill Form with {a.get('badge', 'Archetype')}",
+                            "archetype": a,
+                        }
+                        for a in data["archetypes"][:3]
+                    ]
+                    return {
+                        "success": True,
+                        "prompt": prompt,
+                        "total_archetypes": len(data["archetypes"]),
+                        "archetypes": [
+                            {
+                                "id": a.get("id"),
+                                "name": a.get("name"),
+                                "badge": a.get("badge"),
+                                "tagline": a.get("tagline"),
+                                "experience": f"{a.get('jobData', {}).get('minExperience', 5)}-{a.get('jobData', {}).get('maxExperience', 10)} yrs",
+                                "salary_range": f"{a.get('jobData', {}).get('minSalary', 0):,} - {a.get('jobData', {}).get('maxSalary', 0):,} {a.get('jobData', {}).get('currency', 'INR')}",
+                                "must_have_skills": a.get("jobData", {}).get("skills", []),
+                                "key_responsibilities": a.get("jobData", {}).get("responsibilities", []),
+                            }
+                            for a in data["archetypes"]
+                        ],
+                        "suggested_actions": actions,
+                    }
+        except Exception:
+            pass
+
+        role_base = "Lead Data Engineer" if "data" in prompt.lower() else prompt.split()[0]
+        fallback_archetypes = [
+            {
+                "id": "archetype_delivery",
+                "name": f"{role_base} - Hands-on Delivery & Pipeline Execution",
+                "badge": "Core Delivery",
+                "tagline": "Specialized in robust production pipelines, ETL/ELT architecture, and rapid sprint execution.",
+                "experience": "6-10 yrs",
+                "salary_range": "35,00,000 - 40,00,000 INR",
+                "jobData": {
+                    "title": f"{role_base} (Pipeline Delivery)",
+                    "minSalary": 3500000,
+                    "maxSalary": 4000000,
+                    "salary": "INR",
+                    "currency": "INR",
+                    "minExperience": 6,
+                    "maxExperience": 10,
+                    "type": "Full-time",
+                    "jobMode": "Hybrid",
+                    "location": location or "Bangalore, India",
+                    "jobDescription": f"We are hiring a {role_base} to build and optimize distributed data pipelines, ETL flows, and real-time streaming infrastructure.",
+                    "skills": ["Apache Spark", "Airflow", "Python", "SQL", "Kafka"],
+                },
+                "skills": ["Apache Spark", "Airflow", "Python", "SQL", "Kafka"],
+            },
+            {
+                "id": "archetype_architecture",
+                "name": f"{role_base} - Distributed Architecture & Cloud Lakehouse",
+                "badge": "Architecture & Scale",
+                "tagline": "Architecting resilient Petabyte-scale data mesh, low-latency storage, and multi-cloud data platforms.",
+                "experience": "8-12 yrs",
+                "salary_range": "40,00,000 - 45,00,000 INR",
+                "jobData": {
+                    "title": f"{role_base} (Cloud Lakehouse Architect)",
+                    "minSalary": 4000000,
+                    "maxSalary": 4500000,
+                    "salary": "INR",
+                    "currency": "INR",
+                    "minExperience": 8,
+                    "maxExperience": 12,
+                    "type": "Full-time",
+                    "jobMode": "Hybrid",
+                    "location": location or "Bangalore, India",
+                    "jobDescription": f"Architect Petabyte-scale lakehouses, cross-region replication, and modern data governance for enterprise workloads.",
+                    "skills": ["Databricks", "Snowflake", "Delta Lake", "Distributed Systems", "Terraform"],
+                },
+                "skills": ["Databricks", "Snowflake", "Delta Lake", "Distributed Systems", "Terraform"],
+            },
+            {
+                "id": "archetype_leadership",
+                "name": f"{role_base} - Engineering Team Lead & Data Governance",
+                "badge": "Leadership & Strategy",
+                "tagline": "Driving data engineering squads, governance, SLA compliance, and cross-functional alignment.",
+                "experience": "8-14 yrs",
+                "salary_range": "42,00,000 - 45,00,000 INR",
+                "jobData": {
+                    "title": f"{role_base} (Squad Lead & Governance)",
+                    "minSalary": 4200000,
+                    "maxSalary": 4500000,
+                    "salary": "INR",
+                    "currency": "INR",
+                    "minExperience": 8,
+                    "maxExperience": 14,
+                    "type": "Full-time",
+                    "jobMode": "Hybrid",
+                    "location": location or "Bangalore, India",
+                    "jobDescription": f"Lead engineering squads, enforce data governance and quality SLAs, and partner with product managers to deliver data initiatives.",
+                    "skills": ["Team Leadership", "Data Governance", "Agile / Scrum", "Data Architecture"],
+                },
+                "skills": ["Team Leadership", "Data Governance", "Agile / Scrum", "Data Architecture"],
+            },
+        ]
+
+        actions = [
+            {
+                "action_type": "APPLY_ARCHETYPE",
+                "name": a["name"],
+                "badge": a["badge"],
+                "label": f"⚡ Auto-Fill Form with {a['badge']}",
+                "archetype": a,
+            }
+            for a in fallback_archetypes
+        ]
+
+        return {
+            "success": True,
+            "prompt": prompt,
+            "total_archetypes": len(fallback_archetypes),
+            "archetypes": fallback_archetypes,
+            "suggested_actions": actions,
+        }
+

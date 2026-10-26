@@ -26,6 +26,12 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from hrms_plugin.security.masking import PiiMaskingGateway
 
 logger = logging.getLogger(__name__)
@@ -539,9 +545,42 @@ class GeminiClient(BaseLLMClient):
         temperature: Optional[float] = None,
     ) -> LLMResponse:
         contents = []
+        system_instruction = None
+
         for m in messages:
-            role = "user" if m.role in ("user", "system") else "model"
-            contents.append({"role": role, "parts": [{"text": m.content}]})
+            if m.role == "system":
+                system_instruction = {"parts": [{"text": m.content}]}
+            elif m.role == "tool":
+                try:
+                    res_obj = json.loads(m.content)
+                except Exception:
+                    res_obj = {"result": m.content}
+                if not isinstance(res_obj, dict):
+                    res_obj = {"output": res_obj}
+                contents.append({
+                    "role": "function",
+                    "parts": [{
+                        "functionResponse": {
+                            "name": m.name or "tool_result",
+                            "response": res_obj,
+                        }
+                    }],
+                })
+            elif m.role == "assistant" and m.tool_calls:
+                parts: List[Dict[str, Any]] = []
+                if m.content:
+                    parts.append({"text": m.content})
+                for tc in m.tool_calls:
+                    parts.append({
+                        "functionCall": {
+                            "name": tc.name,
+                            "args": tc.arguments,
+                        }
+                    })
+                contents.append({"role": "model", "parts": parts})
+            else:
+                role = "user" if m.role == "user" else "model"
+                contents.append({"role": role, "parts": [{"text": m.content}]})
 
         payload: Dict[str, Any] = {
             "contents": contents,
@@ -550,6 +589,8 @@ class GeminiClient(BaseLLMClient):
                 "maxOutputTokens": self.config.max_tokens,
             },
         }
+        if system_instruction:
+            payload["system_instruction"] = system_instruction
         if tools:
             payload["tools"] = [{"functionDeclarations": [t.to_gemini_schema() for t in tools]}]
 
@@ -638,11 +679,13 @@ class LLMGateway:
                 model=os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
                 api_key=os.getenv("ANTHROPIC_API_KEY"),
             )
-        elif provider_env == "gemini" or (not provider_env and os.getenv("GEMINI_API_KEY")):
+        elif provider_env in ("gemini", "google") or (
+            not provider_env and (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+        ):
             return LLMConfig(
                 provider=LLMProvider.GEMINI,
-                model=os.getenv("LLM_MODEL", "gemini-1.5-flash"),
-                api_key=os.getenv("GEMINI_API_KEY"),
+                model=os.getenv("LLM_MODEL") or os.getenv("GOOGLE_MODEL") or "gemini-2.5-flash",
+                api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
             )
         elif provider_env == "nvidia" or (not provider_env and os.getenv("NVIDIA_API_KEY")):
             return LLMConfig(

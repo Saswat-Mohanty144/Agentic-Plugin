@@ -1,7 +1,7 @@
 /**
  * Enterprise Agentic HRMS Copilot Embeddable SDK (<hrms-copilot>)
- * Version: 2.0.0
- * Features: Shadow DOM isolation, postMessage Host Context Sync, Interactive Diff Remediation Modal
+ * Version: 2.1.0
+ * Features: Shadow DOM isolation, postMessage Host Context Sync, Interactive Diff Remediation Modal, Voice AI, Rich Markdown Formatting
  */
 
 (function () {
@@ -146,6 +146,140 @@
       }
     }
 
+    formatMarkdown(text) {
+      if (!text) return '';
+      let str = String(text).replace(/\r\n/g, '\n');
+
+      // 1. Extract and preserve code blocks
+      const codeBlocks = [];
+      str = str.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function (_, lang, code) {
+        const idx = codeBlocks.length;
+        const safeCode = code
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        codeBlocks.push('<pre class="code-block"><code class="lang-' + (lang || 'text') + '">' + safeCode.trim() + '</code></pre>');
+        return '⟦CB' + idx + '⟧';
+      });
+
+      // 2. Extract and preserve inline code
+      const inlineCodes = [];
+      str = str.replace(/`([^`\n]+)`/g, function (_, code) {
+        const idx = inlineCodes.length;
+        const safeCode = code
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+        inlineCodes.push('<code class="inline-code">' + safeCode + '</code>');
+        return '⟦IC' + idx + '⟧';
+      });
+
+      // 3. Process Blockquotes before escaping >
+      str = str.replace(/^>\s+(.*$)/gim, '<blockquote class="md-quote">$1</blockquote>');
+
+      // 4. Escape general HTML (preserving deliberate blockquote tags)
+      str = str
+        .replace(/&(?!amp;|lt;|gt;|quot;|#39;)/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      str = str.replace(/&lt;blockquote class="md-quote"&gt;(.*?)&lt;\/blockquote&gt;/gi, '<blockquote class="md-quote">$1</blockquote>');
+
+      // 5. Headers
+      str = str.replace(/^###\s+(.*$)/gim, '<h4 class="md-h4">$1</h4>');
+      str = str.replace(/^##\s+(.*$)/gim, '<h3 class="md-h3">$1</h3>');
+      str = str.replace(/^#\s+(.*$)/gim, '<h2 class="md-h2">$1</h2>');
+
+      // 6. Links [text](url)
+      str = str.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
+
+      // 7. Bold & Italics
+      str = str.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+      str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      str = str.replace(/__(.*?)__/g, '<strong>$1</strong>');
+      str = str.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+      str = str.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+
+      // 8. Lists (Bullet & Ordered)
+      const rawLines = str.split('\n');
+      const groupedLines = [];
+      let inUl = false;
+      let inOl = false;
+
+      for (let i = 0; i < rawLines.length; i++) {
+        const line = rawLines[i];
+        const bulletMatch = line.match(/^[\*\-\+]\s+(.*)/);
+        const orderedMatch = line.match(/^\d+\.\s+(.*)/);
+
+        if (bulletMatch) {
+          if (inOl) {
+            groupedLines.push('</ol>');
+            inOl = false;
+          }
+          if (!inUl) {
+            groupedLines.push('\n<ul class="md-ul">');
+            inUl = true;
+          }
+          groupedLines.push('<li>' + bulletMatch[1] + '</li>');
+        } else if (orderedMatch) {
+          if (inUl) {
+            groupedLines.push('</ul>');
+            inUl = false;
+          }
+          if (!inOl) {
+            groupedLines.push('\n<ol class="md-ol">');
+            inOl = true;
+          }
+          groupedLines.push('<li>' + orderedMatch[1] + '</li>');
+        } else {
+          if (inUl) {
+            groupedLines.push('</ul>\n');
+            inUl = false;
+          }
+          if (inOl) {
+            groupedLines.push('</ol>\n');
+            inOl = false;
+          }
+          groupedLines.push(line);
+        }
+      }
+      if (inUl) groupedLines.push('</ul>\n');
+      if (inOl) groupedLines.push('</ol>\n');
+
+      str = groupedLines.join('\n');
+
+      // 9. Paragraphs
+      const chunks = str.split(/\n\n+/);
+      const formattedChunks = chunks.map(function (chunk) {
+        chunk = chunk.trim();
+        if (!chunk) return '';
+        if (
+          chunk.startsWith('<h2') ||
+          chunk.startsWith('<h3') ||
+          chunk.startsWith('<h4') ||
+          chunk.startsWith('<ul') ||
+          chunk.startsWith('<ol') ||
+          chunk.startsWith('<blockquote') ||
+          chunk.startsWith('⟦CB')
+        ) {
+          return chunk;
+        }
+        return '<p class="md-p">' + chunk.replace(/\n/g, '<br/>') + '</p>';
+      });
+
+      str = formattedChunks.filter(Boolean).join('\n');
+
+      // 10. Restore code blocks and inline code
+      str = str.replace(/⟦CB(\d+)⟧/g, function (_, idx) {
+        return codeBlocks[parseInt(idx, 10)] || '';
+      });
+      str = str.replace(/⟦IC(\d+)⟧/g, function (_, idx) {
+        return inlineCodes[parseInt(idx, 10)] || '';
+      });
+
+      return str;
+    }
+
     appendMessage(sender, text, actions = [], citations = [], thoughts = []) {
       const chatLogs = this.shadowRoot.querySelector('#chat-logs');
       const msgDiv = document.createElement('div');
@@ -153,9 +287,9 @@
       
       let html = '';
       if (thoughts && thoughts.length > 0) {
-        html += `<div class="thought-box"><small>💭 ${thoughts[thoughts.length - 1]}</small></div>`;
+        html += `<div class="thought-box"><small>💭 ${this.formatMarkdown(thoughts[thoughts.length - 1])}</small></div>`;
       }
-      html += `<div class="bubble">${text}</div>`;
+      html += `<div class="bubble">${this.formatMarkdown(text)}</div>`;
 
       if (citations && citations.length > 0) {
         html += `<div class="citations"><small>📚 Statutory Citations:</small><ul>`;
@@ -168,7 +302,8 @@
       if (actions && actions.length > 0) {
         html += `<div class="actions">`;
         actions.forEach((a) => {
-          html += `<button class="action-btn" data-action='${JSON.stringify(a)}'>⚡ Approve Patch (${a.violation_id || 'Action'})</button>`;
+          const btnLabel = a.label || `⚡ Action (${a.violation_id || a.name || 'Execute'})`;
+          html += `<button class="action-btn" data-action='${JSON.stringify(a).replace(/'/g, "&apos;")}'>${btnLabel}</button>`;
         });
         html += `</div>`;
       }
@@ -180,8 +315,16 @@
       // Bind action buttons
       msgDiv.querySelectorAll('.action-btn').forEach((btn) => {
         btn.addEventListener('click', (e) => {
-          const actionData = JSON.parse(e.target.getAttribute('data-action'));
-          this.executeRemediation(actionData);
+          const actionData = JSON.parse(e.currentTarget.getAttribute('data-action'));
+          if (actionData.action_type === 'APPLY_ARCHETYPE' || actionData.archetype) {
+            window.postMessage({
+              type: 'HRMS_APPLY_ARCHETYPE',
+              archetype: actionData.archetype || actionData
+            }, '*');
+            this.appendMessage('assistant', `⚡ **Autonomous Action Dispatched**: Auto-filling host form with **${actionData.name || actionData.badge || 'Archetype'}** and opening Requisition view...`);
+          } else {
+            this.executeRemediation(actionData);
+          }
         });
       });
     }
@@ -243,8 +386,8 @@
             position: fixed;
             bottom: 90px;
             right: 24px;
-            width: 380px;
-            height: 540px;
+            width: 400px;
+            height: 560px;
             background: #ffffff;
             border-radius: 16px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
@@ -278,17 +421,17 @@
           }
           #chat-logs {
             flex: 1;
-            padding: 12px;
+            padding: 14px;
             overflow-y: auto;
             background: #f8fafc;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
           }
           .msg {
             display: flex;
             flex-direction: column;
-            max-width: 85%;
+            max-width: 90%;
           }
           .msg.user {
             align-self: flex-end;
@@ -296,7 +439,7 @@
           .msg.user .bubble {
             background: #4f46e5;
             color: white;
-            border-radius: 12px 12px 2px 12px;
+            border-radius: 14px 14px 2px 14px;
           }
           .msg.assistant {
             align-self: flex-start;
@@ -305,17 +448,99 @@
             background: #ffffff;
             color: #1e293b;
             border: 1px solid #e2e8f0;
-            border-radius: 12px 12px 12px 2px;
+            border-radius: 14px 14px 14px 2px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
           }
           .bubble {
-            padding: 8px 12px;
+            padding: 10px 14px;
             font-size: 13px;
+            line-height: 1.5;
+            word-break: break-word;
+            overflow-wrap: break-word;
+          }
+          .bubble p.md-p {
+            margin: 0 0 8px 0;
+          }
+          .bubble p.md-p:last-child {
+            margin-bottom: 0;
+          }
+          .bubble ul.md-ul, .bubble ol.md-ol {
+            margin: 6px 0 8px 0;
+            padding-left: 20px;
+          }
+          .bubble li {
+            margin-bottom: 4px;
+            line-height: 1.45;
+          }
+          .bubble li:last-child {
+            margin-bottom: 0;
+          }
+          .bubble strong {
+            font-weight: 600;
+          }
+          .bubble em {
+            font-style: italic;
+          }
+          .bubble h2.md-h2, .bubble h3.md-h3, .bubble h4.md-h4 {
+            margin: 10px 0 6px 0;
+            font-weight: 600;
+            line-height: 1.3;
+          }
+          .bubble h2.md-h2 { font-size: 15px; }
+          .bubble h3.md-h3 { font-size: 14px; }
+          .bubble h4.md-h4 { font-size: 13px; }
+          .bubble blockquote.md-quote {
+            border-left: 3px solid #6366f1;
+            margin: 6px 0;
+            padding: 4px 8px;
+            background: rgba(99, 102, 241, 0.08);
+            border-radius: 0 4px 4px 0;
+            font-size: 12px;
+            color: #4338ca;
+          }
+          .bubble code.inline-code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            padding: 1px 4px;
+            border-radius: 4px;
+          }
+          .msg.assistant .bubble code.inline-code {
+            background: #f1f5f9;
+            color: #0f172a;
+            border: 1px solid #e2e8f0;
+          }
+          .msg.user .bubble code.inline-code {
+            background: rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+          }
+          .bubble pre.code-block {
+            background: #0f172a;
+            color: #f8fafc;
+            padding: 10px 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 8px 0;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
             line-height: 1.4;
+          }
+          .bubble pre.code-block code {
+            background: transparent;
+            padding: 0;
+            border: none;
+            color: inherit;
+          }
+          .bubble a.md-link {
+            color: #4f46e5;
+            text-decoration: underline;
+          }
+          .msg.user .bubble a.md-link {
+            color: #e0e7ff;
           }
           .citations {
             margin-top: 4px;
             background: #f1f5f9;
-            padding: 6px;
+            padding: 6px 8px;
             border-radius: 6px;
             font-size: 11px;
             color: #475569;
@@ -415,7 +640,10 @@
           </div>
           <div id="chat-logs">
             <div class="msg assistant">
-              <div class="bubble">Hello! I am your AI HR Copilot. Ask me to structure salary, check compliance, evaluate leaves, or screen resumes.</div>
+              <div class="bubble">
+                <p class="md-p">Hello! I am your <strong>Enterprise HR Copilot</strong>.</p>
+                <p class="md-p">Ask me to compute <strong>statutory gratuities</strong>, audit <strong>job requisitions for bias</strong>, evaluate <strong>leave policies</strong>, or reconcile <strong>payroll</strong>.</p>
+              </div>
             </div>
           </div>
           <div class="input-box">

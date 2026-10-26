@@ -7,6 +7,7 @@ Welcome to the technical documentation for the **`hrms-agentic-plugin`** standal
 | Document | Description | Target Audience |
 | :--- | :--- | :--- |
 | [**`PHASE_WISE_PLAN.md`**](PHASE_WISE_PLAN.md) | **Master Phase-Wise Implementation Plan & Testing Strategy**.<br>Covers the 6 engineering phases, data contracts, 5-tier testing pyramid, and production readiness gates. | Engineering, Architecture, Product |
+| [**`KT_DOCUMENTATION.md`**](KT_DOCUMENTATION.md) | **Comprehensive Knowledge Transfer (KT) Documentation**.<br>Architecture deep dive, module-by-module walkthrough, data flow diagrams, key invariants, deployment guide, testing strategy, and onboarding checklist. | New Engineers, DevOps, Architects |
 
 ---
 

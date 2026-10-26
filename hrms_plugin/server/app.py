@@ -6,6 +6,12 @@ import base64
 import json
 from typing import Any, Dict, List, Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -76,7 +82,7 @@ class ChatRequest(BaseModel):
     jurisdiction: str = "IN"
     context: Optional[Dict[str, Any]] = None
     mask_pii: bool = True
-    agentic: bool = False
+    agentic: bool = True
     history: Optional[List[Dict[str, str]]] = None
 
 

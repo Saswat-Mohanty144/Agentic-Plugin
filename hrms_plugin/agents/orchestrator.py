@@ -169,6 +169,10 @@ class AgenticOrchestrator:
                                             "patch": v["remediation_patch"],
                                         }
                                     )
+                    if "suggested_actions" in tool_output and isinstance(tool_output["suggested_actions"], list):
+                        collected_actions.extend(tool_output["suggested_actions"])
+                    if "actions" in tool_output and isinstance(tool_output["actions"], list):
+                        collected_actions.extend(tool_output["actions"])
 
                 # Append assistant message with tool calls & tool response to memory
                 messages.append(
