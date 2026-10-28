@@ -154,8 +154,8 @@ def detect(text: str) -> List[Match]:
 
 _FIELD_KINDS: Dict[str, str] = {
     **{k: "NAME" for k in ("name", "first_name", "last_name", "full_name", "employee_name", "candidate_name")},
-    **{k: "EMAIL" for k in ("email", "work_email", "personal_email")},
-    **{k: "PHONE" for k in ("phone", "mobile", "phone_number")},
+    **{k: "EMAIL" for k in ("email", "work_email", "personal_email", "company_email")},
+    **{k: "PHONE" for k in ("phone", "mobile", "phone_number", "cell_number")},
     "address": "ADDRESS",
     "dob": "DOB",
     "date_of_birth": "DOB",
@@ -168,7 +168,7 @@ _FIELD_KINDS: Dict[str, str] = {
     "passport": "PASSPORT",
     "passport_number": "PASSPORT",
     "national_id": "NATIONAL_ID",
-    **{k: "BANK_ACCOUNT" for k in ("bank_account", "account_number", "iban", "card_number")},
+    **{k: "BANK_ACCOUNT" for k in ("bank_account", "account_number", "iban", "card_number", "bank_ac_no")},
 }
 
 

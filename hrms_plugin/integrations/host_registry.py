@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Literal, Mapping, Optional, Tuple, Union
+from typing import Dict, Literal, Mapping, Optional, Tuple, Union
 from urllib.parse import urlsplit
 
 import yaml
@@ -35,6 +35,21 @@ class HostConfig(BaseModel):
     api_key_env: StrictStr = Field(pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     api_secret_env: StrictStr = Field(pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     timeout_seconds: StrictInt = Field(ge=1, le=60)
+    # Per-tenant write-back allowlist (piece F2, W3): doctype -> field -> value type. Empty means no writes.
+    writable_fields: Dict[StrictStr, Dict[StrictStr, Literal["int", "date", "string", "decimal"]]] = Field(
+        default_factory=dict
+    )
+
+    @field_validator("writable_fields")
+    @classmethod
+    def _no_pii_writes(cls, value: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+        from hrms_plugin.security.pii import identifier_kind
+
+        for doctype, fields in value.items():
+            for field in fields:
+                if identifier_kind(field):
+                    raise ValueError(f"{doctype}.{field} is a personal identifier and cannot be writable")
+        return value
 
     @field_validator("base_url")
     @classmethod

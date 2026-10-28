@@ -22,6 +22,9 @@ EXPECTED = {
     ("POST", "/v1/remediate/execute"): P.EXECUTE_REMEDIATION,
     ("POST", "/v1/schema/fingerprints/approve"): P.MANAGE_SCHEMA,
     ("GET", "/v1/schema/fingerprints/quarantine"): P.MANAGE_SCHEMA,
+    ("POST", "/v1/writeback/proposals"): P.MUTATE_EMPLOYEE,
+    ("POST", "/v1/writeback/proposals/{proposal_id}/approve"): P.MUTATE_EMPLOYEE,
+    ("POST", "/v1/writeback/proposals/{proposal_id}/rollback"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/compliance/diagnose"): P.VIEW_COMPLIANCE,
     ("GET", "/api/compliance/agent/diagnose"): P.VIEW_COMPLIANCE,
     ("GET", "/v1/compliance/dashboard/live"): P.VIEW_COMPLIANCE,
@@ -29,12 +32,28 @@ EXPECTED = {
     ("POST", "/api/requisitions/generate-archetypes"): P.MANAGE_RECRUITMENT,
     ("POST", "/v1/requisitions/generate-archetypes"): P.MANAGE_RECRUITMENT,
 }
-CONCRETE = {"/v1/schema/mappings/{vendor}/{entity_type}": "/v1/schema/mappings/zoho/EMPLOYEE"}
+CONCRETE = {
+    "/v1/schema/mappings/{vendor}/{entity_type}": "/v1/schema/mappings/zoho/EMPLOYEE",
+    "/v1/writeback/proposals/{proposal_id}/approve": "/v1/writeback/proposals/p1/approve",
+    "/v1/writeback/proposals/{proposal_id}/rollback": "/v1/writeback/proposals/p1/rollback",
+}
 # Role in the fixture registry that LACKS / HOLDS each permission.
-LACKING = {P.USE_COPILOT: "janitor", P.MANAGE_SCHEMA: "hr_manager", P.EXECUTE_REMEDIATION: "staff",
-           P.VIEW_COMPLIANCE: "staff", P.MANAGE_RECRUITMENT: "staff"}
-HOLDING = {P.USE_COPILOT: "staff", P.MANAGE_SCHEMA: "platform_admin", P.EXECUTE_REMEDIATION: "hr_manager",
-           P.VIEW_COMPLIANCE: "hr_manager", P.MANAGE_RECRUITMENT: "recruiter"}
+LACKING = {
+    P.MUTATE_EMPLOYEE: "payroll_officer",
+    P.USE_COPILOT: "janitor",
+    P.MANAGE_SCHEMA: "hr_manager",
+    P.EXECUTE_REMEDIATION: "staff",
+    P.VIEW_COMPLIANCE: "staff",
+    P.MANAGE_RECRUITMENT: "staff",
+}
+HOLDING = {
+    P.MUTATE_EMPLOYEE: "hr_manager",
+    P.USE_COPILOT: "staff",
+    P.MANAGE_SCHEMA: "platform_admin",
+    P.EXECUTE_REMEDIATION: "hr_manager",
+    P.VIEW_COMPLIANCE: "hr_manager",
+    P.MANAGE_RECRUITMENT: "recruiter",
+}
 
 
 def _routes(app):
@@ -107,6 +126,7 @@ def test_diagnose_endpoint_returns_mapped_action_items(make_client, bearer, path
 
 # AM2 — docs ------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("value", [None, "True", "1", "yes", ""])
 def test_docs_disabled_unless_exactly_true(make_client, value):
     client = make_client(env={} if value is None else {"HRMS_ENABLE_API_DOCS": value})
@@ -122,9 +142,16 @@ def test_docs_enabled_with_true(make_client):
 
 # §6.8 — CORS ----------------------------------------------------------------
 
+
 def _preflight(client, origin):
-    return client.options("/v1/chat", headers={"Origin": origin, "Access-Control-Request-Method": "POST",
-                                                "Access-Control-Request-Headers": "authorization,content-type"})
+    return client.options(
+        "/v1/chat",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
 
 
 def test_cors_allowed_origin(make_client):
@@ -133,8 +160,9 @@ def test_cors_allowed_origin(make_client):
     assert res.headers.get("access-control-allow-credentials") != "true"
 
 
-@pytest.mark.parametrize("origin", ["https://evil.test", "http://hr.acme.test", "https://hr.acme.test:444",
-                                    "https://hr.initech.test"])
+@pytest.mark.parametrize(
+    "origin", ["https://evil.test", "http://hr.acme.test", "https://hr.acme.test:444", "https://hr.initech.test"]
+)
 def test_cors_disallowed_origins(make_client, origin):
     assert "access-control-allow-origin" not in _preflight(make_client(), origin).headers
 
@@ -146,6 +174,7 @@ def test_cors_port_origin_allowed(make_client):
 
 # A5 / AM5 — strict jurisdiction ---------------------------------------------------
 
+
 @pytest.mark.parametrize("value", ["ae", "UAE", "", "XX", "GLOBAL"])
 def test_chat_rejects_invalid_jurisdiction(make_client, bearer, value):
     res = make_client().post("/v1/chat", headers=bearer(roles=["staff"]), json={"message": "hi", "jurisdiction": value})
@@ -154,8 +183,9 @@ def test_chat_rejects_invalid_jurisdiction(make_client, bearer, value):
 
 @pytest.mark.parametrize("value", ["ae", "UAE", "", "XX", "GLOBAL"])
 def test_voice_turn_rejects_invalid_jurisdiction(make_client, bearer, value):
-    res = make_client().post("/v1/voice/turn", headers=bearer(roles=["staff"]),
-                             json={"audio_base64": "", "jurisdiction": value})
+    res = make_client().post(
+        "/v1/voice/turn", headers=bearer(roles=["staff"]), json={"audio_base64": "", "jurisdiction": value}
+    )
     assert res.status_code == 422
 
 
@@ -197,6 +227,7 @@ def test_stream_without_token_is_plain_401(make_client):
 
 
 # AM4 — in-process hostile smoke with the real verifier ----------------------------------------
+
 
 def test_employee_cannot_execute_remediation(make_client, bearer):
     res = make_client().post("/v1/remediate/execute", headers=bearer(roles=["staff"]), json=REMEDIATION)

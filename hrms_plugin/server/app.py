@@ -44,6 +44,7 @@ from hrms_plugin.security.token_verifier import TokenVerifier
 from hrms_plugin.storage.base import BaseKeyValueStore
 from hrms_plugin.storage.mapping_store import MappingStore
 from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
+from hrms_plugin.writeback.service import WritebackError, WritebackService
 
 API_DOCS_ENV_VAR = "HRMS_ENABLE_API_DOCS"
 REMEDIATION_MAX_TOKEN_AGE_SECONDS = 300
@@ -81,6 +82,7 @@ def purge_legacy_pii_vault(store: BaseKeyValueStore) -> None:
 
 purge_legacy_pii_vault(_storage)
 payroll_service = PayrollService(store=_storage)
+writeback_service = WritebackService(store=_storage)
 mapping_store = MappingStore(backend=_storage)
 
 audit_gateway = HostAuditGateway()
@@ -151,6 +153,23 @@ class FingerprintApproveRequest(BaseModel):
     vendor: Literal["frappe"]
     doctype: Literal["Salary Slip"]
     fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class WritebackProposalRequest(BaseModel):
+    """Propose a field-level change to a host record; a different person must approve it (piece F2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    doctype: str = Field(min_length=1, max_length=140)
+    name: str = Field(min_length=1, max_length=140)
+    patch: Dict[str, Any]
+
+
+WRITEBACK_STATUS = {
+    "NOT_FOUND": 404, "FIELD_NOT_WRITABLE": 422, "INVALID_VALUE": 422, "NO_CHANGE": 422, "CONFLICT": 409,
+    "ROLLBACK_CONFLICT": 409, "EXPIRED": 409, "INVALID_STATE": 409, "SAME_PERSON": 403,
+    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502,
+}
 
 
 class RemediationExecuteRequest(BaseModel):
@@ -391,6 +410,26 @@ def approve_schema_fingerprint(
 @router.get("/v1/schema/fingerprints/quarantine")
 def list_schema_quarantine(auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA))):
     return {"tenant_id": auth.tenant_id, "quarantine": payroll_service.list_quarantine(auth.tenant_id)}
+
+
+@router.post("/v1/writeback/proposals")
+async def propose_writeback(
+    req: WritebackProposalRequest, auth: AuthContext = Depends(require(Permission.MUTATE_EMPLOYEE))
+):
+    return await writeback_service.propose(auth, req.doctype, req.name, req.patch)
+
+
+_FRESH_MUTATE = require(Permission.MUTATE_EMPLOYEE, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+
+
+@router.post("/v1/writeback/proposals/{proposal_id}/approve")
+async def approve_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH_MUTATE)):
+    return await writeback_service.approve(auth, proposal_id)
+
+
+@router.post("/v1/writeback/proposals/{proposal_id}/rollback")
+async def rollback_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH_MUTATE)):
+    return await writeback_service.rollback(auth, proposal_id)
 
 
 @router.post("/v1/remediate/execute")
@@ -676,6 +715,11 @@ async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.body, headers=exc.headers)
 
 
+async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JSONResponse:
+    status = WRITEBACK_STATUS.get(exc.code, 500)
+    return JSONResponse(status_code=status, content={"error": exc.code, "detail": exc.detail})
+
+
 async def _llm_not_configured_handler(_request: Request, _exc: LLMNotConfigured) -> JSONResponse:
     return JSONResponse(status_code=503, content={"error": "LLM_NOT_CONFIGURED"})
 
@@ -720,6 +764,7 @@ def create_app(
     application.add_exception_handler(PermissionDenied, _permission_denied_handler)
     application.add_exception_handler(PiiEgressBlocked, _pii_egress_blocked_handler)
     application.add_exception_handler(LLMNotConfigured, _llm_not_configured_handler)
+    application.add_exception_handler(WritebackError, _writeback_error_handler)
     application.include_router(router)
     return application
 

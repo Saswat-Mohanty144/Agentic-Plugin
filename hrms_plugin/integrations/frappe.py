@@ -46,6 +46,30 @@ class FrappeClient:
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             raise FrappeError("HOST_ERROR", f"{type(exc).__name__}") from None
 
+    async def get_document(self, doctype: str, name: str) -> Dict[str, Any]:
+        document = await self._get(f"/api/resource/{quote(doctype, safe='')}/{quote(name, safe='')}")
+        if not isinstance(document, dict):
+            raise FrappeError("HOST_ERROR", "document is not an object")
+        return document
+
+    async def update_document(
+        self, doctype: str, name: str, patch: Dict[str, Any], headers: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """Partial update: Frappe accepts only the fields to change (docs.frappe.io)."""
+        try:
+            response = await self._http.put(
+                f"{self._host.base_url}/api/resource/{quote(doctype, safe='')}/{quote(name, safe='')}",
+                json=patch,
+                headers={**self._headers, **(headers or {})},
+            )
+            response.raise_for_status()
+            document = response.json()["data"]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+            raise FrappeError("HOST_ERROR", f"{type(exc).__name__}") from None
+        if not isinstance(document, dict):
+            raise FrappeError("HOST_ERROR", "document is not an object")
+        return document
+
     async def fetch_submitted_salary_slip(self, employee_id: str, period: str) -> Dict[str, Any]:
         year, month = (int(p) for p in period.split("-"))
         last_day = calendar.monthrange(year, month)[1]
