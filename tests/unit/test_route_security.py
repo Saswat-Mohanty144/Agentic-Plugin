@@ -176,8 +176,16 @@ def test_remediation_approver_is_token_subject(make_client, bearer):
 
 
 def test_handlers_use_token_tenant(make_client, bearer):
-    headers = {**bearer(roles=["platform_admin"]), "X-Tenant-Id": "acme"}
-    assert make_client().get("/v1/schema/mappings", headers=headers).json()["tenant_id"] == "acme"
+    """agy F5: no X-Tenant-Id header and two different tenants, so neither a header-reading nor a
+    hard-coded handler can pass."""
+    client = make_client()
+    acme = client.get("/v1/schema/mappings", headers=bearer(tenant="acme", roles=["platform_admin"]))
+    assert acme.status_code == 200 and acme.json()["tenant_id"] == "acme"
+    for tenant in ("acme", "globex"):
+        headers = bearer(tenant=tenant, roles=["hr_manager"])
+        res = client.post("/v1/remediate/execute", json=REMEDIATION, headers=headers)
+        assert res.status_code == 200
+        assert res.json()["audit_tracing"]["X-Tenant-Id"] == tenant
 
 
 def test_stream_without_token_is_plain_401(make_client):
