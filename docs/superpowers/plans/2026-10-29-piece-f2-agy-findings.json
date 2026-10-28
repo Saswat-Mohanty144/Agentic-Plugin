@@ -1,0 +1,87 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed!",
+    "pytest": "943 passed in 29.14s"
+  },
+  "requirements_checked": 11,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/writeback/service.py",
+      "line": 182,
+      "requirement": "Decision W8: Every PUT carries the attribution headers from the existing HostAuditGateway (invocation ID, approver, reasoning hash). The proposal stores the approval and rollback audit records (who and when).",
+      "finding": "Rollback PUT requests to Frappe do not carry HostAuditGateway attribution headers and the service fails to record the rollback audit envelope on the proposal.",
+      "evidence": "In hrms_plugin/writeback/service.py:182-185, rollback calls await self._call(auth.tenant_id, lambda c: c.update_document(proposal['doctype'], proposal['name'], proposal['before'])) without headers, unlike approve() at lines 158-167. In Frappe mock PUT logs, frappe.puts[-1]['headers'] contains zero x-* tracing headers during rollback, and proposal['audit'] retains only approve headers while rollback audit records are never stored.",
+      "reproduce": ".venv/bin/python -c \"import asyncio, httpx, yaml, os, tempfile; from tests.unit.test_writeback import StatefulFrappe, PROPOSER, APPROVER, HOSTS; from hrms_plugin.writeback.service import WritebackService; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; from hrms_plugin.integrations.frappe import FrappeClient; f = StatefulFrappe(); svc = WritebackService(MemoryKeyValueStore(), lambda h,k,s: FrappeClient(h,k,s,http_client=httpx.AsyncClient(transport=httpx.MockTransport(f.handler)))); os.environ['ACME_FRAPPE_KEY']='k'; os.environ['ACME_FRAPPE_SECRET']='s'; tf = tempfile.NamedTemporaryFile('w', delete=False); yaml.safe_dump(HOSTS, tf); os.environ['HRMS_HOSTS']=tf.name; p = asyncio.run(svc.propose(PROPOSER, 'Employee', 'HR-EMP-00001', {'notice_number_of_days': 60})); asyncio.run(svc.approve(APPROVER, p['id'])); asyncio.run(svc.rollback(APPROVER, p['id'])); assert 'x-hitl-approver-id' not in f.puts[-1]['headers'], 'Attribution headers unexpectedly present'\""
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "category": "correctness",
+      "file": "hrms_plugin/writeback/service.py",
+      "line": 118,
+      "requirement": "Decision W4: Patch validation: at least one field; every field allowlisted; values type-checked (int excludes bool; date is a valid YYYY-MM-DD; string <= 140 chars; decimal is a finite decimal string). A patch equal to the current values -> NO_CHANGE.",
+      "finding": "Decimal patch equality comparison compares raw string against host numeric float or integer, preventing NO_CHANGE detection and falsely allowing redundant writes.",
+      "evidence": "In hrms_plugin/writeback/service.py:118-121, diff = [{'field': f, 'before': document.get(f), 'after': v} for f, v in sorted(patch.items()) if document.get(f) != v]. Decimal patches require str (e.g. '1500.5') while Frappe returns JSON float or integer (e.g. 1500.5). In Python 1500.5 != '1500.5' evaluates to True, so NO_CHANGE is never raised when proposing an identical decimal value.",
+      "reproduce": ".venv/bin/python -c \"import asyncio, httpx, yaml, os, tempfile; from tests.unit.test_writeback import PROPOSER; from hrms_plugin.writeback.service import WritebackService; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; from hrms_plugin.integrations.frappe import FrappeClient; hosts={'tenants': [{'tenant_id': 'acme', 'vendor': 'frappe', 'base_url': 'https://hr.acme.test', 'api_key_env': 'K', 'api_secret_env': 'S', 'timeout_seconds': 10, 'writable_fields': {'Employee': {'rate': 'decimal'}}}]}; os.environ['K']='k'; os.environ['S']='s'; tf = tempfile.NamedTemporaryFile('w', delete=False); yaml.safe_dump(hosts, tf); os.environ['HRMS_HOSTS']=tf.name; doc={'name':'HR-EMP-00001','rate':1500.5,'modified':'2026-10-01 10:00:00.000001'}; h = lambda r: httpx.Response(200, json={'data': doc}); svc = WritebackService(MemoryKeyValueStore(), lambda h,k,s: FrappeClient(h,k,s,http_client=httpx.AsyncClient(transport=httpx.MockTransport(h)))); p = asyncio.run(svc.propose(PROPOSER, 'Employee', 'HR-EMP-00001', {'rate': '1500.5'})); assert len(p['diff']) == 1 and p['diff'][0]['before'] == 1500.5, 'Expected false positive diff'\""
+    },
+    {
+      "id": "F3",
+      "severity": "MEDIUM",
+      "category": "integrity",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 156,
+      "requirement": "Decision W3, W10: An allowlist naming an identifier/PII field is rejected at load ... PII field list extended with Frappe identifier names cell_number (phone), company_email (email), bank_ac_no (bank account), found while verifying W1.",
+      "finding": "Frappe Employee standard identifier field middle_name is absent from _FIELD_KINDS, allowing it to be configured as a writable field without triggering host registry rejection.",
+      "evidence": "In hrms_plugin/security/pii.py:155-157, _FIELD_KINDS defines name, first_name, last_name, full_name, employee_name, candidate_name but omits middle_name. identifier_kind('middle_name') returns None. HostConfig._no_pii_writes in hrms_plugin/integrations/host_registry.py:48-52 fails to reject writable_fields configuring middle_name.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import identifier_kind; from hrms_plugin.integrations.host_registry import load_host_registry; import tempfile, yaml; assert identifier_kind('middle_name') is None; data={'tenants': [{'tenant_id': 'acme', 'vendor': 'frappe', 'base_url': 'https://hr.acme.test', 'api_key_env': 'K', 'api_secret_env': 'S', 'timeout_seconds': 10, 'writable_fields': {'Employee': {'middle_name': 'string'}}}]}; tf = tempfile.NamedTemporaryFile('w', delete=False); yaml.safe_dump(data, tf); reg = load_host_registry(tf.name); assert 'Employee' in reg.for_tenant('acme').writable_fields\""
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/writeback/service.py",
+      "line": 168,
+      "requirement": "Decision W5: Concurrency (our own, since Frappe documents none): ... On rollback, re-read; if modified != the modified returned by our write -> ROLLBACK_CONFLICT and nothing is written.",
+      "finding": "Approve does not validate that after_modified returned by the host update is a valid timestamp, permanently breaking rollback if the host response omits modified.",
+      "evidence": "In hrms_plugin/writeback/service.py:168, proposal.update(status='EXECUTED', after_modified=updated.get('modified'), ...) records after_modified without ensuring it is a non-empty string (unlike propose() at lines 115-117). If the host omits modified, after_modified is saved as None, causing rollback() at line 180 (current.get('modified') != proposal.get('after_modified')) to perpetually raise ROLLBACK_CONFLICT.",
+      "reproduce": ".venv/bin/python -c \"import asyncio, httpx, yaml, os, tempfile; from tests.unit.test_writeback import PROPOSER, APPROVER, HOSTS; from hrms_plugin.writeback.service import WritebackService, WritebackError; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; from hrms_plugin.integrations.frappe import FrappeClient; doc={'name':'HR-EMP-00001','notice_number_of_days':30,'modified':'2026-10-01 10:00:00.000001'}; async def h(r): return httpx.Response(200, json={'data': {'name': 'HR-EMP-00001', 'notice_number_of_days': 60}}) if r.method=='PUT' else httpx.Response(200, json={'data': dict(doc)}); svc = WritebackService(MemoryKeyValueStore(), lambda h,k,s: FrappeClient(h,k,s,http_client=httpx.AsyncClient(transport=httpx.MockTransport(h)))); os.environ['ACME_FRAPPE_KEY']='k'; os.environ['ACME_FRAPPE_SECRET']='s'; tf = tempfile.NamedTemporaryFile('w', delete=False); yaml.safe_dump(HOSTS, tf); os.environ['HRMS_HOSTS']=tf.name; p = asyncio.run(svc.propose(PROPOSER, 'Employee', 'HR-EMP-00001', {'notice_number_of_days': 60})); asyncio.run(svc.approve(APPROVER, p['id'])); import pytest; pytest.raises(WritebackError, asyncio.run, svc.rollback(APPROVER, p['id']))\""
+    },
+    {
+      "id": "F5",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/writeback/service.py",
+      "line": 87,
+      "requirement": "Decision W11: HTTP mapping: NOT_FOUND 404; FIELD_NOT_WRITABLE / INVALID_VALUE / NO_CHANGE 422; CONFLICT / ROLLBACK_CONFLICT / EXPIRED / INVALID_STATE 409; SAME_PERSON 403; HOST_NOT_CONFIGURED 503; HOST_ERROR 502.",
+      "finding": "Writeback service discards host exception diagnostic details by passing exc.code instead of exc.detail to WritebackError.",
+      "evidence": "In hrms_plugin/writeback/service.py:86-87, except FrappeError as exc: raise WritebackError('HOST_ERROR', exc.code) from None passes exc.code (which is the literal string 'HOST_ERROR') instead of exc.detail (e.g. 'HTTPStatusError: 502'). This renders redundant error payloads {'error': 'HOST_ERROR', 'detail': 'HOST_ERROR'}.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.integrations.frappe import FrappeError; from hrms_plugin.writeback.service import WritebackError; exc = FrappeError('HOST_ERROR', 'HTTPStatusError: 502'); wb = WritebackError('HOST_ERROR', exc.code); assert wb.detail == 'HOST_ERROR' and wb.detail != exc.detail\""
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "category": "test-quality",
+      "file": "tests/unit/test_writeback.py",
+      "line": 195,
+      "requirement": "Decision W8: Every PUT carries the attribution headers from the existing HostAuditGateway (invocation ID, approver, reasoning hash).",
+      "finding": "Rollback test asserts body payload restoration but fails to assert attribution headers on the host PUT, allowing the rollback audit header omission to pass unnoticed.",
+      "evidence": "In tests/unit/test_writeback.py:195-202, test_rollback_restores_before_values_once checks assert frappe.puts[-1]['body'] == {'notice_number_of_days': 30} and idempotency, but unlike test_approve_writes_once_with_audit_headers (lines 142-144) it omits header assertions on frappe.puts[-1], masking the missing rollback attribution headers.",
+      "reproduce": "Inspect tests/unit/test_writeback.py:195-202; run .venv/bin/python -m pytest tests/unit/test_writeback.py -k test_rollback_restores_before_values_once and observe it passes despite rollback sending no audit headers."
+    },
+    {
+      "id": "F7",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_writeback.py",
+      "line": 26,
+      "requirement": "Decision W3, W4: writable_fields: {doctype: {field: int / date / string / decimal}} ... values type-checked (int excludes bool; date is a valid YYYY-MM-DD; string <= 140 chars; decimal is a finite decimal string)",
+      "finding": "The test suite contains zero tests exercising decimal fields in writable_fields or proposal patches.",
+      "evidence": "In tests/unit/test_writeback.py:26, HOSTS only specifies notice_number_of_days (int) and final_confirmation_date (date). Grepping tests/unit/test_writeback.py for 'decimal' yields zero matches. Neither proposal creation, type checking, NO_CHANGE detection, approval, nor rollback is ever tested for decimal values.",
+      "reproduce": "git grep 'decimal' tests/unit/test_writeback.py returns exit code 1 with no output."
+    }
+  ]
+}

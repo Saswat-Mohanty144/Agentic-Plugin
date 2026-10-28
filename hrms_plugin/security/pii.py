@@ -153,7 +153,10 @@ def detect(text: str) -> List[Match]:
 # --- identifier fields -------------------------------------------------------------------------------
 
 _FIELD_KINDS: Dict[str, str] = {
-    **{k: "NAME" for k in ("name", "first_name", "last_name", "full_name", "employee_name", "candidate_name")},
+    **{
+        k: "NAME"
+        for k in ("name", "first_name", "middle_name", "last_name", "full_name", "employee_name", "candidate_name")
+    },
     **{k: "EMAIL" for k in ("email", "work_email", "personal_email", "company_email")},
     **{k: "PHONE" for k in ("phone", "mobile", "phone_number", "cell_number")},
     "address": "ADDRESS",

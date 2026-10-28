@@ -25,6 +25,13 @@ class FrappeError(Exception):
         self.detail = detail
 
 
+def _describe(exc: Exception) -> str:
+    """Diagnostic detail without response bodies (which may contain host data)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
+
+
 class FrappeClient:
     def __init__(
         self, host: HostConfig, api_key: str, api_secret: str, http_client: Optional[httpx.AsyncClient] = None
@@ -44,7 +51,7 @@ class FrappeClient:
             response.raise_for_status()
             return response.json()["data"]
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            raise FrappeError("HOST_ERROR", f"{type(exc).__name__}") from None
+            raise FrappeError("HOST_ERROR", _describe(exc)) from None
 
     async def get_document(self, doctype: str, name: str) -> Dict[str, Any]:
         document = await self._get(f"/api/resource/{quote(doctype, safe='')}/{quote(name, safe='')}")
@@ -65,7 +72,7 @@ class FrappeClient:
             response.raise_for_status()
             document = response.json()["data"]
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
-            raise FrappeError("HOST_ERROR", f"{type(exc).__name__}") from None
+            raise FrappeError("HOST_ERROR", _describe(exc)) from None
         if not isinstance(document, dict):
             raise FrappeError("HOST_ERROR", "document is not an object")
         return document

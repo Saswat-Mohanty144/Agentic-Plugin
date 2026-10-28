@@ -310,3 +310,83 @@ def test_http_bad_body_rejected(make_client, bearer):
         json={"doctype": "Employee", "name": "HR-EMP-00001", "patch": {}, "x": 1},
     )
     assert res.status_code == 422
+
+
+# agy F2-review fixes -----------------------------------------------------------------------------------------
+
+async def test_rollback_carries_audit_headers_and_records_audit(svc, frappe):          # F1 / F6
+    p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
+    await svc.approve(APPROVER, p["id"])
+    rolled = await svc.rollback(APPROVER, p["id"])
+    headers = frappe.puts[-1]["headers"]
+    assert headers["x-hitl-approver-id"] == "hr-2" and headers["x-agent-name"] == "WritebackService"
+    assert headers["x-agent-invocation-id"] != frappe.puts[0]["headers"]["x-agent-invocation-id"]
+    assert rolled["rollback_audit"]["X-HITL-Approver-Id"] == "hr-2"
+
+
+def test_middle_name_is_pii_and_cannot_be_writable(tmp_path):                            # F3
+    assert identifier_kind("middle_name") == "NAME"
+    data = copy.deepcopy(HOSTS)
+    data["tenants"][0]["writable_fields"] = {"Employee": {"middle_name": "string"}}
+    path = tmp_path / "h.yaml"
+    path.write_text(yaml.safe_dump(data))
+    with pytest.raises(HostRegistryError):
+        load_host_registry(path)
+
+
+async def test_missing_modified_after_write_is_recovered_by_reread(svc, frappe):          # F4
+    p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
+    real = frappe.handler
+
+    async def no_modified_on_put(request):
+        response = await real(request)
+        if request.method == "PUT":
+            data = __import__("json").loads(response.content)["data"]
+            data.pop("modified")
+            return httpx.Response(200, json={"data": data})
+        return response
+
+    frappe.handler = no_modified_on_put
+    done = await svc.approve(APPROVER, p["id"])
+    assert done["status"] == "EXECUTED" and done["after_modified"] == frappe.doc["modified"]
+    frappe.handler = real
+    assert (await svc.rollback(APPROVER, p["id"]))["status"] == "ROLLED_BACK"
+
+
+async def test_host_error_detail_is_kept(svc, frappe):                                   # F5
+    p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
+    frappe.fail_put = True
+    with pytest.raises(WritebackError) as info:
+        await svc.approve(APPROVER, p["id"])
+    assert info.value.code == "HOST_ERROR" and "500" in info.value.detail
+
+
+# F2 / F7 — decimal fields ------------------------------------------------------------------------------------
+
+@pytest.fixture
+def decimal_svc(svc, frappe, tmp_path, monkeypatch):
+    data = copy.deepcopy(HOSTS)
+    data["tenants"][0]["writable_fields"]["Employee"]["ctc"] = "decimal"
+    path = tmp_path / "hosts_dec.yaml"
+    path.write_text(yaml.safe_dump(data))
+    monkeypatch.setenv("HRMS_HOSTS", str(path))
+    frappe.doc["ctc"] = 1500000.5
+    return svc
+
+
+async def test_decimal_equal_to_host_number_is_no_change(decimal_svc):
+    assert await codes(decimal_svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"ctc": "1500000.50"})) == "NO_CHANGE"
+
+
+@pytest.mark.parametrize("value", [1500000.5, "abc", "NaN", "Infinity", True])
+async def test_decimal_must_be_finite_decimal_string(decimal_svc, value):
+    assert await codes(decimal_svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"ctc": value})) == "INVALID_VALUE"
+
+
+async def test_decimal_write_and_rollback_restore_exact_values(decimal_svc, frappe):
+    p = await decimal_svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"ctc": "1600000.00"})
+    assert p["diff"] == [{"field": "ctc", "before": 1500000.5, "after": "1600000.00"}]
+    await decimal_svc.approve(APPROVER, p["id"])
+    assert frappe.puts[-1]["body"] == {"ctc": "1600000.00"}
+    await decimal_svc.rollback(APPROVER, p["id"])
+    assert frappe.puts[-1]["body"] == {"ctc": 1500000.5}
