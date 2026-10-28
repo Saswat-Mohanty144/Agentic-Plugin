@@ -474,3 +474,14 @@ python3.12 -m pytest -q
 Plus:
 - **Red→green evidence:** every test in §5–§6 has its red→green record in the task log.
 - **Hostile smoke test:** against the running container, `POST /v1/remediate/execute` without a token returns 401, and with an EMPLOYEE token returns 403.
+
+## 9. Amendments (2026-10-28, approved by user during planning)
+
+| # | Amendment | Tests |
+|---|---|---|
+| AM1 | **§4 correction.** `test_chat_endpoint_payroll_routing` expects `routed_agent == "StatutoryPayrollAgent"`, which only the non-agentic path returns; it predates `agentic: true` becoming the default. It is split in two: one keeps its assertions and sends `agentic: false`; a new one tests the agentic path with the scripted LLM. The orchestrator intent bug (A4) is still fixed | Both tests pass |
+| AM2 | FastAPI's `/docs`, `/redoc` and `/openapi.json` are **disabled by default**; `HRMS_ENABLE_API_DOCS=true` (exact string) enables them | Default → 404 for all three; `true` → 200; `True`, `1` or `yes` → still 404 |
+| AM3 | After a failed JWKS fetch, no new fetch to that URL for 60 s. Requests use the cache if it is ≤ 3600 s old, otherwise they get 503 | Retry at 59 s skipped; at 60 s attempted |
+| AM4 | §8 smoke test: the container is checked for **no token → 401**. EMPLOYEE → 403 is proven in-process with the real verifier, the real `create_app` and an in-memory JWKS | — |
+| AM5 | `VoiceTurnRequest.jurisdiction` gets the same strict check as `ChatRequest` (`IN`, `AE`, `SA`, `US`, exact case; otherwise 422) | Same cases as A5 |
+| AM6 | JWKS keys are cached per **JWKS URL**, not per tenant. Tenants sharing an issuer share one URL and one set of keys; the limits in §6.3 apply per URL | Covered by the §6.3 tests |
