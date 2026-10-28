@@ -14,6 +14,7 @@ from hrms_plugin.agents.offboarding import OffboardingAgent
 from hrms_plugin.agents.onboarding import OnboardingAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
+from hrms_plugin.agents.supervisor import UserIntent
 from hrms_plugin.agents.travel_expense import TravelExpenseAgent
 from hrms_plugin.ai.llm import ToolDefinition
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
@@ -44,11 +45,19 @@ class AgenticToolRegistry:
 
         self._tools: Dict[str, ToolDefinition] = {}
         self._handlers: Dict[str, Callable[..., Any]] = {}
+        self._intents: Dict[str, UserIntent] = {}
         self._register_default_tools()
 
-    def register(self, definition: ToolDefinition, handler: Callable[..., Any]) -> None:
+    def register(self, definition: ToolDefinition, handler: Callable[..., Any], *, intent: UserIntent) -> None:
         self._tools[definition.name] = definition
         self._handlers[definition.name] = handler
+        self._intents[definition.name] = intent
+
+    def get_definition(self, name: str) -> Optional[ToolDefinition]:
+        return self._tools.get(name)
+
+    def intent_for(self, name: str) -> UserIntent:
+        return self._intents.get(name, UserIntent.GENERAL_HR)
 
     def get_definitions(self) -> List[ToolDefinition]:
         return list(self._tools.values())
@@ -86,6 +95,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_calculate_salary,
+            intent=UserIntent.PAYROLL_STRUCTURE,
         )
 
         # 2. EOSB Gratuity Tool
@@ -107,6 +117,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_calculate_eosb,
+            intent=UserIntent.PAYROLL_EOSB,
         )
 
         # 3. Compliance Audit Tool
@@ -132,6 +143,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_audit_compliance,
+            intent=UserIntent.COMPLIANCE_AUDIT,
         )
 
         # 4. Search Labor Laws Tool
@@ -150,6 +162,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_search_laws,
+            intent=UserIntent.LEGAL_QNA,
         )
 
         # 5. Evaluate Leave Tool
@@ -173,6 +186,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_evaluate_leave,
+            intent=UserIntent.LEAVE_APPLY,
         )
 
         # 6. Impossible Travel Anomaly Tool
@@ -190,6 +204,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_detect_travel,
+            intent=UserIntent.ATTENDANCE_ANOMALY,
         )
 
         # 7. ATS Resume Screening Tool
@@ -209,6 +224,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_score_ats,
+            intent=UserIntent.RECRUITMENT_ATS,
         )
 
         # 8. Job Description Bias Audit Tool
@@ -225,6 +241,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_audit_bias,
+            intent=UserIntent.RECRUITMENT_BIAS,
         )
 
         # 9. Offer Evaluation Tool
@@ -247,6 +264,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_evaluate_offer,
+            intent=UserIntent.ONBOARDING,
         )
 
         # 10. Document Verification Tool
@@ -265,6 +283,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_verify_docs,
+            intent=UserIntent.ONBOARDING,
         )
 
         # 11. Offboarding FNF Timeline Tool
@@ -284,6 +303,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_audit_fnf_timeline,
+            intent=UserIntent.OFFBOARDING_FNF,
         )
 
         # 12. Final Settlement Statement Tool
@@ -315,6 +335,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_compute_final_settlement,
+            intent=UserIntent.OFFBOARDING_FNF,
         )
 
         # 13. Travel & Expense Audit Tool
@@ -336,6 +357,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_audit_expenses,
+            intent=UserIntent.TRAVEL_EXPENSE,
         )
 
         # 14. Smart Requisition 4-Archetype Generator Tool
@@ -366,6 +388,7 @@ class AgenticToolRegistry:
                 },
             ),
             self._tool_generate_archetypes,
+            intent=UserIntent.RECRUITMENT_REQUISITION,
         )
 
     # Handler wrappers
