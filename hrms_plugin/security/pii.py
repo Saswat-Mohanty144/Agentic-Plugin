@@ -175,6 +175,12 @@ _FIELD_KINDS: Dict[str, str] = {
 }
 
 
+COMPENSATION_FIELDS = frozenset({
+    "salary", "basic_salary", "gross_salary", "ctc", "annual_ctc", "gross_pay", "net_pay", "basic_wage",
+    "basic_wage_monthly", "gross_wage_monthly", "monthly_gross", "annual_salary",
+})
+
+
 def _normalise_key(key: str) -> str:
     key = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
     return re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
@@ -202,7 +208,9 @@ class PiiEgressBlocked(Exception):
 class PiiSession:
     """Tokenises PII for one request. Tokens are unpredictable (per-session nonce) and never persisted."""
 
-    def __init__(self) -> None:
+    def __init__(self, tokenize_compensation: bool = False) -> None:
+        self._tokenize_compensation = tokenize_compensation
+        self._minted: Dict[str, int] = {}
         self._nonce = secrets.token_hex(4)
         self._known: Dict[str, str] = {}          # casefolded value -> kind (learned from identifier fields)
         self._token_for: Dict[str, str] = {}      # raw value -> token
@@ -214,7 +222,9 @@ class PiiSession:
         if isinstance(obj, dict):
             for key, value in obj.items():
                 kind = identifier_kind(str(key))
-                if kind and isinstance(value, (str, int)) and not isinstance(value, bool):
+                if kind is None and self._tokenize_compensation and _normalise_key(str(key)) in COMPENSATION_FIELDS:
+                    kind = "COMPENSATION"
+                if kind and isinstance(value, (str, int, float)) and not isinstance(value, bool):
                     text = normalise(str(value)).strip()
                     if len(text) >= 2:
                         self._known[text.casefold()] = kind
@@ -230,6 +240,7 @@ class PiiSession:
         if token is None:
             self._counters[kind] = self._counters.get(kind, 0) + 1
             token = f"[PII_{kind}_{self._counters[kind]}_{self._nonce}]"
+            self._minted[kind] = self._minted.get(kind, 0) + 1
             self._token_for[value] = token
             self._value_for[token] = value
         return token
@@ -262,6 +273,10 @@ class PiiSession:
         return any(m.start() <= index < m.end() for m in _TOKEN_RE.finditer(text))
 
     # restoring ------------------------------------------------------------------------------------
+    def minted_counts(self) -> Dict[str, int]:
+        """How many distinct values of each kind this session has tokenised so far (no values)."""
+        return dict(self._minted)
+
     def restore(self, text: str) -> str:
         if not text or not self._value_for:
             return text

@@ -12,6 +12,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    StrictBool,
     StrictInt,
     StrictStr,
     ValidationError,
@@ -36,6 +37,17 @@ class ClaimNames(BaseModel):
     subject: StrictStr = Field(min_length=1)
 
 
+class LlmPolicy(BaseModel):
+    """Which LLM providers may receive this tenant's (redacted) data; a legal decision per customer (piece G2)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    allowed_providers: Tuple[
+        Literal["fake", "openai", "groq", "openrouter", "anthropic", "gemini", "nvidia"], ...
+    ] = Field(min_length=1)
+    tokenize_compensation: StrictBool = False
+
+
 class TenantConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -49,6 +61,7 @@ class TenantConfig(BaseModel):
     allowed_origins: Tuple[StrictStr, ...]
     leeway_seconds: StrictInt = Field(ge=0, le=120)
     max_token_lifetime_seconds: StrictInt = Field(ge=60, le=86400)
+    llm_policy: Optional[LlmPolicy] = None  # absent → no LLM calls for this tenant (fail closed)
 
     @field_validator("jwks_url")
     @classmethod

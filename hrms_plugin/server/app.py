@@ -29,6 +29,8 @@ from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.voice import VoiceAgent
 from hrms_plugin.ai.llm import LLMNotConfigured
+from hrms_plugin.governance.egress_log import EgressLog
+from hrms_plugin.governance.llm_policy import LlmNotAllowed
 from hrms_plugin.payroll.service import PayrollService
 from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
@@ -83,6 +85,7 @@ def purge_legacy_pii_vault(store: BaseKeyValueStore) -> None:
 purge_legacy_pii_vault(_storage)
 payroll_service = PayrollService(store=_storage)
 writeback_service = WritebackService(store=_storage)
+egress_log = EgressLog(_storage)
 mapping_store = MappingStore(backend=_storage)
 
 audit_gateway = HostAuditGateway()
@@ -230,7 +233,8 @@ async def chat_stream_endpoint(
 ):
     """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
     agent: SupervisorAgent = request.app.state.supervisor
-    agent.get_orchestrator()  # resolve LLM configuration before streaming starts → plain 503 (agy E-F7)
+    # Resolve LLM configuration and tenant policy before streaming starts → plain 503/403 (agy E-F7, piece G2)
+    agent.get_orchestrator().llm_gateway.policy_for(auth.tenant_id)
 
     async def event_generator():
         text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
@@ -368,6 +372,7 @@ async def synthesize_mapping_agentic(
     mapping, report = await synthesizer.synthesize_agentic(
         discovered=discovered,
         canonical_type=domain_enum,
+        tenant_id=auth.tenant_id,
     )
     mapping_store.save_mapping(tenant_id=auth.tenant_id, mapping=mapping)
     return report.model_dump()
@@ -430,6 +435,12 @@ async def approve_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH
 @router.post("/v1/writeback/proposals/{proposal_id}/rollback")
 async def rollback_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH_MUTATE)):
     return await writeback_service.rollback(auth, proposal_id)
+
+
+@router.get("/v1/governance/llm-egress")
+def list_llm_egress(auth: AuthContext = Depends(require(Permission.VIEW_COMPLIANCE))):
+    """Content-free record of every LLM call made for this tenant (piece G1)."""
+    return {"tenant_id": auth.tenant_id, "records": egress_log.list(auth.tenant_id)}
 
 
 @router.post("/v1/remediate/execute")
@@ -720,6 +731,10 @@ async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JS
     return JSONResponse(status_code=status, content={"error": exc.code, "detail": exc.detail})
 
 
+async def _llm_not_allowed_handler(_request: Request, _exc: LlmNotAllowed) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"error": "LLM_NOT_ALLOWED_FOR_TENANT"})
+
+
 async def _llm_not_configured_handler(_request: Request, _exc: LLMNotConfigured) -> JSONResponse:
     return JSONResponse(status_code=503, content={"error": "LLM_NOT_CONFIGURED"})
 
@@ -764,6 +779,7 @@ def create_app(
     application.add_exception_handler(PermissionDenied, _permission_denied_handler)
     application.add_exception_handler(PiiEgressBlocked, _pii_egress_blocked_handler)
     application.add_exception_handler(LLMNotConfigured, _llm_not_configured_handler)
+    application.add_exception_handler(LlmNotAllowed, _llm_not_allowed_handler)
     application.add_exception_handler(WritebackError, _writeback_error_handler)
     application.include_router(router)
     return application

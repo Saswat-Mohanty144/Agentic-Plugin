@@ -23,6 +23,7 @@ EXPECTED = {
     ("POST", "/v1/schema/fingerprints/approve"): P.MANAGE_SCHEMA,
     ("GET", "/v1/schema/fingerprints/quarantine"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals"): P.MUTATE_EMPLOYEE,
+    ("GET", "/v1/governance/llm-egress"): P.VIEW_COMPLIANCE,
     ("POST", "/v1/writeback/proposals/{proposal_id}/approve"): P.MUTATE_EMPLOYEE,
     ("POST", "/v1/writeback/proposals/{proposal_id}/rollback"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/compliance/diagnose"): P.VIEW_COMPLIANCE,

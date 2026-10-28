@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import email.utils
+import hashlib
 import json
 import logging
 import math
@@ -749,9 +750,49 @@ class GeminiClient(BaseLLMClient):
 class LLMGateway:
     """The central enterprise gateway managing LLM interactions, PII safety, and multi-tenancy."""
 
-    def __init__(self, config: Optional[LLMConfig] = None):
+    def __init__(self, config: Optional[LLMConfig] = None, egress_log: Any = None, policy_resolver: Any = None):
+        """Gateways built from the environment (every production path) always enforce the tenant LLM policy and
+        write the egress log (piece G). Explicit-config gateways (tests, embedding) do so when given them."""
+        from_env = config is None
         self.config = config or self._resolve_config_from_env()
         self.client = self._create_client(self.config)
+        if from_env:
+            from hrms_plugin.governance.egress_log import EgressLog
+            from hrms_plugin.governance.llm_policy import env_policy_resolver
+            from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
+
+            data_dir = os.environ.get("HRMS_DATA_DIR", ".hrms_data")
+            egress_log = egress_log or EgressLog(SqliteKeyValueStore(os.path.join(data_dir, "plugin_storage.db")))
+            policy_resolver = policy_resolver or env_policy_resolver()
+        self.egress_log = egress_log
+        self.policy_resolver = policy_resolver
+
+    def policy_for(self, tenant_id: str) -> Any:
+        from hrms_plugin.security.tenant_registry import LlmPolicy
+
+        if self.policy_resolver is None:
+            return LlmPolicy(allowed_providers=(self.config.provider.value,))
+        return self.policy_resolver(tenant_id, self.config.provider.value)
+
+    def _record_egress(self, tenant_id: str, protected: List[ChatMessage], before: Dict[str, int],
+                       pii: PiiSession, usage: Dict[str, Any]) -> None:
+        if self.egress_log is None:
+            return
+        payload = json.dumps(
+            [[m.role, m.content, [[tc.name, tc.arguments] for tc in (m.tool_calls or [])]] for m in protected],
+            default=str,
+            sort_keys=True,
+        )
+        after = pii.minted_counts()
+        self.egress_log.record(
+            tenant_id=tenant_id,
+            provider=self.config.provider.value,
+            model=self.config.model,
+            payload_sha256="sha256:" + hashlib.sha256(payload.encode()).hexdigest(),
+            redacted_kinds={k: after[k] - before.get(k, 0) for k in after if after[k] - before.get(k, 0)},
+            input_tokens=(usage or {}).get("input_tokens", (usage or {}).get("prompt_tokens", 0)),
+            output_tokens=(usage or {}).get("output_tokens", (usage or {}).get("completion_tokens", 0)),
+        )
 
     @staticmethod
     def _redact_obj(obj: Any, pii: PiiSession) -> Any:
@@ -875,14 +916,18 @@ class LLMGateway:
         pii: Optional[PiiSession] = None,
     ) -> LLMResponse:
         """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C)."""
-        pii = pii or PiiSession()
+        policy = self.policy_for(tenant_id)  # raises LlmNotAllowed before anything is sent (piece G2)
+        pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
+        before = pii.minted_counts()
         # Pin deterministic temperature for high-stakes tasks
         effective_temp = 0.0 if task_class in (TaskClass.SCORING, TaskClass.EVALUATION) else temperature
+        protected = self._protect(messages, pii)
         response = await self.client.chat(
-            messages=self._protect(messages, pii),
+            messages=protected,
             tools=tools,
             temperature=effective_temp,
         )
+        self._record_egress(tenant_id, protected, before, pii, response.usage)
         response.content = pii.restore(response.content)
         response.tool_calls = [
             ToolCall(id=tc.id, name=tc.name, arguments=pii.restore_obj(tc.arguments)) for tc in response.tool_calls
@@ -897,8 +942,11 @@ class LLMGateway:
         pii: Optional[PiiSession] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream SSE events; PII is redacted before sending and tokens are restored in streamed text."""
-        pii = pii or PiiSession()
+        policy = self.policy_for(tenant_id)
+        pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
+        before = pii.minted_counts()
         protected = self._protect(messages, pii)
+        self._record_egress(tenant_id, protected, before, pii, {})
         restorer = StreamRestorer(pii)
         async for chunk in self.client.chat_stream(protected, tools):
             if chunk.get("event") == "token":

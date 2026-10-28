@@ -785,6 +785,7 @@ class MappingSynthesizer:
         canonical_type: EntityType | str,
         llm_gateway: Optional[Any] = None,
         vendor: str = "custom",
+        tenant_id: str = "DEFAULT",
     ) -> Tuple[EntityMapping, SynthesisReport]:
         """Synthesize schema mappings with LLM semantic reasoning over ambiguous/vendor fields."""
         mapping, report = cls.synthesize(discovered, canonical_type, vendor=vendor)
@@ -798,13 +799,13 @@ class MappingSynthesizer:
         gateway = llm_gateway or LLMGateway()
         owns_gateway = llm_gateway is None
         try:
-            return await cls._apply_llm_matches(discovered, mapping, report, gateway)
+            return await cls._apply_llm_matches(discovered, mapping, report, gateway, tenant_id)
         finally:
             if owns_gateway:
                 await gateway.aclose()
 
     @classmethod
-    async def _apply_llm_matches(cls, discovered, mapping, report, gateway):
+    async def _apply_llm_matches(cls, discovered, mapping, report, gateway, tenant_id="DEFAULT"):
         from hrms_plugin.ai.llm import ChatMessage, TaskClass
 
         try:
@@ -824,6 +825,7 @@ class MappingSynthesizer:
             llm_res = await gateway.chat(
                 messages=[ChatMessage(role="user", content=prompt)],
                 task_class=TaskClass.EXTRACTION,
+                tenant_id=tenant_id,
             )
             res_text = llm_res.content.strip()
             if res_text.startswith("```json"):

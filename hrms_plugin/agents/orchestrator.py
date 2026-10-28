@@ -232,7 +232,8 @@ class AgenticOrchestrator:
         """Execute autonomous ReAct agent loop until final answer is formulated."""
         tenant_id = auth.tenant_id
         ctx = context or {}
-        state = _RunState()
+        policy = self.llm_gateway.policy_for(tenant_id)  # fail closed before any work (piece G2)
+        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation))
         state.pii.learn(ctx)
         messages: List[ChatMessage] = [self._system_message(jurisdiction, tenant_id, ctx)]
         for h in history or []:
@@ -281,7 +282,8 @@ class AgenticOrchestrator:
         ctx = context or {}
         tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
-        state = _RunState()
+        policy = self.llm_gateway.policy_for(tenant_id)
+        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation))
         state.pii.learn(ctx)
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
