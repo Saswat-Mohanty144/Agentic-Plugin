@@ -67,3 +67,11 @@
 - **Piece G:** approval workflow and UI.
 - **Piece I:** declarative YAML vendor profiles, iCeipts and Zoho.
 - **Later:** the Code on Social Security 2020 "50% wage" rule, which needs legal sign-off (NEEDS_HUMAN).
+
+## 5. Amendments after agy review (architect, under delegation)
+| # | Amendment |
+|---|---|
+| F1-6a | The original F1-6 wording ("only fields the calculation reads") contradicted the §3 test list ("a new earnings key gives a different fingerprint"). Resolved in favour of the test list: **every key of every earnings row** is fingerprinted, because earnings rows *are* the wage. Top-level fields the calculation does not read are still ignored. |
+| F1-8a | Memo rows (`statistical_component` or `do_not_include_in_total`) are never PF wage. A required component present only as a memo row counts as missing. |
+| F1-5a | The fetched document must be the requested one: `docstatus = 1`, `employee` equal to the request, `start_date` inside the month. Otherwise `INCONSISTENT_PAYLOAD`. A malformed listing is `HOST_ERROR`, not `SLIP_NOT_FOUND`. |
+| F1-4a | Rules consistency: no duplicate components; `eps_rate ≤ employer_rate`; `eps_wage_ceiling ≤ wage_ceiling`. Host registry: unique tenants; no credentials embedded in `base_url`. |

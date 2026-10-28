@@ -36,7 +36,9 @@ def slip_fingerprint(slip: Dict[str, Any]) -> str:
     for key in TOP_LEVEL_FIELDS:
         pairs.append(f"{key}:{_json_type(slip[key]) if key in slip else 'missing'}")
     rows = slip.get("earnings") if isinstance(slip.get("earnings"), list) else []
-    for key in EARNING_FIELDS:
+    # Every key of every earnings row counts: rows ARE the wage, so any structural change needs re-approval (agy F6).
+    row_keys = set(EARNING_FIELDS) | {k for row in rows if isinstance(row, dict) for k in row}
+    for key in sorted(row_keys):
         types = sorted({(_json_type(row[key]) if isinstance(row, dict) and key in row else "missing") for row in rows})
         pairs.append(f"earnings[].{key}:{'|'.join(types) or 'empty'}")
     digest = hashlib.sha256(json.dumps(sorted(pairs)).encode()).hexdigest()

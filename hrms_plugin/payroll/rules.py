@@ -65,6 +65,14 @@ class PfRules(BaseModel):
 
     @model_validator(mode="after")
     def _disjoint(self) -> "PfRules":
+        for name in ("required_components", "optional_components"):
+            values = getattr(self, name)
+            if len(values) != len(set(values)):
+                raise ValueError(f"{name} contains duplicates")
+        if self.eps_rate > self.employer_rate:
+            raise ValueError("eps_rate cannot exceed employer_rate (EPS is part of the employer contribution)")
+        if self.eps_wage_ceiling > self.wage_ceiling:
+            raise ValueError("eps_wage_ceiling cannot exceed wage_ceiling")
         overlap = set(self.required_components) & set(self.optional_components)
         if overlap:
             raise ValueError(f"components cannot be both required and optional: {sorted(overlap)}")

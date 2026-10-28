@@ -8,7 +8,16 @@ from typing import Literal, Mapping, Optional, Tuple, Union
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 HOSTS_ENV_VAR = "HRMS_HOSTS"
 
@@ -33,6 +42,8 @@ class HostConfig(BaseModel):
         parts = urlsplit(value)
         if parts.scheme != "https" or not parts.hostname or parts.query or parts.fragment:
             raise ValueError("base_url must be an https:// URL without query or fragment")
+        if parts.username or parts.password:
+            raise ValueError("base_url must not embed credentials; use api_key_env / api_secret_env")
         return value.rstrip("/")
 
     def credentials(self, env: Optional[Mapping[str, str]] = None) -> Tuple[str, str]:
@@ -47,6 +58,13 @@ class HostRegistry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tenants: Tuple[HostConfig, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _unique(self) -> "HostRegistry":
+        ids = [t.tenant_id for t in self.tenants]
+        if len(ids) != len(set(ids)):
+            raise ValueError("duplicate tenant_id in host registry")
+        return self
 
     def for_tenant(self, tenant_id: str) -> Optional[HostConfig]:
         return next((t for t in self.tenants if t.tenant_id == tenant_id), None)

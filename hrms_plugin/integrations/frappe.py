@@ -43,7 +43,7 @@ class FrappeClient:
             response = await self._http.get(f"{self._host.base_url}{path}", params=params, headers=self._headers)
             response.raise_for_status()
             return response.json()["data"]
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             raise FrappeError("HOST_ERROR", f"{type(exc).__name__}") from None
 
     async def fetch_submitted_salary_slip(self, employee_id: str, period: str) -> Dict[str, Any]:
@@ -59,7 +59,9 @@ class FrappeClient:
             f"/api/resource/{quote(SALARY_SLIP, safe='')}",
             {"filters": json.dumps(filters), "fields": json.dumps(["name"]), "limit_page_length": 2},
         )
-        if not isinstance(listing, list) or not listing:
+        if not isinstance(listing, list):
+            raise FrappeError("HOST_ERROR", "listing is not a list")
+        if not listing:
             raise FrappeError("SLIP_NOT_FOUND", "no submitted salary slip for that employee and month")
         if len(listing) > 1:
             raise FrappeError("AMBIGUOUS_SLIPS", "more than one submitted salary slip for that employee and month")
@@ -69,4 +71,13 @@ class FrappeClient:
         document = await self._get(f"/api/resource/{quote(SALARY_SLIP, safe='')}/{quote(name, safe='')}")
         if not isinstance(document, dict):
             raise FrappeError("HOST_ERROR", "document is not an object")
+        # Never trust the second call blindly: the document must be the submitted slip we asked for (agy F7).
+        start = document.get("start_date")
+        if (
+            document.get("docstatus") != 1
+            or document.get("employee") != employee_id
+            or not isinstance(start, str)
+            or not (filters[1][2] <= start <= filters[2][2])
+        ):
+            raise FrappeError("INCONSISTENT_PAYLOAD", "document does not match the requested submitted slip")
         return document

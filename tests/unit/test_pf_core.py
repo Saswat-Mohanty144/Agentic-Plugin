@@ -162,11 +162,16 @@ def test_structural_changes_change_the_fingerprint(mutate):
     assert slip_fingerprint(changed) != slip_fingerprint(slip())
 
 
-def test_unread_fields_do_not_affect_the_fingerprint():
+def test_unread_top_level_fields_do_not_affect_the_fingerprint():
     changed = slip()
     changed["some_new_frappe_field"] = 1
-    changed["earnings"][0]["year_to_date"] = 1
     assert slip_fingerprint(changed) == slip_fingerprint(slip())
+
+
+def test_any_new_earnings_key_changes_the_fingerprint():  # agy F6: earnings rows ARE the wage
+    changed = slip()
+    changed["earnings"][0]["year_to_date"] = 1
+    assert slip_fingerprint(changed) != slip_fingerprint(slip())
 
 
 def test_fingerprint_format():
@@ -185,8 +190,6 @@ def test_fingerprint_format():
     ],
 )
 def test_inconsistent_payloads_rejected(rules, payload, code):
-    if payload["gross_pay"] == 20000.02:
-        payload["gross_pay"] = 20000.02
     with pytest.raises(PfError) as info:
         compute_pf(payload, rules)
     assert info.value.code == code
@@ -247,7 +250,7 @@ def test_statistical_and_excluded_rows_ignored_in_gross_check(rules):
     ]
     payload = slip(extra_earnings=extras)
     assert payload["gross_pay"] == 20000
-    compute_pf(payload, rules)
+    assert compute_pf(payload, rules)["pf_wage"] == "14000"
 
 
 def test_missing_required_component(rules):
@@ -336,3 +339,64 @@ def test_employee_capped_employer_on_full_wage(tmp_path):
         result["employer_eps"],
         result["employer_epf"],
     ) == ("1800", "3000", "1250", "1750")
+
+
+# agy F1 — statistical / excluded rows are never PF wage --------------------------------------------------
+
+
+@pytest.mark.parametrize("flag", ["statistical_component", "do_not_include_in_total"])
+def test_unpaid_optional_component_is_not_pf_wage(rules, flag):
+    payload = slip(basic=10000, da=5000)
+    payload["earnings"][1][flag] = 1  # DA becomes a memo row
+    payload["gross_pay"] = 16000  # basic 10000 + HRA 6000
+    assert compute_pf(payload, rules)["pf_wage"] == "10000"
+
+
+def test_required_component_only_as_memo_row_is_missing(rules):
+    payload = slip()
+    payload["earnings"][0]["statistical_component"] = 1
+    payload["gross_pay"] = 8000
+    with pytest.raises(PfError) as info:
+        compute_pf(payload, rules)
+    assert info.value.code == "PF_COMPONENT_MISSING"
+
+
+# agy F2 / F3 — rules consistency ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "pf_patch",
+    [
+        {"required_components": ["B", "B"]},
+        {"optional_components": ["DA", "DA"]},
+        {"eps_rate": "0.13"},  # EPS share above the employer rate
+        {"eps_wage_ceiling": "20000"},  # EPS ceiling above the wage ceiling
+    ],
+)
+def test_inconsistent_rules_rejected(tmp_path, pf_patch):
+    data = copy.deepcopy(RULES_YAML)
+    data["tenants"][0]["pf"].update(pf_patch)
+    with pytest.raises(RulesError):
+        load_payroll_rules(rules_file(tmp_path, data))
+
+
+def test_eps_rate_equal_to_employer_rate_is_allowed(tmp_path):
+    data = copy.deepcopy(RULES_YAML)
+    data["tenants"][0]["pf"]["eps_rate"] = "0.12"
+    load_payroll_rules(rules_file(tmp_path, data))
+
+
+# agy F12 — remaining ceiling-flag combination ---------------------------------------------------------------
+
+
+def test_employee_uncapped_employer_capped(tmp_path):
+    data = copy.deepcopy(RULES_YAML)
+    data["tenants"][0]["pf"].update(apply_ceiling_to_employee=False, apply_ceiling_to_employer=True)
+    rules = load_payroll_rules(rules_file(tmp_path, data)).for_tenant("acme")
+    result = compute_pf(slip(basic=20000, da=5000), rules)
+    assert (
+        result["employee_contribution"],
+        result["employer_total"],
+        result["employer_eps"],
+        result["employer_epf"],
+    ) == ("3000", "1800", "1250", "550")

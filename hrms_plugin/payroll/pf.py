@@ -48,8 +48,9 @@ def compute_pf(slip: Dict[str, Any], rules: TenantPayrollRules) -> Dict[str, Any
         if abbr in by_abbr:
             raise PfError("INCONSISTENT_PAYLOAD", f"duplicate component {abbr!r}")
         amount = _amount(row.get("amount"), f"earnings[{i}].amount")
-        by_abbr[abbr] = {"row": row, "amount": amount}
-        if not row.get("statistical_component") and not row.get("do_not_include_in_total"):
+        paid = not row.get("statistical_component") and not row.get("do_not_include_in_total")
+        by_abbr[abbr] = {"row": row, "amount": amount, "paid": paid}
+        if paid:
             counted += amount
 
     gross = _amount(slip.get("gross_pay"), "gross_pay")
@@ -57,14 +58,15 @@ def compute_pf(slip: Dict[str, Any], rules: TenantPayrollRules) -> Dict[str, Any
         raise PfError("INCONSISTENT_PAYLOAD", f"earnings total {counted} != gross_pay {gross}")
 
     pf = rules.pf
-    missing = [c for c in pf.required_components if c not in by_abbr]
+    # Memo rows (statistical / excluded from total) are not paid wages and never count towards PF (agy F1).
+    missing = [c for c in pf.required_components if c not in by_abbr or not by_abbr[c]["paid"]]
     if missing:
         raise PfError("PF_COMPONENT_MISSING", f"required components absent: {missing}")
 
     used: List[Dict[str, str]] = []
     wage = Decimal(0)
     for abbr in (*pf.required_components, *pf.optional_components):
-        if abbr in by_abbr:
+        if abbr in by_abbr and by_abbr[abbr]["paid"]:
             entry = by_abbr[abbr]
             wage += entry["amount"]
             used.append({"abbr": abbr, "salary_component": str(entry["row"].get("salary_component", "")),

@@ -194,7 +194,7 @@ async def test_rules_not_configured(env):
 
 
 async def test_unapproved_fingerprint_blocks_and_reports_observed(env):
-    result = await service(FrappeMock()).calculate_pf("acme", "E", "2026-09", "IN")
+    result = await service(FrappeMock()).calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN")
     assert result == {"error": "MAPPING_NOT_APPROVED", "observed_fingerprint": slip_fingerprint(slip())}
 
 
@@ -217,7 +217,7 @@ async def test_validation_errors_surface_as_codes(env):
     bad = slip(currency="AED")
     svc = service(FrappeMock([bad]))
     svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin")
-    assert (await svc.calculate_pf("acme", "E", "2026-09", "IN"))["error"] == "INCONSISTENT_PAYLOAD"
+    assert (await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN"))["error"] == "INCONSISTENT_PAYLOAD"
 
 
 # Tool + API --------------------------------------------------------------------------------------------------------
@@ -295,3 +295,73 @@ def test_quarantine_listing_requires_manage_schema(make_client, bearer):
     assert client.get("/v1/schema/fingerprints/quarantine", headers=bearer(roles=["hr_manager"])).status_code == 403
     res = client.get("/v1/schema/fingerprints/quarantine", headers=bearer(roles=["platform_admin"]))
     assert res.status_code == 200 and res.json()["tenant_id"] == "acme"
+
+
+# agy F4 / F5 / F7 — host payload integrity ---------------------------------------------------------------------
+
+
+class RawMock(FrappeMock):
+    def __init__(self, listing_body=None, document=None):
+        super().__init__()
+        self.listing_body, self.document = listing_body, document
+
+    def handler(self, request):
+        self.requests.append(request)
+        if request.url.path == "/api/resource/Salary Slip":
+            return httpx.Response(200, json=self.listing_body)
+        return httpx.Response(200, json={"data": self.document})
+
+
+@pytest.mark.parametrize("body", [["not", "a", "dict"], "error", {"data": None}, {"data": "x"}, {"nodata": []}])
+async def test_malformed_listing_is_host_error(env, body):
+    svc = await approved_service(RawMock(listing_body=body))
+    assert (await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN"))["error"] == "HOST_ERROR"
+
+
+@pytest.mark.parametrize(
+    "patch", [{"docstatus": 0}, {"docstatus": 2}, {"employee": "HR-EMP-99999"}, {"start_date": "2026-08-01"}]
+)
+async def test_document_must_match_the_request(env, patch):
+    document = {**slip(), **patch}
+    svc = await approved_service(RawMock(listing_body={"data": [{"name": SLIP_NAME}]}, document=document))
+    assert (await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN"))["error"] == "INCONSISTENT_PAYLOAD"
+
+
+# agy F8 / F9 — host registry hardening -------------------------------------------------------------------------
+
+
+def test_userinfo_in_base_url_rejected(tmp_path):
+    data = copy.deepcopy(HOSTS_YAML)
+    data["tenants"][0]["base_url"] = "https://admin:secret@hr.acme.test"
+    with pytest.raises(HostRegistryError):
+        load_host_registry(write(tmp_path, "h.yaml", data))
+
+
+def test_duplicate_tenant_in_hosts_rejected(tmp_path):
+    data = copy.deepcopy(HOSTS_YAML)
+    data["tenants"].append(copy.deepcopy(data["tenants"][0]))
+    with pytest.raises(HostRegistryError):
+        load_host_registry(write(tmp_path, "h.yaml", data))
+
+
+# agy F13 — quarantine listing returns real rows, tenant-scoped ---------------------------------------------------
+
+
+def test_quarantine_listing_returns_rows(make_client, bearer):
+    from hrms_plugin.server import app as app_module
+
+    app_module._storage.set("quarantine", "acme:frappe:Salary Slip:SLIP-1", {"document": "SLIP-1"})
+    app_module._storage.set("quarantine", "globex:frappe:Salary Slip:SLIP-2", {"document": "SLIP-2"})
+    try:
+        res = make_client().get("/v1/schema/fingerprints/quarantine", headers=bearer(roles=["platform_admin"]))
+        assert res.json()["quarantine"] == [{"document": "SLIP-1"}]
+    finally:
+        app_module._storage.clear("quarantine")
+
+
+async def test_currency_check_is_what_fails_not_the_employee_check(env):
+    bad = slip(currency="AED")
+    svc = service(FrappeMock([bad]))
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin")
+    result = await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN")
+    assert result["error"] == "INCONSISTENT_PAYLOAD" and "currency" in result["detail"]

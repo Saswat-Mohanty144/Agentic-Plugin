@@ -1,0 +1,153 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed!",
+    "pytest": "877 passed in 30.30s"
+  },
+  "requirements_checked": 44,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "payroll",
+      "file": "hrms_plugin/payroll/pf.py",
+      "line": 67,
+      "requirement": "Decision F1-1, F1-8: The PF wage is computed from earnings actually paid; statistical_component and do_not_include_in_total rows must be excluded from wages.",
+      "finding": "Components marked as statistical or excluded from total earnings are erroneously added to the PF wage, deducting statutory PF on unpaid memo amounts.",
+      "evidence": "hrms_plugin/payroll/pf.py:51-53 stores all rows into by_abbr regardless of statistical flags, and lines 66-72 iterates through configured components adding by_abbr[abbr]['amount'] into wage even when row.get('statistical_component') or row.get('do_not_include_in_total') is true.",
+      "reproduce": "In Python: s = slip(basic=10000, da=5000); s['earnings'][1]['statistical_component'] = 1; s['gross_pay'] = 10000; res = compute_pf(s, rules); assert res['pf_wage'] == '15000' (computed PF wage of 15000 exceeds gross pay of 10000)."
+    },
+    {
+      "id": "F2",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/payroll/rules.py",
+      "line": 67,
+      "requirement": "Decision F1-1, F1-4: Required and optional payroll component lists must be validated without duplicate component entries.",
+      "finding": "PfRules model validation fails to enforce uniqueness within required_components or optional_components, causing duplicate components to multiply wages in compute_pf.",
+      "evidence": "hrms_plugin/payroll/rules.py:67-71 only checks overlap between required_components and optional_components, accepting duplicate tuples like ('B', 'B'); in hrms_plugin/payroll/pf.py:66-72, iterating over (*pf.required_components, *pf.optional_components) processes 'B' twice, doubling wage and duplicating provenance entries.",
+      "reproduce": "In Python: r = TenantPayrollRules(tenant_id='acme', rules_version='v1', currency='INR', pf=PfRules(required_components=['B', 'B'], employee_rate='0.12', employer_rate='0.12', eps_rate='0.0833', wage_ceiling='15000', eps_wage_ceiling='15000', apply_ceiling_to_employee=False, apply_ceiling_to_employer=False)); res = compute_pf(slip(basic=12000), r); assert res['pf_wage'] == '24000'."
+    },
+    {
+      "id": "F3",
+      "severity": "MEDIUM",
+      "category": "payroll",
+      "file": "hrms_plugin/payroll/rules.py",
+      "line": 39,
+      "requirement": "Decision F1-9: Employer EPF equals employer total minus EPS, which under statutory rules must never result in a negative employer contribution.",
+      "finding": "PfRules allows eps_rate to exceed employer_rate and eps_wage_ceiling to exceed wage_ceiling, producing negative employer EPF amounts in compute_pf.",
+      "evidence": "hrms_plugin/payroll/rules.py:39-65 defines rates and ceilings independently with no relational validation; hrms_plugin/payroll/pf.py:85 computes 'employer_epf': str(employer_total - eps), which yields a negative number whenever eps exceeds employer_total.",
+      "reproduce": "In Python: r = TenantPayrollRules(tenant_id='acme', rules_version='v1', currency='INR', pf=PfRules(required_components=['B'], employee_rate='0.12', employer_rate='0.08', eps_rate='0.0833', wage_ceiling='10000', eps_wage_ceiling='15000', apply_ceiling_to_employee=True, apply_ceiling_to_employer=True)); res = compute_pf(slip(basic=15000), r); assert res['employer_epf'] == '-450'."
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/frappe.py",
+      "line": 46,
+      "requirement": "Decision F1-5: HTTP or transport failure must fail closed with HOST_ERROR.",
+      "finding": "FrappeClient._get does not catch TypeError when response.json() is a non-dict scalar or array, allowing unhandled exceptions to crash calculate_pf instead of returning HOST_ERROR.",
+      "evidence": "hrms_plugin/integrations/frappe.py:45-47 runs response.json()['data'] under except (httpx.HTTPError, ValueError, KeyError); if response.json() is [] or 'error', indexing with ['data'] raises TypeError which is unhandled and propagates out of calculate_pf.",
+      "reproduce": "In Python: with httpx mock returning response 200 with json=['not_a_dict'], calling FrappeClient._get('/api/resource/Salary Slip') raises unhandled TypeError: list indices must be integers or slices, not str."
+    },
+    {
+      "id": "F5",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/frappe.py",
+      "line": 62,
+      "requirement": "Decision F1-5: 0 slips found raises SLIP_NOT_FOUND, while host schema or transport issues raise HOST_ERROR.",
+      "finding": "fetch_submitted_salary_slip raises SLIP_NOT_FOUND when listing is not a list, misclassifying host payload errors as missing employee slips.",
+      "evidence": "hrms_plugin/integrations/frappe.py:62-63 evaluates if not isinstance(listing, list) or not listing: raise FrappeError('SLIP_NOT_FOUND', ...); non-list data like null or string should be treated as HOST_ERROR.",
+      "reproduce": "In Python: mock returning 200 with {'data': None} causes fetch_submitted_salary_slip to raise FrappeError('SLIP_NOT_FOUND') instead of FrappeError('HOST_ERROR')."
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/payroll/fingerprint.py",
+      "line": 39,
+      "requirement": "Decision F1-6 and §3 Test List: A renamed field, a type change, or a new earnings key each give a different fingerprint.",
+      "finding": "slip_fingerprint inspects only a hardcoded list of EARNING_FIELDS, ignoring new keys added to earnings rows and contradicting the specification test list.",
+      "evidence": "hrms_plugin/payroll/fingerprint.py:39-41 loops only over EARNING_FIELDS; new earnings fields are never incorporated into the digest. In tests/unit/test_pf_core.py:165-170, test_unread_fields_do_not_affect_the_fingerprint explicitly asserts that changed['earnings'][0]['year_to_date'] = 1 leaves the fingerprint unchanged, directly contradicting spec §3 line 43.",
+      "reproduce": "In Python: s1 = slip(); s2 = slip(); s2['earnings'][0]['new_field'] = 'val'; assert slip_fingerprint(s1) == slip_fingerprint(s2) (expected different fingerprints per spec test list)."
+    },
+    {
+      "id": "F7",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/frappe.py",
+      "line": 69,
+      "requirement": "Decision F1-1, F1-5: The PF wage must be computed from a submitted (docstatus=1) Salary Slip matching the requested employee_id.",
+      "finding": "The document fetched by name is never verified to have docstatus equal to 1 or an employee matching employee_id, allowing draft, cancelled, or mismatched slips to be calculated.",
+      "evidence": "hrms_plugin/integrations/frappe.py:69-72 fetches document by name and returns it without checking docstatus or employee; hrms_plugin/payroll/service.py:88-99 and hrms_plugin/payroll/pf.py:35-95 never inspect docstatus or verify slip.get('employee') == employee_id. slip_fingerprint only checks that docstatus is a number, allowing docstatus=0 (Draft) or docstatus=2 (Cancelled).",
+      "reproduce": "In Python: pass a slip with docstatus=2 (Cancelled) or employee='DIFFERENT_EMP' into compute_pf; calculation succeeds normally and returns EPF contributions."
+    },
+    {
+      "id": "F8",
+      "severity": "LOW",
+      "category": "security",
+      "file": "hrms_plugin/integrations/host_registry.py",
+      "line": 32,
+      "requirement": "Decision F1-3: Host connection registry HRMS_HOSTS must enforce that credentials never live in the file.",
+      "finding": "HostConfig base_url validator allows embedded userinfo credentials in the URL, violating the strict rule that secrets must only come from environment variables.",
+      "evidence": "hrms_plugin/integrations/host_registry.py:32-36 checks scheme, hostname, query, and fragment in urlsplit, but does not forbid parts.username or parts.password, allowing values like https://user:secret@frappe.example.com.",
+      "reproduce": "In Python: HostConfig(tenant_id='acme', vendor='frappe', base_url='https://admin:secret123@frappe.example.com', api_key_env='K', api_secret_env='S', timeout_seconds=10) validates without error."
+    },
+    {
+      "id": "F9",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/host_registry.py",
+      "line": 46,
+      "requirement": "Decision F1-3: Host connection registry must reject duplicate tenant configurations.",
+      "finding": "HostRegistry lacks a unique tenant_id validator, causing duplicate tenant entries in HRMS_HOSTS to be silently accepted with first-entry precedence.",
+      "evidence": "hrms_plugin/integrations/host_registry.py:46-53 does not include the _unique validator that hrms_plugin/payroll/rules.py:89-93 implements for PayrollRulesRegistry.",
+      "reproduce": "In Python: HostRegistry(tenants=(HostConfig(tenant_id='acme', vendor='frappe', base_url='https://h1.test', api_key_env='K1', api_secret_env='S1', timeout_seconds=10), HostConfig(tenant_id='acme', vendor='frappe', base_url='https://h2.test', api_key_env='K2', api_secret_env='S2', timeout_seconds=10))) validates without error."
+    },
+    {
+      "id": "F10",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_pf_core.py",
+      "line": 188,
+      "requirement": "Decision F1-8: Gross tolerance boundary tests must test boundary conditions with effective assertions.",
+      "finding": "test_inconsistent_payloads_rejected contains a vacuous self-assignment that performs no operation.",
+      "evidence": "tests/unit/test_pf_core.py:188-189: if payload['gross_pay'] == 20000.02: payload['gross_pay'] = 20000.02.",
+      "reproduce": "Inspect lines 188-189 of tests/unit/test_pf_core.py where payload['gross_pay'] is assigned to itself."
+    },
+    {
+      "id": "F11",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_pf_core.py",
+      "line": 250,
+      "requirement": "Decision F1-8: Gross check and PF calculation with statistical and excluded components must verify computed outputs.",
+      "finding": "test_statistical_and_excluded_rows_ignored_in_gross_check executes compute_pf without any assertions on the returned calculation.",
+      "evidence": "tests/unit/test_pf_core.py:249-250 asserts payload['gross_pay'] == 20000 and then calls compute_pf(payload, rules) without asserting on pf_wage, contributions, or provenance.",
+      "reproduce": "Inspect line 250 of tests/unit/test_pf_core.py where compute_pf is invoked without capturing or asserting its return value."
+    },
+    {
+      "id": "F12",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_pf_core.py",
+      "line": 272,
+      "requirement": "Decision F1-9 and §3 Test List: Computation tests must test each ceiling flag on and off.",
+      "finding": "The test suite tests ceiling flag combinations (True, True), (False, False), and (True, False), but omits the (False, True) combination.",
+      "evidence": "tests/unit/test_pf_core.py:272-338 contains test_contributions (both True), test_uncapped_employee_and_employer (both False), and test_employee_capped_employer_on_full_wage (employee True, employer False); the permutation apply_ceiling_to_employee=False and apply_ceiling_to_employer=True is missing.",
+      "reproduce": "Search tests/unit/test_pf_core.py for apply_ceiling_to_employee=False with apply_ceiling_to_employer=True; zero occurrences found."
+    },
+    {
+      "id": "F13",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_frappe_pf_service.py",
+      "line": 296,
+      "requirement": "Decision F1-7: GET /v1/schema/fingerprints/quarantine must verify that quarantined items are returned to authorized admins.",
+      "finding": "test_quarantine_listing_requires_manage_schema tests the quarantine endpoint only against an empty quarantine store without verifying record retrieval.",
+      "evidence": "tests/unit/test_frappe_pf_service.py:296-297 checks status 200 and res.json()['tenant_id'] == 'acme', but never seeds quarantine records to assert res.json()['quarantine'] returns valid quarantine entries.",
+      "reproduce": "Inspect lines 293-297 of tests/unit/test_frappe_pf_service.py where the test runs against a clean client without prior quarantine events."
+    }
+  ]
+}
