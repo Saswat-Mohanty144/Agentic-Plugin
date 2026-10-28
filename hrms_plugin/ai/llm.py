@@ -22,8 +22,9 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Optional
 
+import anthropic
 import httpx
 
 try:
@@ -103,6 +104,8 @@ class ChatMessage:
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
     name: Optional[str] = None
+    # Provider-native assistant content, replayed unchanged (keeps signed thinking blocks valid) — piece E2.
+    raw_content: Optional[List[Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data: Dict[str, Any] = {"role": self.role, "content": self.content}
@@ -131,6 +134,7 @@ class LLMResponse:
     usage: Dict[str, int] = field(default_factory=dict)
     model: str = "unknown"
     provider: str = "fake"
+    raw_content: Optional[List[Any]] = None
 
 
 @dataclass
@@ -141,7 +145,50 @@ class LLMConfig:
     base_url: Optional[str] = None
     temperature: float = 0.2
     max_tokens: int = 4096
+    effort: str = "medium"
     timeout_seconds: float = 45.0
+
+
+class LLMNotConfigured(Exception):
+    """No usable LLM provider configuration; LLM-backed routes must fail loudly (piece E6)."""
+
+
+ANTHROPIC_DEFAULT_MODEL = "claude-opus-5-5"
+ANTHROPIC_MAX_TOKENS = 16000
+ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+REFUSAL_TEXT = "This request was declined by the model provider's safety system."
+RETRY_STATUSES = frozenset({429, 500, 502, 503, 504, 529})
+MAX_RETRIES = 2
+MAX_RETRY_DELAY_SECONDS = 30.0
+
+Sleep = Callable[[float], Awaitable[None]]
+
+
+def _retry_delay(response: httpx.Response, attempt: int) -> float:
+    retry_after = response.headers.get("retry-after")
+    delay = 0.5 * 2**attempt
+    if retry_after is not None:
+        try:
+            delay = float(retry_after)
+        except ValueError:
+            pass
+    return min(max(delay, 0.0), MAX_RETRY_DELAY_SECONDS)
+
+
+async def _post_with_retry(
+    http: httpx.AsyncClient, url: str, *, headers: Dict[str, str], payload: Dict[str, Any], sleep: Sleep
+) -> httpx.Response:
+    """POST, retrying 429/5xx/529 up to MAX_RETRIES times with backoff that honours Retry-After (piece E7)."""
+    attempt = 0
+    while True:
+        response = await http.post(url, headers=headers, json=payload)
+        if response.status_code in RETRY_STATUSES and attempt < MAX_RETRIES:
+            await sleep(_retry_delay(response, attempt))
+            attempt += 1
+            continue
+        response.raise_for_status()
+        return response
 
 
 class BaseLLMClient(ABC):
@@ -331,8 +378,12 @@ class FakeLLMClient(BaseLLMClient):
 class OpenAICompatibleClient(BaseLLMClient):
     """Client for OpenAI, Groq, OpenRouter, NVIDIA NIM, and local OpenAI-compatible engines."""
 
-    def __init__(self, config: LLMConfig):
+    def __init__(
+        self, config: LLMConfig, http_client: Optional[httpx.AsyncClient] = None, sleep: Sleep = asyncio.sleep
+    ):
         super().__init__(config)
+        self._http = http_client or httpx.AsyncClient(timeout=config.timeout_seconds)
+        self._sleep = sleep
         self.base_url = (config.base_url or "https://api.openai.com/v1").rstrip("/")
         if config.provider == LLMProvider.GROQ and not config.base_url:
             self.base_url = "https://api.groq.com/openai/v1"
@@ -362,10 +413,10 @@ class OpenAICompatibleClient(BaseLLMClient):
             "Authorization": f"Bearer {self.config.api_key or ''}",
         }
 
-        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
-            resp = await client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await _post_with_retry(
+            self._http, f"{self.base_url}/chat/completions", headers=headers, payload=payload, sleep=self._sleep
+        )
+        data = resp.json()
 
         choice = data["choices"][0]
         msg = choice.get("message", {})
@@ -420,8 +471,8 @@ class OpenAICompatibleClient(BaseLLMClient):
             "Authorization": f"Bearer {self.config.api_key or ''}",
         }
 
-        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
-            async with client.stream(
+        if True:  # shared client (piece E7); streams are not retried once started
+            async with self._http.stream(
                 "POST", f"{self.base_url}/chat/completions", headers=headers, json=payload
             ) as stream:
                 stream.raise_for_status()
@@ -444,76 +495,91 @@ class OpenAICompatibleClient(BaseLLMClient):
 
 
 class AnthropicClient(BaseLLMClient):
-    """Client for Anthropic Claude Messages API."""
+    """Claude via the official Anthropic SDK (piece E1). Follows the bundled claude-api reference:
+    adaptive thinking (parameter omitted), effort via output_config, no temperature, server-side refusal fallback.
+    """
 
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, http_client: Any = None):
         super().__init__(config)
-        self.base_url = (config.base_url or "https://api.anthropic.com/v1").rstrip("/")
+        kwargs: Dict[str, Any] = {"api_key": config.api_key, "max_retries": MAX_RETRIES}
+        if http_client is not None:
+            kwargs["http_client"] = http_client
+        self._client = anthropic.AsyncAnthropic(**kwargs)
+
+    @staticmethod
+    def _convert(messages: List[ChatMessage]) -> tuple:
+        system_parts: List[str] = []
+        out: List[Dict[str, Any]] = []
+        for m in messages:
+            if m.role == "system":
+                if m.content:
+                    system_parts.append(m.content)
+            elif m.role == "tool":
+                block = {"type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.content or ""}
+                previous = out[-1] if out else None
+                if (
+                    previous is not None
+                    and previous["role"] == "user"
+                    and isinstance(previous["content"], list)
+                    and all(b.get("type") == "tool_result" for b in previous["content"])
+                ):
+                    previous["content"].append(block)
+                else:
+                    out.append({"role": "user", "content": [block]})
+            elif m.role == "assistant":
+                if m.raw_content is not None:
+                    content: Any = m.raw_content
+                else:
+                    content = [{"type": "text", "text": m.content}] if m.content else []
+                    content += [
+                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
+                        for tc in (m.tool_calls or [])
+                    ]
+                if content:
+                    out.append({"role": "assistant", "content": content})
+            else:
+                out.append({"role": "user", "content": m.content or ""})
+        return ("\n".join(system_parts) or None), out
 
     async def chat(
         self,
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
-        temperature: Optional[float] = None,
+        temperature: Optional[float] = None,  # accepted for interface parity; never sent (400 since 2026-10-21)
     ) -> LLMResponse:
-        system_prompt = ""
-        anthropic_messages = []
-        for m in messages:
-            if m.role == "system":
-                system_prompt += m.content + "\n"
-            elif m.role in ("user", "assistant"):
-                anthropic_messages.append({"role": m.role, "content": m.content})
-            elif m.role == "tool":
-                anthropic_messages.append(
-                    {
-                        "role": "user",
-                        "content": [{"type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.content}],
-                    }
-                )
-
-        payload: Dict[str, Any] = {
-            "model": self.config.model or "claude-3-5-sonnet-20241022",
-            "messages": anthropic_messages,
+        system, converted = self._convert(messages)
+        kwargs: Dict[str, Any] = {
+            "model": self.config.model,
             "max_tokens": self.config.max_tokens,
-            "temperature": temperature if temperature is not None else self.config.temperature,
+            "messages": converted,
+            "output_config": {"effort": self.config.effort},
+            "betas": [ANTHROPIC_FALLBACK_BETA],
+            "fallbacks": "default",
         }
-        if system_prompt:
-            payload["system"] = system_prompt.strip()
+        if system:
+            kwargs["system"] = system
         if tools:
-            payload["tools"] = [t.to_anthropic_schema() for t in tools]
-
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": self.config.api_key or "",
-            "anthropic-version": "2023-06-01",
-        }
-
-        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
-            resp = await client.post(f"{self.base_url}/messages", headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-
-        text_content = ""
-        tool_calls: List[ToolCall] = []
-        for item in data.get("content", []):
-            if item.get("type") == "text":
-                text_content += item.get("text", "")
-            elif item.get("type") == "tool_use":
-                tool_calls.append(
-                    ToolCall(
-                        id=item.get("id", str(uuid.uuid4())),
-                        name=item.get("name", ""),
-                        arguments=item.get("input", {}),
-                    )
-                )
-
+            kwargs["tools"] = [t.to_anthropic_schema() for t in tools]
+        response = await self._client.beta.messages.create(**kwargs)
+        usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+        if response.stop_reason == "refusal":
+            details = getattr(response, "stop_details", None)
+            category = getattr(details, "category", None)
+            logger.warning("LLM refusal", extra={"reason": "LLM_REFUSAL", "category": category})
+            return LLMResponse(content=REFUSAL_TEXT, finish_reason="refusal", usage=usage,
+                               model=response.model, provider="anthropic")
+        text = "".join(b.text for b in response.content if b.type == "text")
+        tool_calls = [
+            ToolCall(id=b.id, name=b.name, arguments=dict(b.input)) for b in response.content if b.type == "tool_use"
+        ]
         return LLMResponse(
-            content=text_content,
+            content=text,
             tool_calls=tool_calls,
-            finish_reason=data.get("stop_reason", "end_turn"),
-            usage=data.get("usage", {}),
-            model=data.get("model", self.config.model),
+            finish_reason=response.stop_reason or "end_turn",
+            usage=usage,
+            model=response.model,
             provider="anthropic",
+            raw_content=list(response.content),
         )
 
     async def chat_stream(
@@ -522,21 +588,23 @@ class AnthropicClient(BaseLLMClient):
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        # Non-streaming fallback stream
         resp = await self.chat(messages, tools, temperature)
-        yield {"event": "token", "data": resp.content}
-        for tc in resp.tool_calls:
-            yield {"event": "tool_call", "data": {"id": tc.id, "name": tc.name, "arguments": tc.arguments}}
+        if resp.content:
+            yield {"event": "token", "data": resp.content}
         yield {"event": "done", "data": {"finish_reason": resp.finish_reason}}
 
 
 class GeminiClient(BaseLLMClient):
     """Client for Google Gemini REST API."""
 
-    def __init__(self, config: LLMConfig):
+    def __init__(
+        self, config: LLMConfig, http_client: Optional[httpx.AsyncClient] = None, sleep: Sleep = asyncio.sleep
+    ):
         super().__init__(config)
-        self.model = config.model or "gemini-1.5-flash"
+        self.model = config.model or "gemini-2.5-flash"
         self.api_key = config.api_key or ""
+        self._http = http_client or httpx.AsyncClient(timeout=config.timeout_seconds)
+        self._sleep = sleep
 
     async def chat(
         self,
@@ -594,11 +662,11 @@ class GeminiClient(BaseLLMClient):
         if tools:
             payload["tools"] = [{"functionDeclarations": [t.to_gemini_schema() for t in tools]}]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        resp = await _post_with_retry(
+            self._http, url, headers={"x-goog-api-key": self.api_key}, payload=payload, sleep=self._sleep
+        )
+        data = resp.json()
 
         candidates = data.get("candidates", [{}])
         cand = candidates[0] if candidates else {}
@@ -675,7 +743,12 @@ class LLMGateway:
                 leaked += pii.find_pii(json.dumps(tc.arguments, default=str))
             protected.append(
                 ChatMessage(
-                    role=m.role, content=content, tool_calls=tool_calls, tool_call_id=m.tool_call_id, name=m.name
+                    role=m.role,
+                    content=content,
+                    tool_calls=tool_calls,
+                    tool_call_id=m.tool_call_id,
+                    name=m.name,
+                    raw_content=m.raw_content,  # provider-produced from redacted input; never altered (E2)
                 )
             )
         if leaked:
@@ -685,6 +758,11 @@ class LLMGateway:
     def _resolve_config_from_env(self) -> LLMConfig:
         """Autodetect active LLM provider from environment variables."""
         provider_env = os.getenv("LLM_PROVIDER", "").lower()
+        known = {"", "fake", "openai", "groq", "openrouter", "anthropic", "gemini", "google", "nvidia"}
+        if provider_env not in known:
+            raise LLMNotConfigured(f"unknown LLM_PROVIDER {provider_env!r}")
+        if provider_env == "fake":
+            return LLMConfig(provider=LLMProvider.FAKE, model="fake-agentic-v1")
 
         if provider_env == "openai" or (not provider_env and os.getenv("OPENAI_API_KEY")):
             return LLMConfig(
@@ -706,10 +784,15 @@ class LLMGateway:
                 api_key=os.getenv("OPENROUTER_API_KEY"),
             )
         elif provider_env == "anthropic" or (not provider_env and os.getenv("ANTHROPIC_API_KEY")):
+            effort = os.getenv("LLM_EFFORT", "medium")
+            if effort not in EFFORT_LEVELS:
+                raise LLMNotConfigured(f"LLM_EFFORT must be one of {EFFORT_LEVELS}, got {effort!r}")
             return LLMConfig(
                 provider=LLMProvider.ANTHROPIC,
-                model=os.getenv("LLM_MODEL", "claude-3-5-sonnet-20241022"),
+                model=os.getenv("LLM_MODEL", ANTHROPIC_DEFAULT_MODEL),
                 api_key=os.getenv("ANTHROPIC_API_KEY"),
+                max_tokens=ANTHROPIC_MAX_TOKENS,
+                effort=effort,
             )
         elif provider_env in ("gemini", "google") or (
             not provider_env and (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
@@ -725,11 +808,9 @@ class LLMGateway:
                 model=os.getenv("LLM_MODEL", "meta/llama-3.1-70b-instruct"),
                 api_key=os.getenv("NVIDIA_API_KEY"),
             )
-        else:
-            return LLMConfig(
-                provider=LLMProvider.FAKE,
-                model="fake-agentic-v1",
-            )
+        raise LLMNotConfigured(
+            "no LLM provider configured: set LLM_PROVIDER (or a provider API key); use LLM_PROVIDER=fake only for tests"
+        )
 
     def _create_client(self, config: LLMConfig) -> BaseLLMClient:
         if config.provider in (LLMProvider.OPENAI, LLMProvider.OPENROUTER, LLMProvider.GROQ, LLMProvider.NVIDIA):

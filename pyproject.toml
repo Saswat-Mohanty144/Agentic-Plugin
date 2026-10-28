@@ -19,6 +19,7 @@ dependencies = [
     "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
     "PyJWT[crypto]==2.10.1",
+    "anthropic>=1.17,<2",
 ]
 
 [project.optional-dependencies]
