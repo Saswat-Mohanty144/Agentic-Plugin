@@ -2,11 +2,14 @@
 
 import os
 import tempfile
+from pathlib import Path
 
 # Never let tests reach a paid LLM: the gateway reads these at construction time.
 os.environ["LLM_PROVIDER"] = "fake"
 # Keep the SQLite store out of the repository.
 os.environ["HRMS_DATA_DIR"] = tempfile.mkdtemp(prefix="hrms-test-data-")
+# The app module builds its default app from this registry at import time.
+os.environ["HRMS_TENANT_REGISTRY"] = str(Path(__file__).parent / "fixtures" / "tenant_registry.yaml")
 
 import pytest  # noqa: E402
 

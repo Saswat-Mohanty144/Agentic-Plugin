@@ -1,0 +1,37 @@
+tenants:
+  - tenant_id: acme
+    issuer: https://idp.acme.test
+    jwks_url: https://idp.acme.test/jwks.json
+    audience: hrms-agentic-plugin
+    algorithms: [RS256, ES256]
+    claims: {tenant: tid, roles: roles, subject: sub}
+    role_map:
+      platform_admin: SUPER_ADMIN
+      hr_manager: HR_ADMIN
+      payroll_officer: PAYROLL_ADMIN
+      recruiter: HIRING_MANAGER
+      line_manager: DEPARTMENT_MANAGER
+      staff: EMPLOYEE
+    allowed_origins: [https://hr.acme.test]
+    leeway_seconds: 30
+    max_token_lifetime_seconds: 3600
+  - tenant_id: globex
+    issuer: https://idp.acme.test
+    jwks_url: https://idp.acme.test/jwks.json
+    audience: hrms-agentic-plugin
+    algorithms: [RS256]
+    claims: {tenant: tid, roles: roles, subject: sub}
+    role_map: {hr_manager: HR_ADMIN, staff: EMPLOYEE}
+    allowed_origins: [https://hr.globex.test]
+    leeway_seconds: 30
+    max_token_lifetime_seconds: 3600
+  - tenant_id: initech
+    issuer: https://idp.initech.test
+    jwks_url: https://idp.initech.test/jwks.json
+    audience: hrms-agentic-plugin
+    algorithms: [RS256]
+    claims: {tenant: org, roles: groups, subject: sub}
+    role_map: {hr: HR_ADMIN}
+    allowed_origins: ["https://hr.initech.test:8443"]
+    leeway_seconds: 0
+    max_token_lifetime_seconds: 60
