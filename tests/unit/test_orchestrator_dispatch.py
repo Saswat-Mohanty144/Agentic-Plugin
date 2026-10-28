@@ -169,3 +169,23 @@ async def test_stream_unknown_tool_not_executed(scripted):
     observation = next(e for e in events if e["event"] == "tool_observation")
     assert observation["data"]["output"] == {"error": "UNKNOWN_TOOL", "tool": "drop_database"}
     assert events[-1] == {"event": "intent", "data": "GENERAL_HR"}
+
+
+# agy F2 — schemas shown to the LLM must not advertise defaults for server-injected parameters --------
+
+SERVER_INJECTED = ("jurisdiction", "tenant_id")
+
+
+@pytest.mark.parametrize("definition", AgenticToolRegistry().get_definitions(), ids=lambda d: d.name)
+def test_injected_params_have_no_schema_default(definition):
+    props = definition.parameters.get("properties", {})
+    for name in SERVER_INJECTED:
+        if name in props:
+            assert "default" not in props[name], f"{definition.name}.{name} advertises a default"
+
+
+def test_jurisdiction_is_required_in_every_schema_that_declares_it():
+    definitions = AgenticToolRegistry().get_definitions()
+    declaring = [d for d in definitions if "jurisdiction" in d.parameters.get("properties", {})]
+    assert len(declaring) == 7
+    assert all("jurisdiction" in d.parameters.get("required", []) for d in declaring)

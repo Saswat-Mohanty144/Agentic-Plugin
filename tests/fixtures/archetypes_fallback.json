@@ -243,7 +243,6 @@
       "type": "number"
      },
      "jurisdiction": {
-      "default": "IN",
       "enum": [
        "IN",
        "AE",
@@ -254,7 +253,8 @@
      }
     },
     "required": [
-     "gross_or_ctc"
+     "gross_or_ctc",
+     "jurisdiction"
     ],
     "type": "object"
    }
@@ -269,7 +269,6 @@
       "type": "number"
      },
      "jurisdiction": {
-      "default": "AE",
       "enum": [
        "AE",
        "IN"
@@ -283,7 +282,8 @@
     },
     "required": [
      "basic_wage",
-     "tenure_years"
+     "tenure_years",
+     "jurisdiction"
     ],
     "type": "object"
    }
@@ -301,7 +301,6 @@
       "type": "array"
      },
      "jurisdiction": {
-      "default": "AE",
       "enum": [
        "IN",
        "AE",
@@ -311,7 +310,6 @@
       "type": "string"
      },
      "tenant_id": {
-      "default": "DEFAULT",
       "type": "string"
      }
     },
@@ -327,7 +325,6 @@
    "parameters": {
     "properties": {
      "jurisdiction": {
-      "default": "AE",
       "enum": [
        "IN",
        "AE",
@@ -346,7 +343,8 @@
      }
     },
     "required": [
-     "query"
+     "query",
+     "jurisdiction"
     ],
     "type": "object"
    }
@@ -475,7 +473,6 @@
       "type": "string"
      },
      "jurisdiction": {
-      "default": "IN",
       "enum": [
        "IN",
        "AE",
@@ -488,7 +485,8 @@
     "required": [
      "candidate_name",
      "job_title",
-     "annual_salary"
+     "annual_salary",
+     "jurisdiction"
     ],
     "type": "object"
    }
@@ -502,7 +500,6 @@
       "type": "string"
      },
      "jurisdiction": {
-      "default": "AE",
       "enum": [
        "IN",
        "AE",
@@ -570,7 +567,6 @@
       "type": "number"
      },
      "jurisdiction": {
-      "default": "AE",
       "enum": [
        "AE",
        "IN"
@@ -602,7 +598,8 @@
      "employee_name",
      "basic_wage_monthly",
      "gross_wage_monthly",
-     "tenure_years"
+     "tenure_years",
+     "jurisdiction"
     ],
     "type": "object"
    }
