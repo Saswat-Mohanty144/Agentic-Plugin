@@ -1,0 +1,140 @@
+{
+ "archetypes": [
+  {
+   "badge": "Badge 0",
+   "experience": "3-7 yrs",
+   "id": "a0",
+   "key_responsibilities": [
+    "Build"
+   ],
+   "must_have_skills": [
+    "Python"
+   ],
+   "name": "Arch 0",
+   "salary_range": "1,500,000 - 2,500,000 INR",
+   "tagline": "t"
+  },
+  {
+   "badge": "Badge 1",
+   "experience": "3-7 yrs",
+   "id": "a1",
+   "key_responsibilities": [
+    "Build"
+   ],
+   "must_have_skills": [
+    "Python"
+   ],
+   "name": "Arch 1",
+   "salary_range": "1,500,000 - 2,500,000 INR",
+   "tagline": "t"
+  },
+  {
+   "badge": "Badge 2",
+   "experience": "3-7 yrs",
+   "id": "a2",
+   "key_responsibilities": [
+    "Build"
+   ],
+   "must_have_skills": [
+    "Python"
+   ],
+   "name": "Arch 2",
+   "salary_range": "1,500,000 - 2,500,000 INR",
+   "tagline": "t"
+  },
+  {
+   "badge": "Badge 3",
+   "experience": "3-7 yrs",
+   "id": "a3",
+   "key_responsibilities": [
+    "Build"
+   ],
+   "must_have_skills": [
+    "Python"
+   ],
+   "name": "Arch 3",
+   "salary_range": "1,500,000 - 2,500,000 INR",
+   "tagline": "t"
+  }
+ ],
+ "prompt": "Lead Data Engineer",
+ "success": true,
+ "suggested_actions": [
+  {
+   "action_type": "APPLY_ARCHETYPE",
+   "archetype": {
+    "badge": "Badge 0",
+    "id": "a0",
+    "jobData": {
+     "currency": "INR",
+     "maxExperience": 7,
+     "maxSalary": 2500000,
+     "minExperience": 3,
+     "minSalary": 1500000,
+     "responsibilities": [
+      "Build"
+     ],
+     "skills": [
+      "Python"
+     ]
+    },
+    "name": "Arch 0",
+    "tagline": "t"
+   },
+   "badge": "Badge 0",
+   "label": "⚡ Auto-Fill Form with Badge 0",
+   "name": "Arch 0"
+  },
+  {
+   "action_type": "APPLY_ARCHETYPE",
+   "archetype": {
+    "badge": "Badge 1",
+    "id": "a1",
+    "jobData": {
+     "currency": "INR",
+     "maxExperience": 7,
+     "maxSalary": 2500000,
+     "minExperience": 3,
+     "minSalary": 1500000,
+     "responsibilities": [
+      "Build"
+     ],
+     "skills": [
+      "Python"
+     ]
+    },
+    "name": "Arch 1",
+    "tagline": "t"
+   },
+   "badge": "Badge 1",
+   "label": "⚡ Auto-Fill Form with Badge 1",
+   "name": "Arch 1"
+  },
+  {
+   "action_type": "APPLY_ARCHETYPE",
+   "archetype": {
+    "badge": "Badge 2",
+    "id": "a2",
+    "jobData": {
+     "currency": "INR",
+     "maxExperience": 7,
+     "maxSalary": 2500000,
+     "minExperience": 3,
+     "minSalary": 1500000,
+     "responsibilities": [
+      "Build"
+     ],
+     "skills": [
+      "Python"
+     ]
+    },
+    "name": "Arch 2",
+    "tagline": "t"
+   },
+   "badge": "Badge 2",
+   "label": "⚡ Auto-Fill Form with Badge 2",
+   "name": "Arch 2"
+  }
+ ],
+ "total_archetypes": 4
+}

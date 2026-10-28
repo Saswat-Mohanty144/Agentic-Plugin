@@ -1,0 +1,673 @@
+{
+ "archetypes": {
+  "archetypes": [
+   {
+    "badge": "Core Delivery",
+    "experience": "6-10 yrs",
+    "id": "archetype_delivery",
+    "jobData": {
+     "currency": "INR",
+     "jobDescription": "We are hiring a Lead Data Engineer to build and optimize distributed data pipelines, ETL flows, and real-time streaming infrastructure.",
+     "jobMode": "Hybrid",
+     "location": "Bangalore",
+     "maxExperience": 10,
+     "maxSalary": 4000000,
+     "minExperience": 6,
+     "minSalary": 3500000,
+     "salary": "INR",
+     "skills": [
+      "Apache Spark",
+      "Airflow",
+      "Python",
+      "SQL",
+      "Kafka"
+     ],
+     "title": "Lead Data Engineer (Pipeline Delivery)",
+     "type": "Full-time"
+    },
+    "name": "Lead Data Engineer - Hands-on Delivery & Pipeline Execution",
+    "salary_range": "35,00,000 - 40,00,000 INR",
+    "skills": [
+     "Apache Spark",
+     "Airflow",
+     "Python",
+     "SQL",
+     "Kafka"
+    ],
+    "tagline": "Specialized in robust production pipelines, ETL/ELT architecture, and rapid sprint execution."
+   },
+   {
+    "badge": "Architecture & Scale",
+    "experience": "8-12 yrs",
+    "id": "archetype_architecture",
+    "jobData": {
+     "currency": "INR",
+     "jobDescription": "Architect Petabyte-scale lakehouses, cross-region replication, and modern data governance for enterprise workloads.",
+     "jobMode": "Hybrid",
+     "location": "Bangalore",
+     "maxExperience": 12,
+     "maxSalary": 4500000,
+     "minExperience": 8,
+     "minSalary": 4000000,
+     "salary": "INR",
+     "skills": [
+      "Databricks",
+      "Snowflake",
+      "Delta Lake",
+      "Distributed Systems",
+      "Terraform"
+     ],
+     "title": "Lead Data Engineer (Cloud Lakehouse Architect)",
+     "type": "Full-time"
+    },
+    "name": "Lead Data Engineer - Distributed Architecture & Cloud Lakehouse",
+    "salary_range": "40,00,000 - 45,00,000 INR",
+    "skills": [
+     "Databricks",
+     "Snowflake",
+     "Delta Lake",
+     "Distributed Systems",
+     "Terraform"
+    ],
+    "tagline": "Architecting resilient Petabyte-scale data mesh, low-latency storage, and multi-cloud data platforms."
+   },
+   {
+    "badge": "Leadership & Strategy",
+    "experience": "8-14 yrs",
+    "id": "archetype_leadership",
+    "jobData": {
+     "currency": "INR",
+     "jobDescription": "Lead engineering squads, enforce data governance and quality SLAs, and partner with product managers to deliver data initiatives.",
+     "jobMode": "Hybrid",
+     "location": "Bangalore",
+     "maxExperience": 14,
+     "maxSalary": 4500000,
+     "minExperience": 8,
+     "minSalary": 4200000,
+     "salary": "INR",
+     "skills": [
+      "Team Leadership",
+      "Data Governance",
+      "Agile / Scrum",
+      "Data Architecture"
+     ],
+     "title": "Lead Data Engineer (Squad Lead & Governance)",
+     "type": "Full-time"
+    },
+    "name": "Lead Data Engineer - Engineering Team Lead & Data Governance",
+    "salary_range": "42,00,000 - 45,00,000 INR",
+    "skills": [
+     "Team Leadership",
+     "Data Governance",
+     "Agile / Scrum",
+     "Data Architecture"
+    ],
+    "tagline": "Driving data engineering squads, governance, SLA compliance, and cross-functional alignment."
+   }
+  ],
+  "prompt": "Lead Data Engineer",
+  "success": true,
+  "suggested_actions": [
+   {
+    "action_type": "APPLY_ARCHETYPE",
+    "archetype": {
+     "badge": "Core Delivery",
+     "experience": "6-10 yrs",
+     "id": "archetype_delivery",
+     "jobData": {
+      "currency": "INR",
+      "jobDescription": "We are hiring a Lead Data Engineer to build and optimize distributed data pipelines, ETL flows, and real-time streaming infrastructure.",
+      "jobMode": "Hybrid",
+      "location": "Bangalore",
+      "maxExperience": 10,
+      "maxSalary": 4000000,
+      "minExperience": 6,
+      "minSalary": 3500000,
+      "salary": "INR",
+      "skills": [
+       "Apache Spark",
+       "Airflow",
+       "Python",
+       "SQL",
+       "Kafka"
+      ],
+      "title": "Lead Data Engineer (Pipeline Delivery)",
+      "type": "Full-time"
+     },
+     "name": "Lead Data Engineer - Hands-on Delivery & Pipeline Execution",
+     "salary_range": "35,00,000 - 40,00,000 INR",
+     "skills": [
+      "Apache Spark",
+      "Airflow",
+      "Python",
+      "SQL",
+      "Kafka"
+     ],
+     "tagline": "Specialized in robust production pipelines, ETL/ELT architecture, and rapid sprint execution."
+    },
+    "badge": "Core Delivery",
+    "label": "⚡ Auto-Fill Form with Core Delivery",
+    "name": "Lead Data Engineer - Hands-on Delivery & Pipeline Execution"
+   },
+   {
+    "action_type": "APPLY_ARCHETYPE",
+    "archetype": {
+     "badge": "Architecture & Scale",
+     "experience": "8-12 yrs",
+     "id": "archetype_architecture",
+     "jobData": {
+      "currency": "INR",
+      "jobDescription": "Architect Petabyte-scale lakehouses, cross-region replication, and modern data governance for enterprise workloads.",
+      "jobMode": "Hybrid",
+      "location": "Bangalore",
+      "maxExperience": 12,
+      "maxSalary": 4500000,
+      "minExperience": 8,
+      "minSalary": 4000000,
+      "salary": "INR",
+      "skills": [
+       "Databricks",
+       "Snowflake",
+       "Delta Lake",
+       "Distributed Systems",
+       "Terraform"
+      ],
+      "title": "Lead Data Engineer (Cloud Lakehouse Architect)",
+      "type": "Full-time"
+     },
+     "name": "Lead Data Engineer - Distributed Architecture & Cloud Lakehouse",
+     "salary_range": "40,00,000 - 45,00,000 INR",
+     "skills": [
+      "Databricks",
+      "Snowflake",
+      "Delta Lake",
+      "Distributed Systems",
+      "Terraform"
+     ],
+     "tagline": "Architecting resilient Petabyte-scale data mesh, low-latency storage, and multi-cloud data platforms."
+    },
+    "badge": "Architecture & Scale",
+    "label": "⚡ Auto-Fill Form with Architecture & Scale",
+    "name": "Lead Data Engineer - Distributed Architecture & Cloud Lakehouse"
+   },
+   {
+    "action_type": "APPLY_ARCHETYPE",
+    "archetype": {
+     "badge": "Leadership & Strategy",
+     "experience": "8-14 yrs",
+     "id": "archetype_leadership",
+     "jobData": {
+      "currency": "INR",
+      "jobDescription": "Lead engineering squads, enforce data governance and quality SLAs, and partner with product managers to deliver data initiatives.",
+      "jobMode": "Hybrid",
+      "location": "Bangalore",
+      "maxExperience": 14,
+      "maxSalary": 4500000,
+      "minExperience": 8,
+      "minSalary": 4200000,
+      "salary": "INR",
+      "skills": [
+       "Team Leadership",
+       "Data Governance",
+       "Agile / Scrum",
+       "Data Architecture"
+      ],
+      "title": "Lead Data Engineer (Squad Lead & Governance)",
+      "type": "Full-time"
+     },
+     "name": "Lead Data Engineer - Engineering Team Lead & Data Governance",
+     "salary_range": "42,00,000 - 45,00,000 INR",
+     "skills": [
+      "Team Leadership",
+      "Data Governance",
+      "Agile / Scrum",
+      "Data Architecture"
+     ],
+     "tagline": "Driving data engineering squads, governance, SLA compliance, and cross-functional alignment."
+    },
+    "badge": "Leadership & Strategy",
+    "label": "⚡ Auto-Fill Form with Leadership & Strategy",
+    "name": "Lead Data Engineer - Engineering Team Lead & Data Governance"
+   }
+  ],
+  "total_archetypes": 3
+ },
+ "definitions": [
+  {
+   "description": "Calculate exact statutory gross-to-net salary and CTC breakdown for India or UAE.",
+   "name": "calculate_salary_structure",
+   "parameters": {
+    "properties": {
+     "gross_or_ctc": {
+      "description": "Annual CTC or Monthly Gross salary",
+      "type": "number"
+     },
+     "jurisdiction": {
+      "default": "IN",
+      "enum": [
+       "IN",
+       "AE",
+       "SA",
+       "US"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "gross_or_ctc"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Calculate End of Service Gratuity / Severance according to UAE Labor Law Art. 51 or India Gratuity Act.",
+   "name": "calculate_eosb_gratuity",
+   "parameters": {
+    "properties": {
+     "basic_wage": {
+      "description": "Monthly basic wage",
+      "type": "number"
+     },
+     "jurisdiction": {
+      "default": "AE",
+      "enum": [
+       "AE",
+       "IN"
+      ],
+      "type": "string"
+     },
+     "tenure_years": {
+      "description": "Total completed years of service",
+      "type": "number"
+     }
+    },
+    "required": [
+     "basic_wage",
+     "tenure_years"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Audit employee records against statutory labor codes (probation limits, working hours, WPS, PF/ESI).",
+   "name": "audit_statutory_compliance",
+   "parameters": {
+    "properties": {
+     "employees": {
+      "description": "List of employee dictionary records to audit.",
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "jurisdiction": {
+      "default": "AE",
+      "enum": [
+       "IN",
+       "AE",
+       "SA",
+       "US"
+      ],
+      "type": "string"
+     },
+     "tenant_id": {
+      "default": "DEFAULT",
+      "type": "string"
+     }
+    },
+    "required": [
+     "jurisdiction"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Search grounded statutory legal corpus for labor gazette articles and citations.",
+   "name": "search_labor_regulations",
+   "parameters": {
+    "properties": {
+     "jurisdiction": {
+      "default": "AE",
+      "enum": [
+       "IN",
+       "AE",
+       "SA",
+       "US"
+      ],
+      "type": "string"
+     },
+     "limit": {
+      "default": 3,
+      "type": "integer"
+     },
+     "query": {
+      "description": "Search query about labor law or statutory rule",
+      "type": "string"
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Evaluate employee leave request against current balance and company policy.",
+   "name": "evaluate_leave_request",
+   "parameters": {
+    "properties": {
+     "current_balance": {
+      "default": 15.0,
+      "type": "number"
+     },
+     "employee_id": {
+      "type": "string"
+     },
+     "leave_type": {
+      "default": "ANNUAL",
+      "enum": [
+       "ANNUAL",
+       "SICK",
+       "CASUAL",
+       "UNPAID"
+      ],
+      "type": "string"
+     },
+     "requested_days": {
+      "type": "number"
+     }
+    },
+    "required": [
+     "employee_id",
+     "requested_days"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Detect impossible-travel anomalies between two biometric attendance punches.",
+   "name": "detect_travel_anomaly",
+   "parameters": {
+    "properties": {
+     "punch1": {
+      "description": "First punch with lat, lng, timestamp",
+      "type": "object"
+     },
+     "punch2": {
+      "description": "Second punch with lat, lng, timestamp",
+      "type": "object"
+     }
+    },
+    "required": [
+     "punch1",
+     "punch2"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Screen candidate resume text against required skills and experience.",
+   "name": "score_candidate_ats",
+   "parameters": {
+    "properties": {
+     "candidate_experience_years": {
+      "default": 3.0,
+      "type": "number"
+     },
+     "required_experience_years": {
+      "default": 3.0,
+      "type": "number"
+     },
+     "required_skills": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     "resume_text": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "resume_text"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Detect and remove gender or exclusionary bias from job descriptions.",
+   "name": "audit_job_description_bias",
+   "parameters": {
+    "properties": {
+     "jd_text": {
+      "description": "Text of the job description",
+      "type": "string"
+     }
+    },
+    "required": [
+     "jd_text"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Evaluate candidate offer against salary bands and statutory minimum wage.",
+   "name": "evaluate_onboarding_offer",
+   "parameters": {
+    "properties": {
+     "annual_salary": {
+      "type": "number"
+     },
+     "band_max": {
+      "type": "number"
+     },
+     "band_min": {
+      "type": "number"
+     },
+     "candidate_name": {
+      "type": "string"
+     },
+     "currency": {
+      "default": "INR",
+      "type": "string"
+     },
+     "job_title": {
+      "type": "string"
+     },
+     "jurisdiction": {
+      "default": "IN",
+      "enum": [
+       "IN",
+       "AE",
+       "SA",
+       "US"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "candidate_name",
+     "job_title",
+     "annual_salary"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Verify statutory KYC documents for identity and social security compliance.",
+   "name": "verify_onboarding_documents",
+   "parameters": {
+    "properties": {
+     "candidate_name": {
+      "type": "string"
+     },
+     "jurisdiction": {
+      "default": "AE",
+      "enum": [
+       "IN",
+       "AE",
+       "SA",
+       "US"
+      ],
+      "type": "string"
+     },
+     "submitted_documents": {
+      "description": "Dict of document key-values",
+      "type": "object"
+     }
+    },
+    "required": [
+     "candidate_name",
+     "jurisdiction",
+     "submitted_documents"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Audit 14-day statutory final settlement deadline under UAE Labor Law Art. 53.",
+   "name": "audit_offboarding_fnf_timeline",
+   "parameters": {
+    "properties": {
+     "current_date": {
+      "description": "ISO date YYYY-MM-DD",
+      "type": "string"
+     },
+     "employee_id": {
+      "type": "string"
+     },
+     "employee_name": {
+      "type": "string"
+     },
+     "last_working_day": {
+      "description": "ISO date YYYY-MM-DD",
+      "type": "string"
+     }
+    },
+    "required": [
+     "employee_id",
+     "employee_name",
+     "last_working_day"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Compute final settlement statement with leave encashment, gratuity, and notice pay.",
+   "name": "compute_final_settlement",
+   "parameters": {
+    "properties": {
+     "basic_wage_monthly": {
+      "type": "number"
+     },
+     "employee_id": {
+      "type": "string"
+     },
+     "employee_name": {
+      "type": "string"
+     },
+     "gross_wage_monthly": {
+      "type": "number"
+     },
+     "jurisdiction": {
+      "default": "AE",
+      "enum": [
+       "AE",
+       "IN"
+      ],
+      "type": "string"
+     },
+     "notice_days_to_deduct": {
+      "default": 0,
+      "type": "integer"
+     },
+     "notice_days_to_pay": {
+      "default": 0,
+      "type": "integer"
+     },
+     "tenure_years": {
+      "type": "number"
+     },
+     "unpaid_work_days": {
+      "default": 0,
+      "type": "integer"
+     },
+     "unused_leave_days": {
+      "default": 0.0,
+      "type": "number"
+     }
+    },
+    "required": [
+     "employee_id",
+     "employee_name",
+     "basic_wage_monthly",
+     "gross_wage_monthly",
+     "tenure_years"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Audit business travel and lodging claims against per-diem caps and duplicate receipts.",
+   "name": "audit_travel_expense_claim",
+   "parameters": {
+    "properties": {
+     "claim_id": {
+      "type": "string"
+     },
+     "currency": {
+      "default": "INR",
+      "type": "string"
+     },
+     "employee_id": {
+      "type": "string"
+     },
+     "expenses": {
+      "items": {
+       "type": "object"
+      },
+      "type": "array"
+     },
+     "has_approved_travel_request": {
+      "default": true,
+      "type": "boolean"
+     },
+     "tier": {
+      "default": "METRO",
+      "enum": [
+       "METRO",
+       "NON_METRO"
+      ],
+      "type": "string"
+     }
+    },
+    "required": [
+     "claim_id",
+     "employee_id",
+     "expenses"
+    ],
+    "type": "object"
+   }
+  },
+  {
+   "description": "Generate 4 dynamic candidate and role archetypes (Delivery, Architecture, Specialization, Leadership) for a job requisition with salary bands, skills, and responsibilities from a hiring prompt.",
+   "name": "generate_requisition_archetypes",
+   "parameters": {
+    "properties": {
+     "location": {
+      "description": "Target job location e.g. 'Bangalore, India' or 'Dubai, UAE'",
+      "type": "string"
+     },
+     "prompt": {
+      "description": "Natural language hiring query e.g. 'Lead Data Engineer in Bangalore with budget 35-45 LPA'",
+      "type": "string"
+     }
+    },
+    "required": [
+     "prompt"
+    ],
+    "type": "object"
+   }
+  }
+ ]
+}

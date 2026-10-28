@@ -352,7 +352,10 @@ class AgenticToolRegistry:
                     "properties": {
                         "prompt": {
                             "type": "string",
-                            "description": "Natural language hiring query e.g. 'Lead Data Engineer in Bangalore with budget 35-45 LPA'",
+                            "description": (
+                                "Natural language hiring query e.g. "
+                                "'Lead Data Engineer in Bangalore with budget 35-45 LPA'"
+                            ),
                         },
                         "location": {
                             "type": "string",
@@ -596,8 +599,15 @@ class AgenticToolRegistry:
                                 "name": a.get("name"),
                                 "badge": a.get("badge"),
                                 "tagline": a.get("tagline"),
-                                "experience": f"{a.get('jobData', {}).get('minExperience', 5)}-{a.get('jobData', {}).get('maxExperience', 10)} yrs",
-                                "salary_range": f"{a.get('jobData', {}).get('minSalary', 0):,} - {a.get('jobData', {}).get('maxSalary', 0):,} {a.get('jobData', {}).get('currency', 'INR')}",
+                                "experience": (
+                                    f"{a.get('jobData', {}).get('minExperience', 5)}-"
+                                    f"{a.get('jobData', {}).get('maxExperience', 10)} yrs"
+                                ),
+                                "salary_range": (
+                                    f"{a.get('jobData', {}).get('minSalary', 0):,} - "
+                                    f"{a.get('jobData', {}).get('maxSalary', 0):,} "
+                                    f"{a.get('jobData', {}).get('currency', 'INR')}"
+                                ),
                                 "must_have_skills": a.get("jobData", {}).get("skills", []),
                                 "key_responsibilities": a.get("jobData", {}).get("responsibilities", []),
                             }
@@ -614,7 +624,9 @@ class AgenticToolRegistry:
                 "id": "archetype_delivery",
                 "name": f"{role_base} - Hands-on Delivery & Pipeline Execution",
                 "badge": "Core Delivery",
-                "tagline": "Specialized in robust production pipelines, ETL/ELT architecture, and rapid sprint execution.",
+                "tagline": (
+                    "Specialized in robust production pipelines, ETL/ELT architecture, and rapid sprint execution."
+                ),
                 "experience": "6-10 yrs",
                 "salary_range": "35,00,000 - 40,00,000 INR",
                 "jobData": {
@@ -628,7 +640,10 @@ class AgenticToolRegistry:
                     "type": "Full-time",
                     "jobMode": "Hybrid",
                     "location": location or "Bangalore, India",
-                    "jobDescription": f"We are hiring a {role_base} to build and optimize distributed data pipelines, ETL flows, and real-time streaming infrastructure.",
+                    "jobDescription": (
+                        f"We are hiring a {role_base} to build and optimize distributed data pipelines, "
+                        "ETL flows, and real-time streaming infrastructure."
+                    ),
                     "skills": ["Apache Spark", "Airflow", "Python", "SQL", "Kafka"],
                 },
                 "skills": ["Apache Spark", "Airflow", "Python", "SQL", "Kafka"],
@@ -637,7 +652,10 @@ class AgenticToolRegistry:
                 "id": "archetype_architecture",
                 "name": f"{role_base} - Distributed Architecture & Cloud Lakehouse",
                 "badge": "Architecture & Scale",
-                "tagline": "Architecting resilient Petabyte-scale data mesh, low-latency storage, and multi-cloud data platforms.",
+                "tagline": (
+                    "Architecting resilient Petabyte-scale data mesh, low-latency storage, "
+                    "and multi-cloud data platforms."
+                ),
                 "experience": "8-12 yrs",
                 "salary_range": "40,00,000 - 45,00,000 INR",
                 "jobData": {
@@ -651,7 +669,10 @@ class AgenticToolRegistry:
                     "type": "Full-time",
                     "jobMode": "Hybrid",
                     "location": location or "Bangalore, India",
-                    "jobDescription": f"Architect Petabyte-scale lakehouses, cross-region replication, and modern data governance for enterprise workloads.",
+                    "jobDescription": (
+                        "Architect Petabyte-scale lakehouses, cross-region replication, "
+                        "and modern data governance for enterprise workloads."
+                    ),
                     "skills": ["Databricks", "Snowflake", "Delta Lake", "Distributed Systems", "Terraform"],
                 },
                 "skills": ["Databricks", "Snowflake", "Delta Lake", "Distributed Systems", "Terraform"],
@@ -660,7 +681,9 @@ class AgenticToolRegistry:
                 "id": "archetype_leadership",
                 "name": f"{role_base} - Engineering Team Lead & Data Governance",
                 "badge": "Leadership & Strategy",
-                "tagline": "Driving data engineering squads, governance, SLA compliance, and cross-functional alignment.",
+                "tagline": (
+                    "Driving data engineering squads, governance, SLA compliance, and cross-functional alignment."
+                ),
                 "experience": "8-14 yrs",
                 "salary_range": "42,00,000 - 45,00,000 INR",
                 "jobData": {
@@ -674,7 +697,10 @@ class AgenticToolRegistry:
                     "type": "Full-time",
                     "jobMode": "Hybrid",
                     "location": location or "Bangalore, India",
-                    "jobDescription": f"Lead engineering squads, enforce data governance and quality SLAs, and partner with product managers to deliver data initiatives.",
+                    "jobDescription": (
+                        "Lead engineering squads, enforce data governance and quality SLAs, "
+                        "and partner with product managers to deliver data initiatives."
+                    ),
                     "skills": ["Team Leadership", "Data Governance", "Agile / Scrum", "Data Architecture"],
                 },
                 "skills": ["Team Leadership", "Data Governance", "Agile / Scrum", "Data Architecture"],
