@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import unicodedata
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 Match = Tuple[str, int, int]  # (kind, start, end)
@@ -56,12 +57,34 @@ def _iban_valid(compact: str) -> bool:
 
 
 def _aadhaar_like(text: str) -> bool:
-    return bool(re.search(r"[ -]", text)) or _verhoeff_valid(_digits(text))
+    """Valid Verhoeff always counts; consistently grouped 4-4-4 counts even with a typo (C9)."""
+    if _verhoeff_valid(_digits(text)):
+        return True
+    separators = re.findall(r"[ -]", text)
+    return len(separators) == 2 and separators[0] == separators[1]
 
 
 def _ssn_valid(text: str) -> bool:
     area, group, serial = text.split("-")
     return area not in ("000", "666") and not area.startswith("9") and group != "00" and serial != "0000"
+
+
+# --- normalisation (agy F7/F8) -----------------------------------------------------------------------
+
+
+def normalise(text: str) -> str:
+    """NFKC, drop invisible format characters (zero-width, soft hyphen, BOM), map any decimal digit to ASCII.
+
+    Everything sent to an LLM is normalised first, so detectors can't be evaded with look-alike characters.
+    """
+    out = []
+    for ch in unicodedata.normalize("NFKC", text):
+        if unicodedata.category(ch) == "Cf":
+            continue
+        if ch.isdecimal() and not ch.isascii():
+            ch = str(unicodedata.decimal(ch))
+        out.append(ch)
+    return "".join(out)
 
 
 # --- detectors -------------------------------------------------------------------------------------
@@ -71,16 +94,16 @@ _NA = r"(?![\dA-Za-z])"    # not followed by a digit or letter
 
 _SIMPLE: List[Tuple[str, "re.Pattern[str]", Optional[Callable[[str], bool]]]] = [
     # Grouped 4-4-4 is the printed Aadhaar format: redact even with a checksum typo (decision C9).
-    ("AADHAAR", re.compile(r"(?<!\d[ -])" + _ND + r"[2-9]\d{3}([ -]?)\d{4}\1\d{4}(?![ -]?\d)" + _NA), _aadhaar_like),
-    ("PAN", re.compile(_ND + r"[A-Z]{3}[PCHFATBLJG][A-Z]\d{4}[A-Z]" + _NA), None),
+    ("AADHAAR", re.compile(r"(?<!\d[ -])" + _ND + r"[2-9]\d{3}[ -]?\d{4}[ -]?\d{4}(?![ -]?\d)" + _NA), _aadhaar_like),
+    ("PAN", re.compile(_ND + r"[A-Z]{3}[PCHFATBLJG][A-Z]\d{4}[A-Z]" + _NA, re.IGNORECASE), None),
     ("EMIRATES_ID", re.compile(_ND + r"784-?\d{4}-?\d{7}-?\d" + _NA), lambda m: _luhn_valid(_digits(m))),
     ("SSN", re.compile(_ND + r"\d{3}-\d{2}-\d{4}" + _NA), _ssn_valid),
     ("CARD", re.compile(_ND + r"\d(?:[ -]?\d){12,18}" + _NA), lambda m: _luhn_valid(_digits(m))),
     ("EMAIL", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), None),
     ("PHONE", re.compile(r"(?<![\w+])\+\d(?:[ -]?\d){7,14}" + _NA), None),
-    ("PHONE", re.compile(_ND + r"(?:\+91[ -]?)?[6-9]\d{9}" + _NA), None),
+    ("PHONE", re.compile(_ND + r"(?:\+91[ -]?)?[6-9]\d{4}[ -]?\d{5}" + _NA), None),
 ]
-_IBAN_START = re.compile(_ND + r"[A-Z]{2}\d{2}")
+_IBAN_START = re.compile(_ND + r"[A-Za-z]{2}\d{2}")
 _PRIORITY = {"AADHAAR": 0, "PAN": 0, "EMIRATES_ID": 0, "SSN": 0, "IBAN": 1, "CARD": 2, "EMAIL": 3, "PHONE": 4}
 
 
@@ -93,24 +116,27 @@ def _iban_matches(text: str) -> List[Match]:
         i, compact = start, 0
         while i < len(text) and compact < 34:
             ch = text[i]
-            if ch.isupper() or ch.isdigit():
+            if ch.isascii() and ch.isalnum():
                 compact += 1
                 i += 1
                 ends.append((i, compact))
-            elif ch == " " and i + 1 < len(text) and (text[i + 1].isupper() or text[i + 1].isdigit()):
+            elif ch == " " and i + 1 < len(text) and text[i + 1].isascii() and text[i + 1].isalnum():
                 i += 1
             else:
                 break
         for end, length in reversed(ends):
             if 15 <= length <= 34 and not (end < len(text) and text[end].isalnum()):
-                if _iban_valid(text[start:end].replace(" ", "")):
+                if _iban_valid(text[start:end].replace(" ", "").upper()):
                     found.append(("IBAN", start, end))
                     break
     return found
 
 
 def detect(text: str) -> List[Match]:
-    """Validated, non-overlapping PII matches in ``text`` (more specific kinds win overlaps)."""
+    """Validated, non-overlapping PII matches in ``text`` (more specific kinds win overlaps).
+
+    Callers pass :func:`normalise`-d text; spans refer to that text.
+    """
     candidates: List[Match] = list(_iban_matches(text))
     for kind, pattern, validator in _SIMPLE:
         for m in pattern.finditer(text):
@@ -175,7 +201,7 @@ class PiiSession:
 
     def __init__(self) -> None:
         self._nonce = secrets.token_hex(4)
-        self._known: Dict[str, str] = {}          # raw value -> kind (learned from identifier fields)
+        self._known: Dict[str, str] = {}          # casefolded value -> kind (learned from identifier fields)
         self._token_for: Dict[str, str] = {}      # raw value -> token
         self._value_for: Dict[str, str] = {}      # token -> raw value
         self._counters: Dict[str, int] = {}
@@ -186,9 +212,9 @@ class PiiSession:
             for key, value in obj.items():
                 kind = identifier_kind(str(key))
                 if kind and isinstance(value, (str, int)) and not isinstance(value, bool):
-                    text = str(value).strip()
+                    text = normalise(str(value)).strip()
                     if len(text) >= 2:
-                        self._known[text] = kind
+                        self._known[text.casefold()] = kind
                 else:
                     self.learn(value)
         elif isinstance(obj, (list, tuple)):
@@ -209,14 +235,15 @@ class PiiSession:
         if not self._known:
             return None
         values = sorted(self._known, key=len, reverse=True)
-        return re.compile(r"(?<!\w)(" + "|".join(re.escape(v) for v in values) + r")(?!\w)")
+        return re.compile(r"(?<!\w)(" + "|".join(re.escape(v) for v in values) + r")(?!\w)", re.IGNORECASE)
 
     def redact_text(self, text: str) -> str:
         if not text:
             return text
+        text = normalise(text)
         pattern = self._known_pattern()
         if pattern is not None:
-            text = pattern.sub(lambda m: self._token(m.group(1), self._known[m.group(1)]), text)
+            text = pattern.sub(lambda m: self._token(m.group(1), self._known[m.group(1).casefold()]), text)
         out, last = [], 0
         for kind, start, end in detect(text):
             if self._inside_token(text, start):
@@ -250,10 +277,11 @@ class PiiSession:
     def find_pii(self, text: str) -> List[str]:
         if not text:
             return []
+        text = normalise(text)
         found = set()
         pattern = self._known_pattern()
         if pattern is not None:
-            found.update(self._known[m.group(1)] for m in pattern.finditer(text))
+            found.update(self._known[m.group(1).casefold()] for m in pattern.finditer(text))
         for kind, start, _end in detect(text):
             if not self._inside_token(text, start):
                 found.add(kind)

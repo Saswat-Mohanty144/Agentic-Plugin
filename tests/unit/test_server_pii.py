@@ -105,3 +105,27 @@ def test_old_masking_and_vault_modules_are_gone():
 
     assert importlib.util.find_spec("hrms_plugin.security.masking") is None
     assert importlib.util.find_spec("hrms_plugin.storage.vault_store") is None
+
+
+def test_stream_egress_block_emits_error_event(make_client, bearer, monkeypatch):           # agy F2
+    monkeypatch.setattr(PiiSession, "redact_text", lambda self, text: text)
+    agent, client = echo_supervisor()
+    res = make_client(supervisor_agent=agent).post(
+        "/v1/chat/stream", headers=bearer(), json={"message": MESSAGE, "jurisdiction": "IN"})
+    events = [json.loads(line[6:]) for line in res.text.splitlines() if line.startswith("data: ")]
+    assert events[-1] == {"event": "error", "data": {"error": "PII_EGRESS_BLOCKED", "kinds": ["AADHAAR"]}}
+    assert AADHAAR not in res.text
+    assert client.seen == []
+
+
+def test_stream_survives_decimal_tool_output(make_client, bearer, scripted):                 # agy F1
+    from tests.support.scripted_llm import final, tool_call
+
+    gateway, _ = scripted(
+        tool_call("evaluate_onboarding_offer", candidate_name="X Y", job_title="Engineer", annual_salary=1200000),
+        final("ok"),
+    )
+    res = make_client(supervisor_agent=SupervisorAgent(llm_gateway=gateway)).post(
+        "/v1/chat/stream", headers=bearer(), json={"message": "evaluate", "jurisdiction": "IN"})
+    assert res.status_code == 200
+    assert '"event": "intent"' in res.text

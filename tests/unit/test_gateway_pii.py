@@ -125,3 +125,11 @@ async def test_calls_without_a_session_do_not_share_tokens():
 async def test_mask_pii_switch_no_longer_exists():
     with pytest.raises(TypeError):
         await gateway(EchoClient()).chat([ChatMessage(role="user", content="x")], mask_pii=False)
+
+
+def test_chat_message_to_dict_handles_decimal_arguments():                                   # agy F9
+    from decimal import Decimal
+
+    data = ChatMessage(role="assistant", content="", tool_calls=[ToolCall(id="1", name="t", arguments={
+        "amount": Decimal("100.5")})]).to_dict()
+    assert data["tool_calls"][0]["function"]["arguments"] == '{"amount": "100.5"}'

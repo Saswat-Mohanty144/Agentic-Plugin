@@ -48,15 +48,19 @@ def orchestrator(gateway, tool_registry):
 
 @pytest.mark.asyncio
 async def test_llm_gateway_direct_chat_and_pii_masking(gateway):
-    """Test LLM gateway direct completion with automatic PII masking and de-tokenization."""
+    """The provider never receives raw email/phone; the caller gets them back (agy F11: was vacuous)."""
+    sent = []
+    original = gateway.client.chat
+
+    async def recording_chat(messages, tools=None, temperature=None):
+        sent.extend(m.content for m in messages)
+        return await original(messages, tools, temperature)
+
+    gateway.client.chat = recording_chat
     prompt = "Please verify employee John Doe at john.doe@company.com with phone +91-9876543210."
-    resp = await gateway.chat(
-        messages=[ChatMessage(role="user", content=prompt)],
-        tenant_id="tenant_alpha",
-    )
+    resp = await gateway.chat(messages=[ChatMessage(role="user", content=prompt)], tenant_id="tenant_alpha")
     assert resp.content
-    assert resp.finish_reason == "stop"
-    assert resp.provider == "fake"
+    assert sent and all("john.doe@company.com" not in m and "9876543210" not in m for m in sent)
 
 
 @pytest.mark.asyncio

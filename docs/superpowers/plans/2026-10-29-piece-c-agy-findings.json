@@ -1,0 +1,142 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed!",
+    "pytest": "695 passed, 1 warning in 13.10s"
+  },
+  "requirements_checked": 35,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "correctness",
+      "file": "hrms_plugin/server/app.py",
+      "line": 194,
+      "requirement": "Decision C11 & §3.4",
+      "finding": "Streaming endpoint crashes on tool output containing Decimal values because json.dumps(chunk) lacks default=str.",
+      "evidence": "TypeError: Object of type Decimal is not JSON serializable raised at app.py:194 when evaluate_onboarding_offer runs on /v1/chat/stream and yields a tool_observation SSE event containing Decimal salary values.",
+      "reproduce": ".venv/bin/python -c \"import json; from decimal import Decimal; chunk = {'event': 'tool_observation', 'data': {'output': {'salary': Decimal('1200000')}}}; json.dumps(chunk)\""
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/agents/orchestrator.py",
+      "line": 272,
+      "requirement": "Decision C7 & §3.4",
+      "finding": "The streaming endpoint /v1/chat/stream fails to return HTTP 422 when PII egress is blocked, crashing with RuntimeError because an SSE thinking event is yielded before the LLM egress check.",
+      "evidence": "RuntimeError: Caught handled exception, but response already started. raised inside Starlette exception handler because run_stream yields 'event': 'thinking' before calling llm_gateway.chat, committing HTTP 200 headers before PiiEgressBlocked can trigger a 422 JSON response.",
+      "reproduce": ".venv/bin/python -c \"import pytest, sys; from tests.unit.test_server_pii import echo_supervisor, MESSAGE; from hrms_plugin.security.pii import PiiSession; code = '''def test_stream_block(make_client, bearer, monkeypatch):\\n monkeypatch.setattr(PiiSession, 'redact_text', lambda self, text: text)\\n agent, client = echo_supervisor()\\n make_client(supervisor_agent=agent).post('/v1/chat/stream', headers=bearer(), json={'message': MESSAGE, 'jurisdiction': 'IN'})\\n'''; import tests.unit.test_server_pii; exec(code, tests.unit.test_server_pii.__dict__); sys.exit(pytest.main(['-k', 'test_stream_block', 'tests/unit/test_server_pii.py']))\""
+    },
+    {
+      "id": "F3",
+      "severity": "HIGH",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 212,
+      "requirement": "Decision C2 & §3.1",
+      "finding": "Casing differences allow raw identifier names learned from request context to leak unredacted to LLM providers because _known_pattern lacks re.IGNORECASE.",
+      "evidence": "AgenticOrchestrator.run with context={'employees': [{'name': 'Tariq Al-Mansoor'}]} and user_message='Calculate gratuity for tariq al-mansoor' transmitted 'Calculate gratuity for tariq al-mansoor' in plaintext to the LLM client without redacting the name or triggering find_pii.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import PiiSession; s = PiiSession(); s.learn({'name': 'Tariq Al-Mansoor'}); print('redacted:', s.redact_text('Check for tariq al-mansoor'), 'find_pii:', s.find_pii('Check for tariq al-mansoor'))\""
+    },
+    {
+      "id": "F4",
+      "severity": "HIGH",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 91,
+      "requirement": "Decision C2 & §3.1",
+      "finding": "Lowercase IBAN strings completely evade detection and reach LLM provider calls raw because _IBAN_START and _iban_matches enforce uppercase characters only.",
+      "evidence": "detect('iban: ae070331234567890123456') and detect('iban: gb82 west 1234 5698 7654 32') return [], allowing valid lowercase IBANs to pass unredacted through LLMGateway.chat to external providers.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import detect; print(detect('iban: ae070331234567890123456'))\""
+    },
+    {
+      "id": "F5",
+      "severity": "HIGH",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 77,
+      "requirement": "Decision C2 & §3.1",
+      "finding": "Standard Indian 10-digit mobile numbers formatted with space or hyphen separators evade phone detection and reach LLM provider calls in plaintext.",
+      "evidence": "detect('Call 98765 43210') and detect('Call 98765-43210') return [] because regex pattern [6-9]\\d{9} requires consecutive contiguous digits and disallows internal whitespace or hyphen separators.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import detect; print('space:', detect('Call 98765 43210'), 'hyphen:', detect('Call 98765-43210'))\""
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 71,
+      "requirement": "Decision C2, C9 & §3.1",
+      "finding": "Aadhaar numbers formatted with mixed space and hyphen separators evade detection even with valid Verhoeff checksums and reach LLM provider calls in plaintext.",
+      "evidence": "detect('Aadhaar 2345 6789-0124') returns [] despite 234567890124 having a valid Verhoeff checksum because regex backreference ([ -]?)\\d{4}\\1 enforces identical separators for both groups.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import detect; print(detect('Aadhaar 2345 6789-0124'))\""
+    },
+    {
+      "id": "F7",
+      "severity": "MEDIUM",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 71,
+      "requirement": "Decision C2 & §3.1",
+      "finding": "National IDs with unicode digits such as Devanagari numerals in Indian Aadhaar evade regex detectors and reach LLM provider calls in plaintext.",
+      "evidence": "detect('Aadhaar २३४५६७८९०१२४') returns [] because the Aadhaar pattern specifies leading digit ASCII range [2-9] rather than unicode digit character classes.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import detect; print(detect('Aadhaar २३४५६७८९०१२४'))\""
+    },
+    {
+      "id": "F8",
+      "severity": "MEDIUM",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 70,
+      "requirement": "Decision C2 & §3.1",
+      "finding": "PII containing zero-width characters completely evades all regex detectors and reaches LLM provider calls in plaintext.",
+      "evidence": "detect('Aadhaar 2345\\u200b6789\\u200b0124') returns [] because zero-width characters interrupt regex character matches and no text normalization is applied prior to detection.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import detect; print(detect('Aadhaar 2345\\u200b6789\\u200b0124'))\""
+    },
+    {
+      "id": "F9",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 114,
+      "requirement": "Decision C11",
+      "finding": "ChatMessage.to_dict() serializes tool call arguments with json.dumps without default=str, crashing on Decimal values when assistant messages are transformed for OpenAI-compatible providers.",
+      "evidence": "ChatMessage.to_dict() raises TypeError: Object of type Decimal is not JSON serializable at llm.py:114 when an assistant message contains a tool call with Decimal argument values.",
+      "reproduce": ".venv/bin/python -c \"from decimal import Decimal; from hrms_plugin.ai.llm import ChatMessage, ToolCall; ChatMessage(role='assistant', content='', tool_calls=[ToolCall(id='1', name='t', arguments={'amount': Decimal('100.5')})]).to_dict()\""
+    },
+    {
+      "id": "F10",
+      "severity": "MEDIUM",
+      "category": "security",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 72,
+      "requirement": "Decision C2 & §3.1",
+      "finding": "Lowercase PAN numbers evade regex detection and reach LLM provider calls unredacted.",
+      "evidence": "detect('pan abcpe1234f') returns [] and LLMGateway.chat transmits 'My PAN is abcpe1234f' unredacted; although §4 defines 'lowercase not matched' as a boundary test, free-text PAN entries in lowercase evade PII egress protection.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import detect; print(detect('pan abcpe1234f'))\""
+    },
+    {
+      "id": "F11",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_agentic_llm.py",
+      "line": 50,
+      "requirement": "§4 Test Suite Quality",
+      "finding": "test_llm_gateway_direct_chat_and_pii_masking is vacuous for PII masking, asserting only response existence and provider identity, and would pass if PII protection were removed entirely.",
+      "evidence": "tests/unit/test_agentic_llm.py:57-59 asserts only assert resp.content, assert resp.finish_reason == 'stop', and assert resp.provider == 'fake', containing zero assertions verifying that prompt PII was redacted or restored.",
+      "reproduce": "git grep -n -A 10 \"def test_llm_gateway_direct_chat_and_pii_masking\" tests/unit/test_agentic_llm.py"
+    },
+    {
+      "id": "F12",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_pii.py",
+      "line": 47,
+      "requirement": "§4 Test Table (Row 1: Aadhaar Negative)",
+      "finding": "The test table negative requirement for Aadhaar ('first digit 0 or 1') is only partially tested, as leading digit 0 is omitted from the test suite.",
+      "evidence": "tests/unit/test_pii.py:47 tests ('id 134567890124', 'AADHAAR') but lacks any test case for leading digit 0 (e.g. 'id 034567890124').",
+      "reproduce": "git grep -n \"134567890124\" tests/unit/test_pii.py"
+    }
+  ]
+}

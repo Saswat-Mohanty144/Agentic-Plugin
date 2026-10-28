@@ -111,7 +111,7 @@ class ChatMessage:
                 {
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, default=str)},
                 }
                 for tc in self.tool_calls
             ]

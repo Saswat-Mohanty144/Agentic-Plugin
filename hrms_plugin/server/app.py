@@ -185,13 +185,18 @@ async def chat_stream_endpoint(
     async def event_generator():
         text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
 
-        async for chunk in agent.stream_agentic(
-            message=text_to_process,
-            jurisdiction=req.jurisdiction,
-            context=req.context,
-            auth=auth,
-        ):
-            yield f"data: {json.dumps(chunk)}\n\n"
+        try:
+            async for chunk in agent.stream_agentic(
+                message=text_to_process,
+                jurisdiction=req.jurisdiction,
+                context=req.context,
+                auth=auth,
+            ):
+                yield f"data: {json.dumps(chunk, default=str)}\n\n"
+        except PiiEgressBlocked as exc:
+            # HTTP 200 is already committed once streaming starts, so report the block in-band (agy F2).
+            blocked = {"event": "error", "data": {"error": "PII_EGRESS_BLOCKED", "kinds": exc.kinds}}
+            yield f"data: {json.dumps(blocked)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

@@ -45,11 +45,11 @@ def test_detector_positive(text, kind):
 @pytest.mark.parametrize("text,kind", [
     (f"id {AADHAAR_BAD}", "AADHAAR"),
     ("id 134567890124", "AADHAAR"),          # first digit 1
+    ("id 034567890124", "AADHAAR"),          # first digit 0 (agy F12)
     ("id 23456789012", "AADHAAR"),           # 11 digits
     ("id 2345678901245", "AADHAAR"),         # 13 digits
     ("ref 9" + AADHAAR + "9", "AADHAAR"),    # embedded in a longer number
     ("pan ABCXE1234F", "PAN"),               # invalid holder type
-    ("pan abcpe1234f", "PAN"),
     ("eid 784199012345677", "EMIRATES_ID"),  # bad Luhn
     ("eid 785199012345676", "EMIRATES_ID"),
     ("ssn 000-45-6789", "SSN"), ("ssn 666-45-6789", "SSN"), ("ssn 912-45-6789", "SSN"),
