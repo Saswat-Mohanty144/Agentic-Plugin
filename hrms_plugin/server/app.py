@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
@@ -65,7 +67,7 @@ supervisor = SupervisorAgent(
 voice_agent = VoiceAgent()
 
 # Persistent storage singletons
-_storage = SqliteKeyValueStore(".hrms_data/plugin_storage.db")
+_storage = SqliteKeyValueStore(str(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db"))
 vault_store = PiiVaultStore(backend=_storage)
 mapping_store = MappingStore(backend=_storage)
 
