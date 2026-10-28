@@ -15,6 +15,10 @@ services:
       - LOG_LEVEL=INFO
       - DEFAULT_JURISDICTION=UAE
       - HOST_HRMS_BASE_URL=http://host.docker.internal:5000
+      - HRMS_TENANT_REGISTRY=/etc/hrms/tenants.yaml
+    volumes:
+      # Tenant issuer registry (spec §6.1). Required: compose refuses to start if the host path is not given.
+      - ${HRMS_TENANT_REGISTRY_FILE:?set HRMS_TENANT_REGISTRY_FILE to your tenant registry YAML}:/etc/hrms/tenants.yaml:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 30s

@@ -66,3 +66,42 @@ def test_unknown_path_is_reported():
 
 def test_query_string_is_ignored_when_matching():
     assert unknown_paths(["/healthz?x=1"]) == []
+
+
+# agy F3 — every deployment must supply the tenant registry the app requires at startup ----------
+
+def _env_value(env_block, name):
+    if isinstance(env_block, dict):
+        return env_block.get(name)
+    for item in env_block or []:
+        if isinstance(item, str) and item.startswith(f"{name}="):
+            return item.split("=", 1)[1]
+        if isinstance(item, dict) and item.get("name") == name:
+            return item.get("value")
+    return None
+
+
+def test_compose_mounts_tenant_registry_at_configured_path():
+    api = yaml.safe_load((DEPLOY / "docker-compose.yml").read_text())["services"]["hrms-plugin-api"]
+    path = _env_value(api.get("environment"), "HRMS_TENANT_REGISTRY")
+    assert path, "HRMS_TENANT_REGISTRY not set for hrms-plugin-api"
+    # host path may itself contain ":" (e.g. ${VAR:?msg}); target and mode are the last two fields
+    mounts = [v.rsplit(":", 2) for v in api.get("volumes", []) if isinstance(v, str)]
+    target = [m for m in mounts if len(m) >= 2 and m[1] == path]
+    assert target, f"no volume mounted at {path}"
+    assert target[0][0].startswith("${HRMS_TENANT_REGISTRY_FILE:?"), "host path must be required, not defaulted"
+    assert target[0][-1] == "ro"
+
+
+def test_k8s_mounts_tenant_registry_configmap_at_configured_path():
+    docs = [d for d in yaml.safe_load_all((DEPLOY / "k8s" / "deployment.yaml").read_text()) if d]
+    deployment = next(d for d in docs if d.get("kind") == "Deployment")
+    spec = deployment["spec"]["template"]["spec"]
+    container = spec["containers"][0]
+    path = _env_value(container.get("env"), "HRMS_TENANT_REGISTRY")
+    assert path, "HRMS_TENANT_REGISTRY not set in container env"
+    mount = next(m for m in container.get("volumeMounts", []) if path.startswith(m["mountPath"].rstrip("/") + "/"))
+    assert mount.get("readOnly") is True
+    volume = next(v for v in spec.get("volumes", []) if v["name"] == mount["name"])
+    assert volume["configMap"]["name"] == "hrms-plugin-tenant-registry"
+    assert path.rsplit("/", 1)[1] in {i["path"] for i in volume["configMap"]["items"]}
