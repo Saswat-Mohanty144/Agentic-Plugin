@@ -35,13 +35,13 @@ from hrms_plugin.schema.synthesizer import MappingSynthesizer
 from hrms_plugin.security.audit import HostAuditGateway
 from hrms_plugin.security.http_auth import ApiError, require
 from hrms_plugin.security.jwks_cache import JwksCache, make_httpx_fetcher
-from hrms_plugin.security.masking import PiiMaskingGateway
+from hrms_plugin.security.pii import PiiEgressBlocked
 from hrms_plugin.security.rbac import AuthContext, Permission, PermissionDenied
 from hrms_plugin.security.tenant_registry import TenantRegistry, load_registry_from_env
 from hrms_plugin.security.token_verifier import TokenVerifier
+from hrms_plugin.storage.base import BaseKeyValueStore
 from hrms_plugin.storage.mapping_store import MappingStore
 from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
-from hrms_plugin.storage.vault_store import PiiVaultStore
 
 API_DOCS_ENV_VAR = "HRMS_ENABLE_API_DOCS"
 REMEDIATION_MAX_TOKEN_AGE_SECONDS = 300
@@ -66,10 +66,20 @@ voice_agent = VoiceAgent()
 
 # Persistent storage singletons
 _storage = SqliteKeyValueStore(str(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db"))
-vault_store = PiiVaultStore(backend=_storage)
+
+
+LEGACY_PII_NAMESPACES = ("pii_vault", "pii_vault_lookup")
+
+
+def purge_legacy_pii_vault(store: BaseKeyValueStore) -> None:
+    """Delete plaintext PII written by the removed persistent vault (piece C, decision C5)."""
+    for namespace in LEGACY_PII_NAMESPACES:
+        store.clear(namespace)
+
+
+purge_legacy_pii_vault(_storage)
 mapping_store = MappingStore(backend=_storage)
 
-pii_gateway = PiiMaskingGateway(store=vault_store)
 audit_gateway = HostAuditGateway()
 introspector = SchemaIntrospector()
 synthesizer = MappingSynthesizer()
@@ -80,7 +90,7 @@ class ChatRequest(BaseModel):
     message: str
     jurisdiction: JurisdictionCode = "IN"
     context: Optional[Dict[str, Any]] = None
-    mask_pii: bool = True
+    mask_pii: bool = True  # deprecated: protection is always on (piece C, decision C4)
     agentic: bool = True
     history: Optional[List[Dict[str, str]]] = None
 
@@ -142,9 +152,7 @@ async def chat_endpoint(
 ):
     """Unified conversational AI copilot endpoint with automatic PII masking and agentic tool reasoning."""
     agent: SupervisorAgent = request.app.state.supervisor
-    text_to_process = req.message
-    if req.mask_pii:
-        text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=auth.tenant_id)
+    text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
 
     if req.agentic:
         response = await agent.process_agentic(
@@ -162,10 +170,6 @@ async def chat_endpoint(
             auth=auth,
         )
 
-    # De-tokenize if masked
-    if req.mask_pii:
-        response.reply_text = pii_gateway.unmask_text(response.reply_text, tenant_id=auth.tenant_id)
-
     return response
 
 
@@ -179,9 +183,7 @@ async def chat_stream_endpoint(
     agent: SupervisorAgent = request.app.state.supervisor
 
     async def event_generator():
-        text_to_process = req.message
-        if req.mask_pii:
-            text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=auth.tenant_id)
+        text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
 
         async for chunk in agent.stream_agentic(
             message=text_to_process,
@@ -619,6 +621,10 @@ async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.body, headers=exc.headers)
 
 
+async def _pii_egress_blocked_handler(_request: Request, exc: PiiEgressBlocked) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "PII_EGRESS_BLOCKED", "kinds": exc.kinds})
+
+
 async def _permission_denied_handler(_request: Request, exc: PermissionDenied) -> JSONResponse:
     return JSONResponse(status_code=403, content={"error": "FORBIDDEN", "permission": exc.permission.value})
 
@@ -653,6 +659,7 @@ def create_app(
     )
     application.add_exception_handler(ApiError, _api_error_handler)
     application.add_exception_handler(PermissionDenied, _permission_denied_handler)
+    application.add_exception_handler(PiiEgressBlocked, _pii_egress_blocked_handler)
     application.include_router(router)
     return application
 

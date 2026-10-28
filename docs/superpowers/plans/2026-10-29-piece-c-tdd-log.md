@@ -21,3 +21,10 @@ Branch feat/piece-c-data-protection (stacked on feat/phase7-stabilise-auth @ d6a
 - First GREEN attempt exposed a PRE-EXISTING bug (baseline 3028359, orchestrator.py:188,249): `json.dumps(tool_output)` raised `TypeError: Object of type Decimal is not JSON serializable` → every agentic run using `evaluate_onboarding_offer` crashed. Fixed with `default=str`; dedicated regression test added.
 - TRUSTED_CONTEXT_PARAMS ("employees" only) replaced by generic injection: any context key matching a declared tool parameter (server-owned jurisdiction/tenant_id excluded from context and always set by the server).
 - GREEN: test_orchestrator_pii.py 8 passed (adaptive TokenEchoingClient proves an LLM-written token reaches the tool as the real name); full suite 686 passed.
+
+## C4/C5 — server wiring, 422 on egress block, legacy purge, removal of old modules
+- C9 (HR-domain refinement): RED 2 failed (grouped bad-checksum Aadhaar not detected) → GREEN; regression found on the way: card `4111 1111 1111 1111` matched as grouped Aadhaar → added boundary lookarounds + test; 61 passed.
+- Server: RED 4 failed, 2 passed (chat path already protected by C2 gateway — kept as guards) → GREEN 6 passed: LLM sees no Aadhaar/name on chat and stream; stream tokens restored across 4-char chunks; `mask_pii:false` still protected; egress block → 422 `{"error":"PII_EGRESS_BLOCKED","kinds":["AADHAAR"]}` with no value in the body; legacy `pii_vault*` rows purged at import (subprocess test on a pre-seeded DB), other namespaces kept; old modules gone.
+- Process slip (recorded): a `git rm` ran although the preceding edit script aborted (not chained with &&). The deletions were the intended ones; the edit was re-applied with a corrected anchor before any test run or commit.
+- Removed tests of removed behaviour: test_security.py (2 PiiMaskingGateway tests), test_storage.py (vault restart persistence — removed by design C5). Covered more strictly by test_pii.py / test_gateway_pii.py.
+- Full suite: 695 passed, ruff clean.

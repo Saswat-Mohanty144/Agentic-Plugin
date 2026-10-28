@@ -55,6 +55,10 @@ def _iban_valid(compact: str) -> bool:
     return int("".join(str(int(c, 36)) for c in rearranged)) % 97 == 1
 
 
+def _aadhaar_like(text: str) -> bool:
+    return bool(re.search(r"[ -]", text)) or _verhoeff_valid(_digits(text))
+
+
 def _ssn_valid(text: str) -> bool:
     area, group, serial = text.split("-")
     return area not in ("000", "666") and not area.startswith("9") and group != "00" and serial != "0000"
@@ -66,7 +70,8 @@ _ND = r"(?<![\dA-Za-z])"   # not preceded by a digit or letter
 _NA = r"(?![\dA-Za-z])"    # not followed by a digit or letter
 
 _SIMPLE: List[Tuple[str, "re.Pattern[str]", Optional[Callable[[str], bool]]]] = [
-    ("AADHAAR", re.compile(_ND + r"[2-9]\d{3}([ -]?)\d{4}\1\d{4}" + _NA), lambda m: _verhoeff_valid(_digits(m))),
+    # Grouped 4-4-4 is the printed Aadhaar format: redact even with a checksum typo (decision C9).
+    ("AADHAAR", re.compile(r"(?<!\d[ -])" + _ND + r"[2-9]\d{3}([ -]?)\d{4}\1\d{4}(?![ -]?\d)" + _NA), _aadhaar_like),
     ("PAN", re.compile(_ND + r"[A-Z]{3}[PCHFATBLJG][A-Z]\d{4}[A-Z]" + _NA), None),
     ("EMIRATES_ID", re.compile(_ND + r"784-?\d{4}-?\d{7}-?\d" + _NA), lambda m: _luhn_valid(_digits(m))),
     ("SSN", re.compile(_ND + r"\d{3}-\d{2}-\d{4}" + _NA), _ssn_valid),

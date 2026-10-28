@@ -104,3 +104,11 @@
 ## 5. Out of scope
 - **Piece G:** NER for free-text names, payload audit log, model choice by data sensitivity, field-classification approval workflow.
 - **Piece H:** compaction of tool results for cost.
+
+## 6. Amendments made during implementation (architect, under delegation)
+
+| # | Amendment | Why |
+|---|---|---|
+| C9 | The grouped Aadhaar format (`XXXX XXXX XXXX` / `XXXX-XXXX-XXXX`, consistent separators) is redacted **even with a bad Verhoeff checksum**. Plain 12-digit numbers still need a valid checksum. A grouped Aadhaar may not be part of a longer grouped number (for example a card). | HR domain: a mistyped Aadhaar in printed format is still personal data, while ungrouped 12-digit values are often account or reference numbers. |
+| C10 | Tool-call arguments are restored inside `LLMGateway` (the single checkpoint) rather than in the orchestrator, as §3.3 originally said | One place for both redaction and restoration; the orchestrator test proves tools receive real values |
+| C11 | A pre-existing crash was fixed: `json.dumps(tool_output)` raised on `Decimal` values (`evaluate_onboarding_offer`) | Found by the C3 tests; it existed at baseline 3028359 |

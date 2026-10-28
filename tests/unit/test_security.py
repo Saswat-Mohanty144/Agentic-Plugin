@@ -3,18 +3,12 @@
 import pytest
 
 from hrms_plugin.security.audit import HostAuditGateway
-from hrms_plugin.security.masking import PiiMaskingGateway
 from hrms_plugin.security.rbac import (
     AuthContext,
     Permission,
     RbacPolicyEnforcer,
     UserRole,
 )
-
-
-@pytest.fixture
-def pii_gateway():
-    return PiiMaskingGateway()
 
 
 @pytest.fixture
@@ -27,44 +21,8 @@ def audit_gateway():
     return HostAuditGateway()
 
 
-def test_pii_masking_aadhaar_pan_emirates_id(pii_gateway):
-    """Verify that national IDs are redacted with vault tokens and can be de-tokenized."""
-    raw_prompt = (
-        "Employee John Doe with Aadhaar 5412 8931 0124 and PAN ABCDE1234F "
-        "and Emirates ID 784-1990-1234567-1 has requested compensation review."
-    )
-
-    masked, tokens = pii_gateway.mask_text(raw_prompt, tenant_id="TENANT-01")
-
-    assert "5412 8931 0124" not in masked
-    assert "ABCDE1234F" not in masked
-    assert "784-1990-1234567-1" not in masked
-    assert "[VAULT_AADHAAR_" in masked
-    assert "[VAULT_PAN_" in masked
-    assert "[VAULT_EMIRATES_ID_" in masked
-    assert len(tokens) == 3
-
-    # Verify unmasking on egress
-    restored = pii_gateway.unmask_text(masked, tenant_id="TENANT-01")
-    assert restored == raw_prompt
 
 
-def test_pii_mask_record_dict(pii_gateway):
-    """Verify dictionary masking for compensation figures and national ID fields."""
-    record = {
-        "employee_id": "EMP-401",
-        "first_name": "Sarah",
-        "salary": 185000.0,
-        "bank_account": "912384729104",
-        "department": "Engineering",
-    }
-
-    masked_rec = pii_gateway.mask_record_dict(record, tenant_id="TENANT-01")
-
-    assert masked_rec["employee_id"] == "EMP-401"
-    assert masked_rec["department"] == "Engineering"
-    assert masked_rec["salary"].startswith("[VAULT_SALARY_")
-    assert masked_rec["bank_account"].startswith("[VAULT_BANK_ACCOUNT_")
 
 
 def test_rbac_authorization(rbac_enforcer):

@@ -179,3 +179,21 @@ def test_known_values_respect_word_boundaries():
     s.learn({"name": "Ali"})
     assert s.redact_text("Alice and Salim met") == "Alice and Salim met"
     assert "Ali" not in s.redact_text("Ali met Alice").split(" met")[0]
+
+
+# Decision C9: the grouped 4-4-4 Aadhaar format is redacted even with a bad checksum (typo'd Aadhaar is still PII);
+# plain 12-digit numbers still require Verhoeff to avoid redacting account numbers and references.
+
+@pytest.mark.parametrize("text", ["id 9876 5432 1098", "id 2345-6789-0125"])
+def test_grouped_aadhaar_detected_even_with_bad_checksum(text):
+    assert "AADHAAR" in kinds(text)
+
+
+@pytest.mark.parametrize("text", ["id 2345 67890125", "id 2345-6789 0125"])  # mixed / partial grouping
+def test_inconsistent_grouping_with_bad_checksum_not_aadhaar(text):
+    assert "AADHAAR" not in kinds(text)
+
+
+@pytest.mark.parametrize("text", ["card 4111 1111 1111 1111", "ref 1234 2345 6789 0124"])
+def test_grouped_aadhaar_not_matched_inside_longer_grouped_numbers(text):
+    assert "AADHAAR" not in kinds(text)
