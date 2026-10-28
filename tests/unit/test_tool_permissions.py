@@ -21,6 +21,7 @@ TOOL_PERMISSIONS = {
     "audit_job_description_bias": P.MANAGE_RECRUITMENT, "evaluate_onboarding_offer": P.MANAGE_RECRUITMENT,
     "generate_requisition_archetypes": P.MANAGE_RECRUITMENT, "verify_onboarding_documents": P.VIEW_EMPLOYEE,
     "search_labor_regulations": P.USE_COPILOT, "audit_travel_expense_claim": P.APPROVE_EXPENSE,
+    "calculate_pf_contribution": P.VIEW_SALARY,
 }
 
 

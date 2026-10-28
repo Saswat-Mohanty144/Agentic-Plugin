@@ -20,6 +20,8 @@ EXPECTED = {
     ("GET", "/v1/schema/mappings"): P.MANAGE_SCHEMA,
     ("GET", "/v1/schema/mappings/{vendor}/{entity_type}"): P.MANAGE_SCHEMA,
     ("POST", "/v1/remediate/execute"): P.EXECUTE_REMEDIATION,
+    ("POST", "/v1/schema/fingerprints/approve"): P.MANAGE_SCHEMA,
+    ("GET", "/v1/schema/fingerprints/quarantine"): P.MANAGE_SCHEMA,
     ("GET", "/v1/compliance/diagnose"): P.VIEW_COMPLIANCE,
     ("GET", "/api/compliance/agent/diagnose"): P.VIEW_COMPLIANCE,
     ("GET", "/v1/compliance/dashboard/live"): P.VIEW_COMPLIANCE,

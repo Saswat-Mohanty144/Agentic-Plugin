@@ -6,6 +6,7 @@ Agents invoke these tools during the ReAct reasoning loop.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Dict, List, Optional
 
 from hrms_plugin.agents.compliance import ComplianceAgent
@@ -34,6 +35,7 @@ class AgenticToolRegistry:
         onboarding_agent: Optional[OnboardingAgent] = None,
         offboarding_agent: Optional[OffboardingAgent] = None,
         travel_agent: Optional[TravelExpenseAgent] = None,
+        payroll_service: Optional[Any] = None,
     ):
         self.kb = kb or StatutoryKnowledgeBase()
         self.payroll_agent = payroll_agent or StatutoryPayrollAgent(kb=self.kb)
@@ -43,6 +45,7 @@ class AgenticToolRegistry:
         self.onboarding_agent = onboarding_agent or OnboardingAgent()
         self.offboarding_agent = offboarding_agent or OffboardingAgent(kb=self.kb, payroll_agent=self.payroll_agent)
         self.travel_agent = travel_agent or TravelExpenseAgent()
+        self._payroll_service = payroll_service
 
         self._tools: Dict[str, ToolDefinition] = {}
         self._handlers: Dict[str, Callable[..., Any]] = {}
@@ -85,6 +88,8 @@ class AgenticToolRegistry:
         try:
             handler = self._handlers[tool_name]
             result = handler(**arguments)
+            if inspect.isawaitable(result):
+                result = await result
             # Normalize Pydantic models or dataclasses
             if hasattr(result, "model_dump"):
                 return result.model_dump()
@@ -390,6 +395,31 @@ class AgenticToolRegistry:
             permission=Permission.APPROVE_EXPENSE,
         )
 
+        # 15. PF contribution from the host's submitted Salary Slip (piece F1). IDs only — never amounts.
+        self.register(
+            ToolDefinition(
+                name="calculate_pf_contribution",
+                description=(
+                    "Calculate Indian EPF/EPS contributions for one employee and month from the host HRMS's "
+                    "submitted salary slip, using this tenant's approved payroll rules. Takes only the employee ID "
+                    "and the month; never pass salary amounts."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "employee_id": {"type": "string", "description": "Host employee ID, e.g. HR-EMP-00001"},
+                        "period": {"type": "string", "description": "Payroll month as YYYY-MM"},
+                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"]},
+                        "tenant_id": {"type": "string"},
+                    },
+                    "required": ["employee_id", "period", "jurisdiction"],
+                },
+            ),
+            self._tool_calculate_pf,
+            intent=UserIntent.PAYROLL_STRUCTURE,
+            permission=Permission.VIEW_SALARY,
+        )
+
         # 14. Smart Requisition 4-Archetype Generator Tool
         self.register(
             ToolDefinition(
@@ -444,6 +474,24 @@ class AgenticToolRegistry:
                 last_drawn_basic=float(basic_wage), tenure_years=float(tenure_years)
             )
             return res.model_dump()
+
+    @property
+    def payroll_service(self) -> Any:
+        if self._payroll_service is None:
+            import os
+            from pathlib import Path
+
+            from hrms_plugin.payroll.service import PayrollService
+            from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
+
+            store = SqliteKeyValueStore(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db")
+            self._payroll_service = PayrollService(store=store)
+        return self._payroll_service
+
+    async def _tool_calculate_pf(
+        self, employee_id: str, period: str, *, jurisdiction: str, tenant_id: str = "DEFAULT"
+    ) -> Dict[str, Any]:
+        return await self.payroll_service.calculate_pf(tenant_id, employee_id, period, jurisdiction)
 
     def _tool_audit_compliance(
         self,

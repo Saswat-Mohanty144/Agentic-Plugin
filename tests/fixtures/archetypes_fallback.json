@@ -647,6 +647,40 @@
    }
   },
   {
+   "description": "Calculate Indian EPF/EPS contributions for one employee and month from the host HRMS's submitted salary slip, using this tenant's approved payroll rules. Takes only the employee ID and the month; never pass salary amounts.",
+   "name": "calculate_pf_contribution",
+   "parameters": {
+    "properties": {
+     "employee_id": {
+      "description": "Host employee ID, e.g. HR-EMP-00001",
+      "type": "string"
+     },
+     "jurisdiction": {
+      "enum": [
+       "IN",
+       "AE",
+       "SA",
+       "US"
+      ],
+      "type": "string"
+     },
+     "period": {
+      "description": "Payroll month as YYYY-MM",
+      "type": "string"
+     },
+     "tenant_id": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "employee_id",
+     "period",
+     "jurisdiction"
+    ],
+    "type": "object"
+   }
+  },
+  {
    "description": "Generate 4 dynamic candidate and role archetypes (Delivery, Architecture, Specialization, Leadership) for a job requisition with salary bands, skills, and responsibilities from a hiring prompt.",
    "name": "generate_requisition_archetypes",
    "parameters": {

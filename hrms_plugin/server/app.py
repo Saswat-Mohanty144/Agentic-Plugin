@@ -29,6 +29,7 @@ from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.voice import VoiceAgent
 from hrms_plugin.ai.llm import LLMNotConfigured
+from hrms_plugin.payroll.service import PayrollService
 from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
@@ -79,6 +80,7 @@ def purge_legacy_pii_vault(store: BaseKeyValueStore) -> None:
 
 
 purge_legacy_pii_vault(_storage)
+payroll_service = PayrollService(store=_storage)
 mapping_store = MappingStore(backend=_storage)
 
 audit_gateway = HostAuditGateway()
@@ -139,6 +141,16 @@ class IntrospectRequest(BaseModel):
 class SynthesizeRequest(BaseModel):
     domain: str = "EMPLOYEE"
     discovered_fields: List[Dict[str, Any]]
+
+
+class FingerprintApproveRequest(BaseModel):
+    """Approve the observed host schema fingerprint so payroll calculations may run (piece F1-7)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vendor: Literal["frappe"]
+    doctype: Literal["Salary Slip"]
+    fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class RemediationExecuteRequest(BaseModel):
@@ -363,6 +375,22 @@ def get_schema_mapping(
         raise HTTPException(status_code=404, detail=f"No mapping found for {vendor}/{entity_type}")
     from hrms_plugin.storage.mapping_store import entity_mapping_to_dict
     return entity_mapping_to_dict(mapping)
+
+
+@router.post("/v1/schema/fingerprints/approve")
+def approve_schema_fingerprint(
+    req: FingerprintApproveRequest,
+    auth: AuthContext = Depends(
+        require(Permission.MANAGE_SCHEMA, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
+):
+    record = payroll_service.approve_fingerprint(auth.tenant_id, req.vendor, req.doctype, req.fingerprint, auth.user_id)
+    return {"tenant_id": auth.tenant_id, "vendor": req.vendor, "doctype": req.doctype, **record}
+
+
+@router.get("/v1/schema/fingerprints/quarantine")
+def list_schema_quarantine(auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA))):
+    return {"tenant_id": auth.tenant_id, "quarantine": payroll_service.list_quarantine(auth.tenant_id)}
 
 
 @router.post("/v1/remediate/execute")

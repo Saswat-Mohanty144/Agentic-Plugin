@@ -21,6 +21,7 @@ EXPECTED = {
     "compute_final_settlement": UserIntent.OFFBOARDING_FNF,
     "audit_travel_expense_claim": UserIntent.TRAVEL_EXPENSE,
     "generate_requisition_archetypes": UserIntent.RECRUITMENT_REQUISITION,
+    "calculate_pf_contribution": UserIntent.PAYROLL_STRUCTURE,
 }
 
 

@@ -186,5 +186,5 @@ def test_injected_params_have_no_schema_default(definition):
 def test_jurisdiction_is_required_in_every_schema_that_declares_it():
     definitions = AgenticToolRegistry().get_definitions()
     declaring = [d for d in definitions if "jurisdiction" in d.parameters.get("properties", {})]
-    assert len(declaring) == 7
+    assert len(declaring) == 8  # +calculate_pf_contribution (piece F1)
     assert all("jurisdiction" in d.parameters.get("required", []) for d in declaring)
