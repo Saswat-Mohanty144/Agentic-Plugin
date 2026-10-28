@@ -71,3 +71,37 @@ def test_importing_mcp_server_does_not_build_the_app():
     env = {k: v for k, v in os.environ.items() if k != "HRMS_TENANT_REGISTRY"}
     code = "import hrms_plugin.server.mcp_server, sys; sys.exit('hrms_plugin.server.app' in sys.modules)"
     assert subprocess.run([sys.executable, "-c", code], env=env).returncode == 0
+
+
+# agy F4 — create_app is importable without a registry; the default app still fails fast ----------
+
+def _run_without_registry(code):
+    env = {k: v for k, v in os.environ.items() if k != "HRMS_TENANT_REGISTRY"}
+    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+
+
+def test_create_app_importable_without_registry():
+    res = _run_without_registry("from hrms_plugin.server.app import create_app; print('ok')")
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "ok"
+
+
+def test_default_app_access_without_registry_fails_fast():
+    res = _run_without_registry("from hrms_plugin.server.app import app")
+    assert res.returncode != 0
+    assert "HRMS_TENANT_REGISTRY" in res.stderr
+
+
+def test_default_app_is_built_once_and_cached():
+    import hrms_plugin.server.app as module
+
+    first = module.app
+    assert first is module.app
+    assert type(first).__name__ == "FastAPI"
+
+
+def test_unknown_module_attribute_still_raises():
+    import hrms_plugin.server.app as module
+
+    with pytest.raises(AttributeError):
+        module.no_such_attribute  # noqa: B018

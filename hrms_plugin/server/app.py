@@ -664,4 +664,17 @@ def _create_default_app() -> FastAPI:
     )
 
 
-app = _create_default_app()
+_default_app: Optional[FastAPI] = None
+
+
+def __getattr__(name: str) -> Any:
+    """Build the default app on first access to `app` (uvicorn, `python -m hrms_plugin.server`).
+
+    Importing `create_app` must not require a tenant registry; starting the service still fails fast without one.
+    """
+    global _default_app
+    if name == "app":
+        if _default_app is None:
+            _default_app = _create_default_app()
+        return _default_app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
