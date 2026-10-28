@@ -1,0 +1,131 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed!",
+    "pytest": "763 passed in 56.39s"
+  },
+  "requirements_checked": 35,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "correctness",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 510,
+      "requirement": "Anthropic Messages API specification & Decision E1/E2/E8: valid message turn alternation and role ordering",
+      "finding": "AnthropicClient._convert forwards consecutive user or assistant messages directly to the Anthropic API without merging or validation whenever history contains consecutive turns, ends in a user turn, or begins with an assistant turn, causing Anthropic to reject the request with HTTP 400.",
+      "evidence": "Calling AnthropicClient._convert([ChatMessage(role='user', content='u1'), ChatMessage(role='user', content='u2')]) produces (None, [{'role': 'user', 'content': 'u1'}, {'role': 'user', 'content': 'u2'}]). In AgenticOrchestrator.run (line 239), user_message is appended after history, so any history ending in a user turn guarantees consecutive user messages sent to Anthropic.",
+      "reproduce": ".venv/bin/python -c 'from hrms_plugin.ai.llm import AnthropicClient, ChatMessage; print(AnthropicClient._convert([ChatMessage(role=\"user\", content=\"u1\"), ChatMessage(role=\"user\", content=\"u2\")]))'"
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "category": "correctness",
+      "file": "hrms_plugin/server/app.py",
+      "line": 97,
+      "requirement": "Anthropic Messages API specification & Decision E8: non-empty content strings in message turns",
+      "finding": "HistoryItem allows empty content strings because Field(max_length=32000) lacks min_length=1, resulting in either empty string user blocks or dropped assistant turns that cause Anthropic API 400 errors.",
+      "evidence": "In hrms_plugin/server/app.py:97, content: str = Field(max_length=32000) accepts ''. In hrms_plugin/ai/llm.py:533-538, an empty assistant content string results in content = [], failing if content: and dropping the turn, which causes adjacent user turns to collide into consecutive user messages.",
+      "reproduce": ".venv/bin/python -c 'from hrms_plugin.ai.llm import AnthropicClient, ChatMessage; print(AnthropicClient._convert([ChatMessage(role=\"user\", content=\"u1\"), ChatMessage(role=\"assistant\", content=\"\"), ChatMessage(role=\"user\", content=\"u2\")]))'"
+    },
+    {
+      "id": "F3",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 517,
+      "requirement": "Anthropic Messages API specification: tool_result blocks must match preceding assistant tool_use blocks",
+      "finding": "AnthropicClient._convert does not verify that tool messages are preceded by a matching assistant tool_use block, creating orphaned tool_result blocks in consecutive user messages that fail Anthropic API validation.",
+      "evidence": "In hrms_plugin/ai/llm.py:517-528, when a tool message follows a user message, _convert appends {'role': 'user', 'content': [{'type': 'tool_result', ...}]}, creating two consecutive user turns with an orphaned tool_result.",
+      "reproduce": ".venv/bin/python -c 'from hrms_plugin.ai.llm import AnthropicClient, ChatMessage; print(AnthropicClient._convert([ChatMessage(role=\"user\", content=\"q\"), ChatMessage(role=\"tool\", content=\"{}\", tool_call_id=\"call_x\")]))'"
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 168,
+      "requirement": "Decision E7: retries on 429/5xx honouring Retry-After with exponential backoff",
+      "finding": "_retry_delay fails to parse RFC 7231 / RFC 9110 HTTP-date Retry-After headers, prematurely falling back to exponential backoff, and fails to guard against NaN delay values.",
+      "evidence": "In hrms_plugin/ai/llm.py:168-176, float(retry_after) raises ValueError on standard HTTP-dates (e.g. 'Wed, 21 Oct 2026 07:28:00 GMT'), which is silently caught and ignored by except ValueError: pass, while 'nan' yields delay nan.",
+      "reproduce": ".venv/bin/python -c 'import httpx; from hrms_plugin.ai.llm import _retry_delay; r = httpx.Response(429, headers={\"retry-after\": \"Wed, 21 Oct 2026 07:28:00 GMT\"}); print(_retry_delay(r, 0))'"
+    },
+    {
+      "id": "F5",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/schema/synthesizer.py",
+      "line": 798,
+      "requirement": "Decision E7: OpenAI-compatible and Gemini clients each reuse one httpx.AsyncClient",
+      "finding": "MappingSynthesizer.synthesize_agentic creates a new LLMGateway and httpx.AsyncClient on every invocation without cleanup lifecycle methods, leaking client connections and SSL contexts.",
+      "evidence": "In hrms_plugin/schema/synthesizer.py:798, gateway = llm_gateway or LLMGateway() creates a new LLMGateway instance each call. In hrms_plugin/ai/llm.py:385 and 606, OpenAICompatibleClient and GeminiClient instantiate a new httpx.AsyncClient with no close() or aclose() methods anywhere in llm.py.",
+      "reproduce": ".venv/bin/python -c 'from hrms_plugin.ai.llm import LLMGateway, LLMConfig, LLMProvider; g1 = LLMGateway(LLMConfig(provider=LLMProvider.OPENAI)); g2 = LLMGateway(LLMConfig(provider=LLMProvider.OPENAI)); print(g1.client._http is not g2.client._http, hasattr(g1, \"aclose\"))'"
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/server/app.py",
+      "line": 200,
+      "requirement": "Decision E8 / Problem E-P7: ChatRequest.history support across chat endpoints",
+      "finding": "ChatRequest.history is completely ignored and dropped by /v1/chat/stream, depriving streaming conversations of prior context.",
+      "evidence": "In hrms_plugin/server/app.py:200, agent.stream_agentic is invoked with only message, jurisdiction, context, and auth. Neither SupervisorAgent.stream_agentic (supervisor.py:631) nor AgenticOrchestrator.run_stream (orchestrator.py:267) accepts a history parameter, and orchestrator.py:284-287 hardcodes messages to only system and current user turns.",
+      "reproduce": ".venv/bin/python -c 'import inspect; from hrms_plugin.agents.orchestrator import AgenticOrchestrator; print(list(inspect.signature(AgenticOrchestrator.run_stream).parameters))'"
+    },
+    {
+      "id": "F7",
+      "severity": "MEDIUM",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/server/app.py",
+      "line": 208,
+      "requirement": "Decision E6: unconfigured LLM maps to HTTP 503 {'error': 'LLM_NOT_CONFIGURED'}",
+      "finding": "/v1/chat/stream returns HTTP 200 instead of HTTP 503 when the LLM is unconfigured, emitting an in-band SSE error event because StreamingResponse commits HTTP 200 before checking configuration.",
+      "evidence": "In hrms_plugin/server/app.py:214, chat_stream_endpoint returns StreamingResponse(event_generator(), ...), committing HTTP 200 OK headers immediately. When LLMNotConfigured is raised inside event_generator(), line 208 yields an SSE error event instead of responding with HTTP 503 as specified by Decision E6.",
+      "reproduce": "POST to /v1/chat/stream with LLM_PROVIDER=bard returns HTTP status 200 with SSE payload 'data: {\"event\": \"error\", \"data\": {\"error\": \"LLM_NOT_CONFIGURED\"}}\\n\\n'."
+    },
+    {
+      "id": "F8",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_orchestrator_turns.py",
+      "line": 38,
+      "requirement": "Test Table E3 / Decision E3: orchestrator refusal handling verification",
+      "finding": "Tests test_refusal_is_returned_and_no_tool_runs and test_refusal_after_a_tool_ran are vacuous tests that would pass even if refusal handling were removed, because AgenticOrchestrator contains no refusal-specific logic.",
+      "evidence": "In hrms_plugin/agents/orchestrator.py:251-253, any LLMResponse with empty tool_calls returns reply_text and confidence 0.98 unconditionally. The word 'refusal' does not exist in orchestrator.py, confirmed by git grep.",
+      "reproduce": "git grep -n 'refusal' hrms_plugin/agents/orchestrator.py exits with code 1."
+    },
+    {
+      "id": "F9",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_llm_providers.py",
+      "line": 292,
+      "requirement": "Test Table E7 / Decision E7: verify one HTTP client is reused across calls",
+      "finding": "test_one_http_client_is_reused vacuously passes by checking an explicitly pre-injected client parameter on the instance attribute rather than testing client lifecycle or gateway reuse.",
+      "evidence": "In tests/unit/test_llm_providers.py:252-255 and 292-298, the test explicitly passes a mock http_client to OpenAICompatibleClient and asserts client._http is first, verifying only Python attribute assignment rather than gateway reuse or default client lifecycle.",
+      "reproduce": "Quoted lines 252-255 and 292-298 in tests/unit/test_llm_providers.py."
+    },
+    {
+      "id": "F10",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 141,
+      "requirement": "Decision E1: any invalid effort value raises LLMNotConfigured",
+      "finding": "LLMConfig and AnthropicClient do not validate effort during instantiation, allowing invalid effort levels to bypass validation when not loaded from environment variables.",
+      "evidence": "In hrms_plugin/ai/llm.py:141, LLMConfig.effort has no validation. In llm.py:502, AnthropicClient.__init__ does not validate config.effort. Instantiating AnthropicClient(LLMConfig(effort='bogus')) succeeds and sends {'output_config': {'effort': 'bogus'}}.",
+      "reproduce": ".venv/bin/python -c 'from hrms_plugin.ai.llm import AnthropicClient, LLMConfig, LLMProvider; c = AnthropicClient(LLMConfig(provider=LLMProvider.ANTHROPIC, effort=\"bogus\")); print(c.config.effort)'"
+    },
+    {
+      "id": "F11",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/agents/orchestrator.py",
+      "line": 296,
+      "requirement": "Decision E4: run_stream streams response text as token events",
+      "finding": "run_stream emits the complete response text in a single token event when no tool calls occur, defeating the user experience purpose of incremental token streaming.",
+      "evidence": "In hrms_plugin/agents/orchestrator.py:296-297, if llm_resp.content: yield {'event': 'token', 'data': llm_resp.content} sends the entire string as a single SSE event, unlike FakeLLMClient.chat_stream which yields incrementally word by word.",
+      "reproduce": "Quoted lines 296-297 in hrms_plugin/agents/orchestrator.py."
+    }
+  ]
+}

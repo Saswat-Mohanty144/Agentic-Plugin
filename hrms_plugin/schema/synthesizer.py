@@ -792,10 +792,21 @@ class MappingSynthesizer:
         if not report.unmapped_canonical_fields or not report.unmapped_host_fields:
             return mapping, report
 
-        from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass
+        from hrms_plugin.ai.llm import LLMGateway
 
         # Configuration errors (LLMNotConfigured) must surface: this path exists to use the LLM (piece E5/E6).
         gateway = llm_gateway or LLMGateway()
+        owns_gateway = llm_gateway is None
+        try:
+            return await cls._apply_llm_matches(discovered, mapping, report, gateway)
+        finally:
+            if owns_gateway:
+                await gateway.aclose()
+
+    @classmethod
+    async def _apply_llm_matches(cls, discovered, mapping, report, gateway):
+        from hrms_plugin.ai.llm import ChatMessage, TaskClass
+
         try:
             import json
 

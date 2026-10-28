@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
@@ -94,7 +94,7 @@ class HistoryItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Literal["user", "assistant"]
-    content: str = Field(max_length=32000)
+    content: str = Field(min_length=1, max_length=32000)
 
 
 class ChatRequest(BaseModel):
@@ -104,6 +104,13 @@ class ChatRequest(BaseModel):
     mask_pii: bool = True  # deprecated: protection is always on (piece C, decision C4)
     agentic: bool = True
     history: Optional[List[HistoryItem]] = Field(default=None, max_length=50)
+
+    @field_validator("history")
+    @classmethod
+    def _history_starts_with_user(cls, value: Optional[List[HistoryItem]]) -> Optional[List[HistoryItem]]:
+        if value and value[0].role != "user":
+            raise ValueError("history must start with a user turn")
+        return value
 
 
 class VoiceTranscribeRequest(BaseModel):
@@ -192,6 +199,7 @@ async def chat_stream_endpoint(
 ):
     """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
     agent: SupervisorAgent = request.app.state.supervisor
+    agent.get_orchestrator()  # resolve LLM configuration before streaming starts → plain 503 (agy E-F7)
 
     async def event_generator():
         text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
@@ -201,6 +209,7 @@ async def chat_stream_endpoint(
                 message=text_to_process,
                 jurisdiction=req.jurisdiction,
                 context=req.context,
+                history=[h.model_dump() for h in req.history] if req.history else None,
                 auth=auth,
             ):
                 yield f"data: {json.dumps(chunk, default=str)}\n\n"

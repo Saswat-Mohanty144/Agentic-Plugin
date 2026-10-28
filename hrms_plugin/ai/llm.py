@@ -15,9 +15,12 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+import email.utils
 import json
 import logging
+import math
 import os
+import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -166,14 +169,22 @@ Sleep = Callable[[float], Awaitable[None]]
 
 
 def _retry_delay(response: httpx.Response, attempt: int) -> float:
-    retry_after = response.headers.get("retry-after")
-    delay = 0.5 * 2**attempt
-    if retry_after is not None:
+    """Seconds to wait: Retry-After (delta-seconds or HTTP-date) when usable, else exponential backoff; ≤ 30 s."""
+    backoff = 0.5 * 2**attempt
+    retry_after = (response.headers.get("retry-after") or "").strip()
+    delay = backoff
+    if retry_after:
         try:
-            delay = float(retry_after)
+            seconds = float(retry_after)
+            if math.isfinite(seconds) and seconds >= 0:
+                delay = seconds
         except ValueError:
-            pass
-    return min(max(delay, 0.0), MAX_RETRY_DELAY_SECONDS)
+            try:
+                when = email.utils.parsedate_to_datetime(retry_after)
+                delay = max(0.0, when.timestamp() - time.time())
+            except (TypeError, ValueError):
+                pass
+    return min(delay, MAX_RETRY_DELAY_SECONDS)
 
 
 async def _post_with_retry(
@@ -196,6 +207,9 @@ class BaseLLMClient(ABC):
 
     def __init__(self, config: LLMConfig):
         self.config = config
+
+    async def aclose(self) -> None:
+        """Release network resources owned by this client (no-op by default)."""
 
     @abstractmethod
     async def chat(
@@ -382,6 +396,7 @@ class OpenAICompatibleClient(BaseLLMClient):
         self, config: LLMConfig, http_client: Optional[httpx.AsyncClient] = None, sleep: Sleep = asyncio.sleep
     ):
         super().__init__(config)
+        self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=config.timeout_seconds)
         self._sleep = sleep
         self.base_url = (config.base_url or "https://api.openai.com/v1").rstrip("/")
@@ -391,6 +406,10 @@ class OpenAICompatibleClient(BaseLLMClient):
             self.base_url = "https://openrouter.ai/api/v1"
         elif config.provider == LLMProvider.NVIDIA and not config.base_url:
             self.base_url = "https://integrate.api.nvidia.com/v1"
+
+    async def aclose(self) -> None:
+        if self._owns_http:
+            await self._http.aclose()
 
     async def chat(
         self,
@@ -501,20 +520,28 @@ class AnthropicClient(BaseLLMClient):
 
     def __init__(self, config: LLMConfig, http_client: Any = None):
         super().__init__(config)
+        if config.effort not in EFFORT_LEVELS:
+            raise LLMNotConfigured(f"effort must be one of {EFFORT_LEVELS}, got {config.effort!r}")
         kwargs: Dict[str, Any] = {"api_key": config.api_key, "max_retries": MAX_RETRIES}
         if http_client is not None:
             kwargs["http_client"] = http_client
         self._client = anthropic.AsyncAnthropic(**kwargs)
 
+    async def aclose(self) -> None:
+        await self._client.close()
+
     @staticmethod
     def _convert(messages: List[ChatMessage]) -> tuple:
         system_parts: List[str] = []
         out: List[Dict[str, Any]] = []
+        open_tool_ids: set = set()  # tool_use ids of the most recent assistant turn
         for m in messages:
             if m.role == "system":
                 if m.content:
                     system_parts.append(m.content)
             elif m.role == "tool":
+                if m.tool_call_id not in open_tool_ids:
+                    raise ValueError(f"tool result without a matching tool call: {m.tool_call_id!r}")
                 block = {"type": "tool_result", "tool_use_id": m.tool_call_id, "content": m.content or ""}
                 previous = out[-1] if out else None
                 if (
@@ -527,18 +554,26 @@ class AnthropicClient(BaseLLMClient):
                 else:
                     out.append({"role": "user", "content": [block]})
             elif m.role == "assistant":
+                if not out:
+                    raise ValueError("first message must be from the user")
                 if m.raw_content is not None:
                     content: Any = m.raw_content
+                    open_tool_ids = {
+                        (b.get("id") if isinstance(b, dict) else getattr(b, "id", None))
+                        for b in m.raw_content
+                        if (b.get("type") if isinstance(b, dict) else getattr(b, "type", None)) == "tool_use"
+                    }
                 else:
                     content = [{"type": "text", "text": m.content}] if m.content else []
                     content += [
                         {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
                         for tc in (m.tool_calls or [])
                     ]
+                    open_tool_ids = {tc.id for tc in (m.tool_calls or [])}
                 if content:
                     out.append({"role": "assistant", "content": content})
-            else:
-                out.append({"role": "user", "content": m.content or ""})
+            elif m.content:  # user turn; empty user text is never sent
+                out.append({"role": "user", "content": m.content})
         return ("\n".join(system_parts) or None), out
 
     async def chat(
@@ -603,8 +638,13 @@ class GeminiClient(BaseLLMClient):
         super().__init__(config)
         self.model = config.model or "gemini-2.5-flash"
         self.api_key = config.api_key or ""
+        self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=config.timeout_seconds)
         self._sleep = sleep
+
+    async def aclose(self) -> None:
+        if self._owns_http:
+            await self._http.aclose()
 
     async def chat(
         self,
@@ -821,6 +861,9 @@ class LLMGateway:
             return GeminiClient(config)
         else:
             return FakeLLMClient(config)
+
+    async def aclose(self) -> None:
+        await self.client.aclose()
 
     async def chat(
         self,

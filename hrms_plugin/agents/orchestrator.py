@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
@@ -249,6 +250,8 @@ class AgenticOrchestrator:
                 f"Step {iteration}: Reasoning through available information." if llm_resp.tool_calls else None
             )
             if not llm_resp.tool_calls:
+                if llm_resp.finish_reason == "refusal":
+                    return self._response(state, llm_resp.content, 0.0)  # declined: no confidence, no scraping
                 _collect_from_text(llm_resp.content, state)
                 return self._response(state, llm_resp.content, 0.98)
 
@@ -269,6 +272,7 @@ class AgenticOrchestrator:
         user_message: str,
         jurisdiction: str = "IN",
         context: Optional[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, str]]] = None,
         *,
         auth: AuthContext,
     ) -> AsyncIterator[Dict[str, Any]]:
@@ -281,10 +285,10 @@ class AgenticOrchestrator:
         state.pii.learn(ctx)
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
-        messages: List[ChatMessage] = [
-            self._system_message(jurisdiction, tenant_id, ctx),
-            ChatMessage(role="user", content=user_message),
-        ]
+        messages: List[ChatMessage] = [self._system_message(jurisdiction, tenant_id, ctx)]
+        for h in history or []:
+            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
+        messages.append(ChatMessage(role="user", content=user_message))
         llm_resp = await self.llm_gateway.chat(
             messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
         )
@@ -293,8 +297,8 @@ class AgenticOrchestrator:
 
         if not llm_resp.tool_calls:
             # Stream the answer we already have instead of calling the LLM again (piece E4).
-            if llm_resp.content:
-                yield {"event": "token", "data": llm_resp.content}
+            for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
+                yield {"event": "token", "data": piece}
             yield {"event": "done", "data": {"finish_reason": llm_resp.finish_reason}}
             yield {"event": "intent", "data": self._intent(state).value}
             return

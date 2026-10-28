@@ -633,6 +633,7 @@ class SupervisorAgent:
         message: str,
         jurisdiction: Jurisdiction | str = Jurisdiction.INDIA,
         context: Optional[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, str]]] = None,
         *,
         auth: AuthContext,
     ):
@@ -643,6 +644,7 @@ class SupervisorAgent:
             user_message=message,
             jurisdiction=jur_val,
             context=context,
+            history=history,
             auth=auth,
         ):
             yield chunk

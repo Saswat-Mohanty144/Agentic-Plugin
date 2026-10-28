@@ -70,3 +70,6 @@ Thumbs.db
 *.db
 *.sqlite
 *.sqlite3
+
+# Local Claude Code tool caches (WebFetch/simplify); never commit
+.claude/sdd-cache/
