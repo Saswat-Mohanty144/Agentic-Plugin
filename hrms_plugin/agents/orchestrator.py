@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from hrms_plugin.agents.supervisor import AgentResponse, UserIntent
 from hrms_plugin.agents.tools import AgenticToolRegistry
 from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
+from hrms_plugin.security.pii import PiiSession
 from hrms_plugin.security.rbac import AuthContext
 
 logger = logging.getLogger(__name__)
@@ -37,8 +38,11 @@ SUPER_AGENT_SYSTEM_PROMPT = (
     "declaring that mutations require human confirmation before execution.\n"
 )
 
-# Request context keys that replace LLM-supplied tool arguments of the same name.
-TRUSTED_CONTEXT_PARAMS: Tuple[str, ...] = ("employees",)
+# Context keys whose VALUES may be shown to the LLM (navigation only). Every other context value reaches
+# tools by trusted server-side injection and is never put in a prompt (piece C, decision C3).
+LLM_VISIBLE_CONTEXT_KEYS: Tuple[str, ...] = ("entity", "record_id", "route")
+# Values that only the server may set; context entries with these names are ignored.
+SERVER_OWNED_PARAMS: Tuple[str, ...] = ("jurisdiction", "tenant_id")
 
 
 class AgenticExecutionStep(BaseModel):
@@ -73,6 +77,7 @@ class _RunState:
     citations: List[str] = field(default_factory=list)
     actions: List[Dict[str, Any]] = field(default_factory=list)
     last_tool_data: Optional[Dict[str, Any]] = None
+    pii: PiiSession = field(default_factory=PiiSession)
 
 
 def _collect_from_output(output: Any, state: _RunState) -> None:
@@ -128,7 +133,13 @@ class AgenticOrchestrator:
         self.max_iterations = max_iterations
 
     def _system_message(self, jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> ChatMessage:
-        context_str = json.dumps(ctx) if ctx else "None provided"
+        keys = sorted(k for k in ctx if k not in SERVER_OWNED_PARAMS)
+        navigation = [f"{k}={ctx[k]}" for k in LLM_VISIBLE_CONTEXT_KEYS if k in ctx]
+        context_str = (
+            "Context fields provided by the host application (values are passed to tools automatically): "
+            + (", ".join(keys) if keys else "none")
+            + ("; navigation: " + ", ".join(navigation) if navigation else "")
+        )
         return ChatMessage(
             role="system",
             content=(
@@ -141,10 +152,8 @@ class AgenticOrchestrator:
 
     @staticmethod
     def _trusted_values(jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
-        trusted: Dict[str, Any] = {"jurisdiction": jurisdiction, "tenant_id": tenant_id}
-        for name in TRUSTED_CONTEXT_PARAMS:
-            if name in ctx:
-                trusted[name] = ctx[name]
+        trusted: Dict[str, Any] = {k: v for k, v in ctx.items() if k not in SERVER_OWNED_PARAMS}
+        trusted.update({"jurisdiction": jurisdiction, "tenant_id": tenant_id})
         return trusted
 
     async def _execute_tool_call(
@@ -171,6 +180,7 @@ class AgenticOrchestrator:
         else:
             arguments, overrides = build_trusted_arguments(definition, tc.arguments, trusted)
             output = await self.tool_registry.execute(tc.name, arguments)
+            state.pii.learn(output)
             state.executed_tools.append(tc.name)
             state.last_tool_data = output
             _collect_from_output(output, state)
@@ -212,6 +222,8 @@ class AgenticOrchestrator:
         """Execute autonomous ReAct agent loop until final answer is formulated."""
         tenant_id = auth.tenant_id
         ctx = context or {}
+        state = _RunState()
+        state.pii.learn(ctx)
         messages: List[ChatMessage] = [self._system_message(jurisdiction, tenant_id, ctx)]
         for h in history or []:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
@@ -219,11 +231,10 @@ class AgenticOrchestrator:
 
         tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
-        state = _RunState()
 
         for iteration in range(1, self.max_iterations + 1):
             llm_resp = await self.llm_gateway.chat(
-                messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id
+                messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
             )
             thought = llm_resp.thought_process or (
                 f"Step {iteration}: Reasoning through available information." if llm_resp.tool_calls else None
@@ -236,7 +247,7 @@ class AgenticOrchestrator:
                 output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
                 messages.append(ChatMessage(role="assistant", content=llm_resp.content, tool_calls=[tc]))
                 messages.append(
-                    ChatMessage(role="tool", content=json.dumps(output), tool_call_id=tc.id, name=tc.name)
+                    ChatMessage(role="tool", content=json.dumps(output, default=str), tool_call_id=tc.id, name=tc.name)
                 )
 
         return self._response(
@@ -257,6 +268,7 @@ class AgenticOrchestrator:
         tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
         state = _RunState()
+        state.pii.learn(ctx)
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
         messages: List[ChatMessage] = [
@@ -264,7 +276,7 @@ class AgenticOrchestrator:
             ChatMessage(role="user", content=user_message),
         ]
         llm_resp = await self.llm_gateway.chat(
-            messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id
+            messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
         )
         if llm_resp.thought_process:
             yield {"event": "thinking", "data": llm_resp.thought_process}
@@ -285,10 +297,10 @@ class AgenticOrchestrator:
                 }
                 messages.append(ChatMessage(role="assistant", content="", tool_calls=[tc]))
                 messages.append(
-                    ChatMessage(role="tool", content=json.dumps(output), tool_call_id=tc.id, name=tc.name)
+                    ChatMessage(role="tool", content=json.dumps(output, default=str), tool_call_id=tc.id, name=tc.name)
                 )
             yield {"event": "thinking", "data": "Synthesizing verified compliant response..."}
 
-        async for chunk in self.llm_gateway.chat_stream(messages, tenant_id=tenant_id):
+        async for chunk in self.llm_gateway.chat_stream(messages, tenant_id=tenant_id, pii=state.pii):
             yield chunk
         yield {"event": "intent", "data": self._intent(state).value}

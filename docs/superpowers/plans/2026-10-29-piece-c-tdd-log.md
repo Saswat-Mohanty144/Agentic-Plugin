@@ -15,3 +15,9 @@ Branch feat/piece-c-data-protection (stacked on feat/phase7-stabilise-auth @ d6a
 - GREEN: test_gateway_pii.py 9 passed (EchoClient proves the provider saw only tokens; 5-char stream chunks prove split-token restoration; monkeypatched no-op redaction proves fail-closed with provider never called).
 - Gateway `mask_pii` parameter removed (decision C4); `pii_gateway` constructor parameter removed. Tool-call arguments are restored inside the gateway (single point), so the orchestrator receives real values — the orchestrator-level test in C3 verifies this end to end.
 - Migrated test_agentic_llm.py: dropped `mask_pii=True` (assertion unchanged).
+
+## C3 — orchestrator: context keys only, generic trusted injection, learn tool outputs (§3.3)
+- RED: 6 failed + 1 error, 1 passed (`request jurisdiction beats context` already held from A5 → regression guard).
+- First GREEN attempt exposed a PRE-EXISTING bug (baseline 3028359, orchestrator.py:188,249): `json.dumps(tool_output)` raised `TypeError: Object of type Decimal is not JSON serializable` → every agentic run using `evaluate_onboarding_offer` crashed. Fixed with `default=str`; dedicated regression test added.
+- TRUSTED_CONTEXT_PARAMS ("employees" only) replaced by generic injection: any context key matching a declared tool parameter (server-owned jurisdiction/tenant_id excluded from context and always set by the server).
+- GREEN: test_orchestrator_pii.py 8 passed (adaptive TokenEchoingClient proves an LLM-written token reaches the tool as the real name); full suite 686 passed.
