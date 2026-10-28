@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
@@ -28,6 +28,7 @@ from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.voice import VoiceAgent
+from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
@@ -86,13 +87,23 @@ synthesizer = MappingSynthesizer()
 
 
 # Request / Response Schemas
+class HistoryItem(BaseModel):
+    """Prior conversation turn supplied by the client. Only user/assistant roles: a client must never be able to
+    inject operator (system) or tool turns (piece E8)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=32000)
+
+
 class ChatRequest(BaseModel):
     message: str
     jurisdiction: JurisdictionCode = "IN"
     context: Optional[Dict[str, Any]] = None
     mask_pii: bool = True  # deprecated: protection is always on (piece C, decision C4)
     agentic: bool = True
-    history: Optional[List[Dict[str, str]]] = None
+    history: Optional[List[HistoryItem]] = Field(default=None, max_length=50)
 
 
 class VoiceTranscribeRequest(BaseModel):
@@ -159,7 +170,7 @@ async def chat_endpoint(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
-            history=req.history,
+            history=[h.model_dump() for h in req.history] if req.history else None,
             auth=auth,
         )
     else:
@@ -193,6 +204,8 @@ async def chat_stream_endpoint(
                 auth=auth,
             ):
                 yield f"data: {json.dumps(chunk, default=str)}\n\n"
+        except LLMNotConfigured:
+            yield f"data: {json.dumps({'event': 'error', 'data': {'error': 'LLM_NOT_CONFIGURED'}})}\n\n"
         except PiiEgressBlocked as exc:
             # HTTP 200 is already committed once streaming starts, so report the block in-band (agy F2).
             blocked = {"event": "error", "data": {"error": "PII_EGRESS_BLOCKED", "kinds": exc.kinds}}
@@ -626,6 +639,10 @@ async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.body, headers=exc.headers)
 
 
+async def _llm_not_configured_handler(_request: Request, _exc: LLMNotConfigured) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"error": "LLM_NOT_CONFIGURED"})
+
+
 async def _pii_egress_blocked_handler(_request: Request, exc: PiiEgressBlocked) -> JSONResponse:
     return JSONResponse(status_code=422, content={"error": "PII_EGRESS_BLOCKED", "kinds": exc.kinds})
 
@@ -665,6 +682,7 @@ def create_app(
     application.add_exception_handler(ApiError, _api_error_handler)
     application.add_exception_handler(PermissionDenied, _permission_denied_handler)
     application.add_exception_handler(PiiEgressBlocked, _pii_egress_blocked_handler)
+    application.add_exception_handler(LLMNotConfigured, _llm_not_configured_handler)
     application.include_router(router)
     return application
 

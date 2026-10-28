@@ -15,3 +15,7 @@ Branch feat/piece-e-llm-layer (stacked on piece C @ 3d966bf). anthropic 1.17.0 v
 ## E-c — synthesizer applies LLM matches (E5)
 - RED: 4 failed (FieldMap TypeError swallowed → LLM match lost; no log; config error swallowed), 1 passed (unknown host field ignored — guard).
 - GREEN: 5 passed; full suite 752. `LLMNotConfigured` now propagates (route is LLM-backed); other LLM failures logged as LLM_MAPPING_FAILED with the rule mapping returned.
+
+## E-d — 503 on unconfigured LLM, strict history (E6 HTTP, E8)
+- RED: 8 failed, 3 passed (non-agentic route already unaffected; 2 valid-history cases already accepted — guards).
+- GREEN: test_chat_history.py 11 passed. History items: role user|assistant only, content str ≤ 32,000, ≤ 50 items, no extra keys. LLMNotConfigured → 503 {"error":"LLM_NOT_CONFIGURED"}; on streams → in-band SSE error event (HTTP 200 already committed, as C13).
