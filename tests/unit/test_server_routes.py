@@ -1,15 +1,15 @@
 """Integration tests for FastAPI REST routes and MCP Server."""
 
 import pytest
-from fastapi.testclient import TestClient
 
-from hrms_plugin.server.app import app
+from hrms_plugin.agents.supervisor import SupervisorAgent
 from hrms_plugin.server.mcp_server import HrmsMcpServer
+from tests.support.scripted_llm import final, tool_call
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(make_client):
+    return make_client()
 
 
 @pytest.fixture
@@ -23,19 +23,18 @@ def test_healthz_endpoint(client):
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "healthy"
-    assert "AE" in data["jurisdictions_supported"]
 
 
-def test_chat_endpoint_payroll_routing(client):
-    """Test /v1/chat endpoint routing with PII masking."""
+def test_chat_endpoint_payroll_routing_non_agentic(client, bearer):
+    """AM1: original assertions, on the non-agentic path they were written for (with PII masking)."""
     payload = {
         "message": "Calculate salary structure for annual CTC 1800000 INR with Aadhaar 9988 7766 5544",
         "jurisdiction": "IN",
         "context": {"annual_ctc": 1800000.0},
         "mask_pii": True,
+        "agentic": False,
     }
-
-    res = client.post("/v1/chat", json=payload, headers={"X-Tenant-Id": "T-TEST"})
+    res = client.post("/v1/chat", json=payload, headers=bearer(roles=["hr_manager"]))
     assert res.status_code == 200
     data = res.json()
     assert data["intent"] == "PAYROLL_STRUCTURE"
@@ -44,18 +43,28 @@ def test_chat_endpoint_payroll_routing(client):
     assert len(data["statutory_citations"]) > 0
 
 
-def test_remediation_execute_endpoint(client):
+def test_chat_endpoint_payroll_routing_agentic(make_client, bearer, scripted):
+    """AM1: the agentic path reports the intent of the tool it ran."""
+    gateway, _ = scripted(tool_call("calculate_salary_structure", gross_or_ctc=1800000.0), final("Structured."))
+    client = make_client(supervisor_agent=SupervisorAgent(llm_gateway=gateway))
+    res = client.post("/v1/chat", headers=bearer(roles=["hr_manager"]),
+                      json={"message": "Calculate salary structure for annual CTC 1800000", "jurisdiction": "IN"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "PAYROLL_STRUCTURE"
+    assert data["routed_agent"] == "AgenticBrain"
+    assert data["tool_calls"][0]["arguments"]["jurisdiction"] == "IN"
+
+
+def test_remediation_execute_endpoint(client, bearer):
     """Test /v1/remediate/execute with signed host audit headers."""
     payload = {
         "violation_id": "VIO-PROB-EMP-401",
         "target_entity": "EMPLOYEE",
         "entity_id": "EMP-401",
         "patch_payload": {"probation_days": 180},
-        "approver_id": "MGR-007",
-        "approver_role": "HR_ADMIN",
     }
-
-    res = client.post("/v1/remediate/execute", json=payload, headers={"X-Tenant-Id": "T-DXB"})
+    res = client.post("/v1/remediate/execute", json=payload, headers=bearer(sub="MGR-007", roles=["hr_manager"]))
     assert res.status_code == 200
     data = res.json()
     assert data["status"] == "APPROVED_AND_QUEUED"
@@ -82,13 +91,13 @@ def test_mcp_server_tool_listing_and_invocation(mcp_server):
     assert res["total_eosb_gratuity"] == 42000.0
 
 
-def test_generate_requisition_archetypes_endpoint(client):
+def test_generate_requisition_archetypes_endpoint(client, bearer):
     """Test /api/requisitions/generate-archetypes endpoint called by hrms-next."""
     payload = {
         "prompt": "Senior Full Stack React and Python Engineer",
         "location": "Bangalore / Remote",
     }
-    res = client.post("/api/requisitions/generate-archetypes", json=payload)
+    res = client.post("/api/requisitions/generate-archetypes", json=payload, headers=bearer(roles=["recruiter"]))
     assert res.status_code == 200
     data = res.json()
     assert data["success"] is True

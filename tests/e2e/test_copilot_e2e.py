@@ -1,24 +1,28 @@
 """Tier 5: End-to-End Integration Tests for Standalone Agentic HRMS AI Plugin."""
 
 import pytest
-from fastapi.testclient import TestClient
 
-from hrms_plugin.server.app import app
+from hrms_plugin.agents.supervisor import SupervisorAgent
+from tests.support.scripted_llm import final, tool_call
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(make_client):
+    return make_client()
 
 
-def test_e2e_compliance_audit_and_remediation_lifecycle(client):
+def test_e2e_compliance_audit_and_remediation_lifecycle(make_client, bearer, scripted):
     """E2E Test: Audit -> Routing -> Statutory Citation -> 1-Click Patch -> Signed Audit Remediation."""
+    gateway, _ = scripted(
+        tool_call("audit_statutory_compliance"),
+        final("Violations found under UAE Federal Decree-Law No. 33 of 2021."),
+    )
+    client = make_client(supervisor_agent=SupervisorAgent(llm_gateway=gateway))
     # Step 1: Query Copilot with an employee compliance audit prompt
     chat_payload = {
         "message": "Audit employee for compliance violations",
         "jurisdiction": "AE",
         "context": {
-            "tenant_id": "demo_corp",
             "employees": [
                 {
                     "id": "EMP-901",
@@ -33,7 +37,7 @@ def test_e2e_compliance_audit_and_remediation_lifecycle(client):
         },
     }
 
-    chat_resp = client.post("/v1/chat", json=chat_payload, headers={"X-Tenant-Id": "demo_corp"})
+    chat_resp = client.post("/v1/chat", json=chat_payload, headers=bearer(tenant="acme", roles=["hr_manager"]))
     assert chat_resp.status_code == 200
     chat_data = chat_resp.json()
 
@@ -51,11 +55,13 @@ def test_e2e_compliance_audit_and_remediation_lifecycle(client):
         "target_entity": "EMPLOYEE",
         "entity_id": "EMP-901",
         "patch_payload": patch,
-        "approver_id": "USR-MGR-501",
-        "approver_role": "HR_ADMIN",
     }
 
-    rem_resp = client.post("/v1/remediate/execute", json=rem_payload, headers={"X-Tenant-Id": "demo_corp"})
+    rem_resp = client.post(
+        "/v1/remediate/execute",
+        json=rem_payload,
+        headers=bearer(tenant="acme", sub="USR-MGR-501", roles=["hr_manager"]),
+    )
     assert rem_resp.status_code == 200
     rem_data = rem_resp.json()
 
@@ -67,7 +73,7 @@ def test_e2e_compliance_audit_and_remediation_lifecycle(client):
     assert "X-Reasoning-Hash" in audit_trace
 
 
-def test_e2e_zero_shot_schema_adaptation_lifecycle(client):
+def test_e2e_zero_shot_schema_adaptation_lifecycle(client, bearer):
     """E2E Test: Ingest arbitrary host schema -> Synthesize Canonical FieldMaps -> Verify sub-millisecond execution."""
     host_swagger = {
         "swagger": "2.0",
@@ -103,7 +109,9 @@ def test_e2e_zero_shot_schema_adaptation_lifecycle(client):
     }
 
     # Step 1: Introspect host endpoints
-    intro_resp = client.post("/v1/schema/introspect", json={"swagger_dict": host_swagger})
+    intro_resp = client.post(
+        "/v1/schema/introspect", json={"swagger_dict": host_swagger}, headers=bearer(roles=["platform_admin"])
+    )
     assert intro_resp.status_code == 200
     intro_data = intro_resp.json()
     assert "Staff" in intro_data["entities_discovered"]
@@ -121,7 +129,7 @@ def test_e2e_zero_shot_schema_adaptation_lifecycle(client):
         ],
     }
 
-    synth_resp = client.post("/v1/schema/synthesize", json=synth_payload)
+    synth_resp = client.post("/v1/schema/synthesize", json=synth_payload, headers=bearer(roles=["platform_admin"]))
     assert synth_resp.status_code == 200
     synth_data = synth_resp.json()
     assert synth_data["entity_type"] == "EMPLOYEE"

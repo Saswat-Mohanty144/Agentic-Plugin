@@ -8,13 +8,14 @@ from urllib.parse import urlsplit
 import yaml
 
 from hrms_plugin.server.app import app
+from tests.support.routes import api_routes
 
 DEPLOY = Path(__file__).parents[2] / "deploy"
 _URL_PATH = re.compile(r"https?://[^/\s'\"]+(/[^\s'\")]*)")
 
 
 def get_routes() -> set:
-    return {r.path for r in app.routes if "GET" in getattr(r, "methods", set())}
+    return {r.path for r in api_routes(app.routes) if "GET" in r.methods}
 
 
 def compose_paths(doc: dict) -> List[str]:

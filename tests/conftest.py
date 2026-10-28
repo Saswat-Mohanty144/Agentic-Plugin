@@ -92,3 +92,18 @@ def bearer(make_token):
         return {"Authorization": f"Bearer {make_token(**kw)}"}
 
     return _headers
+
+
+@pytest.fixture
+def make_client(registry, jwks_fetcher, clock):
+    from fastapi.testclient import TestClient
+
+    from hrms_plugin.security.jwks_cache import JwksCache
+    from hrms_plugin.server.app import create_app
+
+    def _make(supervisor_agent=None, env=None, raise_server_exceptions=True):
+        app = create_app(registry=registry, jwks_cache=JwksCache(jwks_fetcher, clock=MutableClock(0.0)),
+                         clock=clock, supervisor_agent=supervisor_agent, env=env or {})
+        return TestClient(app, raise_server_exceptions=raise_server_exceptions)
+
+    return _make

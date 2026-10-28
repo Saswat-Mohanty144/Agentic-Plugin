@@ -3,7 +3,6 @@
 import base64
 
 import pytest
-from fastapi.testclient import TestClient
 
 from hrms_plugin.agents.orchestrator import AgenticOrchestrator
 from hrms_plugin.agents.supervisor import SupervisorAgent
@@ -17,12 +16,16 @@ from hrms_plugin.ai.llm import (
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
-from hrms_plugin.server.app import app
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(make_client):
+    return make_client()
+
+
+@pytest.fixture
+def admin(bearer):
+    return bearer(roles=["platform_admin"])
 
 
 @pytest.fixture
@@ -146,49 +149,49 @@ async def test_synthesize_agentic_semantic_mapping():
     assert len(mapping.fields) > 0
 
 
-def test_api_agentic_chat_endpoint(client):
+def test_api_agentic_chat_endpoint(client, admin):
     """Test POST /v1/chat with agentic: true."""
     payload = {
         "message": "Audit employee records for UAE labor law compliance",
         "jurisdiction": "AE",
         "agentic": True,
     }
-    resp = client.post("/v1/chat", json=payload, headers={"X-Tenant-Id": "demo_corp"})
+    resp = client.post("/v1/chat", json=payload, headers=admin)
     assert resp.status_code == 200
     data = resp.json()
     assert data["routed_agent"] == "AgenticBrain"
     assert len(data.get("statutory_citations", [])) > 0 or len(data.get("suggested_actions", [])) > 0
 
 
-def test_api_chat_stream_endpoint(client):
+def test_api_chat_stream_endpoint(client, admin):
     """Test POST /v1/chat/stream Server-Sent Events endpoint."""
     payload = {
         "message": "Audit employee compliance and calculate take home",
         "jurisdiction": "AE",
     }
-    resp = client.post("/v1/chat/stream", json=payload, headers={"X-Tenant-Id": "demo_corp"})
+    resp = client.post("/v1/chat/stream", json=payload, headers=admin)
     assert resp.status_code == 200
     assert "text/event-stream" in resp.headers.get("content-type", "")
     assert len(resp.text) > 0
 
 
-def test_api_voice_endpoints(client):
+def test_api_voice_endpoints(client, admin):
     """Test voice transcribe, synthesize, and multimodal turn endpoints."""
     dummy_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00"
     b64_audio = base64.b64encode(dummy_wav).decode("utf-8")
 
     # 1. Transcribe
-    res_stt = client.post("/v1/voice/transcribe", json={"audio_base64": b64_audio})
+    res_stt = client.post("/v1/voice/transcribe", json={"audio_base64": b64_audio}, headers=admin)
     assert res_stt.status_code == 200
     assert "transcript" in res_stt.json()
 
     # 2. Synthesize
-    res_tts = client.post("/v1/voice/synthesize", json={"text": "Your sick leave has been approved"})
+    res_tts = client.post("/v1/voice/synthesize", json={"text": "Your sick leave has been approved"}, headers=admin)
     assert res_tts.status_code == 200
     assert "audio_base64" in res_tts.json()
 
     # 3. Multimodal Voice Turn
-    res_turn = client.post("/v1/voice/turn", json={"audio_base64": b64_audio, "jurisdiction": "AE"})
+    res_turn = client.post("/v1/voice/turn", json={"audio_base64": b64_audio, "jurisdiction": "AE"}, headers=admin)
     assert res_turn.status_code == 200
     turn_data = res_turn.json()
     assert "transcript_in" in turn_data
@@ -196,7 +199,7 @@ def test_api_voice_endpoints(client):
     assert "reply_audio_base64" in turn_data
 
 
-def test_api_agentic_synthesize_endpoint(client):
+def test_api_agentic_synthesize_endpoint(client, admin):
     """Test POST /v1/schema/synthesize/agentic endpoint."""
     payload = {
         "domain": "EMPLOYEE",
@@ -206,7 +209,7 @@ def test_api_agentic_synthesize_endpoint(client):
             {"name": "email_address", "path": "email_address"},
         ],
     }
-    resp = client.post("/v1/schema/synthesize/agentic", json=payload)
+    resp = client.post("/v1/schema/synthesize/agentic", json=payload, headers=admin)
     assert resp.status_code == 200
     data = resp.json()
     assert data["entity_type"] == "EMPLOYEE"

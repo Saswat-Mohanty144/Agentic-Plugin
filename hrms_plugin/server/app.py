@@ -5,19 +5,22 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
 
-from fastapi import FastAPI, Header, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
@@ -30,25 +33,20 @@ from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
 from hrms_plugin.security.audit import HostAuditGateway
+from hrms_plugin.security.http_auth import ApiError, require
+from hrms_plugin.security.jwks_cache import JwksCache, make_httpx_fetcher
 from hrms_plugin.security.masking import PiiMaskingGateway
-from hrms_plugin.security.rbac import AuthContext, Permission, RbacPolicyEnforcer, UserRole
+from hrms_plugin.security.rbac import AuthContext, Permission, PermissionDenied
+from hrms_plugin.security.tenant_registry import TenantRegistry, load_registry_from_env
+from hrms_plugin.security.token_verifier import TokenVerifier
 from hrms_plugin.storage.mapping_store import MappingStore
 from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
 from hrms_plugin.storage.vault_store import PiiVaultStore
 
-app = FastAPI(
-    title="Agentic HRMS AI Plugin Service",
-    version="2.0.0",
-    description="Universal, host-agnostic AI copilot and statutory compliance sidecar for HRMS suites.",
-)
+API_DOCS_ENV_VAR = "HRMS_ENABLE_API_DOCS"
+REMEDIATION_MAX_TOKEN_AGE_SECONDS = 300
+JurisdictionCode = Literal["IN", "AE", "SA", "US"]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # Core singletons
@@ -72,7 +70,6 @@ vault_store = PiiVaultStore(backend=_storage)
 mapping_store = MappingStore(backend=_storage)
 
 pii_gateway = PiiMaskingGateway(store=vault_store)
-rbac_enforcer = RbacPolicyEnforcer()
 audit_gateway = HostAuditGateway()
 introspector = SchemaIntrospector()
 synthesizer = MappingSynthesizer()
@@ -81,7 +78,7 @@ synthesizer = MappingSynthesizer()
 # Request / Response Schemas
 class ChatRequest(BaseModel):
     message: str
-    jurisdiction: str = "IN"
+    jurisdiction: JurisdictionCode = "IN"
     context: Optional[Dict[str, Any]] = None
     mask_pii: bool = True
     agentic: bool = True
@@ -102,7 +99,7 @@ class VoiceSynthesizeRequest(BaseModel):
 class VoiceTurnRequest(BaseModel):
     audio_base64: str
     user_id: str = "USR-001"
-    jurisdiction: str = "IN"
+    jurisdiction: JurisdictionCode = "IN"
     language_code: Optional[str] = "en-IN"
 
 
@@ -117,15 +114,18 @@ class SynthesizeRequest(BaseModel):
 
 
 class RemediationExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     violation_id: str
     target_entity: str
     entity_id: str
     patch_payload: Dict[str, Any]
-    approver_id: str
-    approver_role: str = "HR_ADMIN"
 
 
-@app.get("/healthz")
+router = APIRouter()
+
+
+@router.get("/healthz")
 def healthz():
     return {
         "status": "healthy",
@@ -134,26 +134,28 @@ def healthz():
     }
 
 
-@app.post("/v1/chat", response_model=AgentResponse)
+@router.post("/v1/chat", response_model=AgentResponse)
 async def chat_endpoint(
     req: ChatRequest,
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    request: Request,
+    auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Unified conversational AI copilot endpoint with automatic PII masking and agentic tool reasoning."""
+    agent: SupervisorAgent = request.app.state.supervisor
     text_to_process = req.message
     if req.mask_pii:
-        text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=x_tenant_id)
+        text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=auth.tenant_id)
 
     if req.agentic:
-        response = await supervisor.process_agentic(
+        response = await agent.process_agentic(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
-            tenant_id=x_tenant_id,
+            tenant_id=auth.tenant_id,
             history=req.history,
         )
     else:
-        response = supervisor.process_message(
+        response = agent.process_message(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
@@ -161,44 +163,46 @@ async def chat_endpoint(
 
     # De-tokenize if masked
     if req.mask_pii:
-        response.reply_text = pii_gateway.unmask_text(response.reply_text, tenant_id=x_tenant_id)
+        response.reply_text = pii_gateway.unmask_text(response.reply_text, tenant_id=auth.tenant_id)
 
     return response
 
 
-@app.post("/v1/chat/stream")
+@router.post("/v1/chat/stream")
 async def chat_stream_endpoint(
     req: ChatRequest,
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    request: Request,
+    auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
+    agent: SupervisorAgent = request.app.state.supervisor
 
     async def event_generator():
         text_to_process = req.message
         if req.mask_pii:
-            text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=x_tenant_id)
+            text_to_process, _ = pii_gateway.mask_text(req.message, tenant_id=auth.tenant_id)
 
-        async for chunk in supervisor.stream_agentic(
+        async for chunk in agent.stream_agentic(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
-            tenant_id=x_tenant_id,
+            tenant_id=auth.tenant_id,
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.post("/v1/voice/transcribe")
-async def voice_transcribe(req: VoiceTranscribeRequest):
+@router.post("/v1/voice/transcribe")
+async def voice_transcribe(req: VoiceTranscribeRequest, auth: AuthContext = Depends(require(Permission.USE_COPILOT))):
     """Transcribe base64 audio bytes via Sarvam AI Saaras model."""
     audio_bytes = base64.b64decode(req.audio_base64)
     res = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
     return res
 
 
-@app.post("/v1/voice/synthesize")
-async def voice_synthesize(req: VoiceSynthesizeRequest):
+@router.post("/v1/voice/synthesize")
+async def voice_synthesize(req: VoiceSynthesizeRequest, auth: AuthContext = Depends(require(Permission.USE_COPILOT))):
     """Synthesize text into natural voice audio via Sarvam AI Bulbul model."""
     res = await voice_agent.synthesize_speech(
         text=req.text,
@@ -208,18 +212,22 @@ async def voice_synthesize(req: VoiceSynthesizeRequest):
     return res
 
 
-@app.post("/v1/voice/turn")
-async def voice_turn(req: VoiceTurnRequest, x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id")):
+@router.post("/v1/voice/turn")
+async def voice_turn(
+    req: VoiceTurnRequest,
+    request: Request,
+    auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
+):
     """Full-duplex multimodal turn: Audio In -> Transcribe -> ReAct Agent Brain -> Spoken Audio Out."""
     audio_bytes = base64.b64decode(req.audio_base64)
     stt = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
     transcript = stt.get("transcript", "")
 
     # Run agentic turn
-    agent_res = await supervisor.process_agentic(
+    agent_res = await request.app.state.supervisor.process_agentic(
         message=transcript,
         jurisdiction=req.jurisdiction,
-        tenant_id=x_tenant_id,
+        tenant_id=auth.tenant_id,
     )
 
     # Synthesize spoken voice reply
@@ -238,8 +246,8 @@ async def voice_turn(req: VoiceTurnRequest, x_tenant_id: str = Header(default="D
     }
 
 
-@app.post("/v1/schema/introspect")
-def introspect_schema(req: IntrospectRequest):
+@router.post("/v1/schema/introspect")
+def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA))):
     """Introspect Swagger 2.0 / OpenAPI spec or sample JSON payloads."""
     if req.swagger_dict:
         discovered = introspector.introspect_openapi(req.swagger_dict)
@@ -262,10 +270,10 @@ def introspect_schema(req: IntrospectRequest):
         raise HTTPException(status_code=400, detail="Must provide swagger_dict or sample_records")
 
 
-@app.post("/v1/schema/synthesize")
+@router.post("/v1/schema/synthesize")
 def synthesize_mapping(
     req: SynthesizeRequest,
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
     domain_enum = EntityType(req.domain.upper())
@@ -279,14 +287,14 @@ def synthesize_mapping(
         discovered=discovered,
         canonical_type=domain_enum,
     )
-    mapping_store.save_mapping(tenant_id=x_tenant_id, mapping=mapping)
+    mapping_store.save_mapping(tenant_id=auth.tenant_id, mapping=mapping)
     return report.model_dump()
 
 
-@app.post("/v1/schema/synthesize/agentic")
+@router.post("/v1/schema/synthesize/agentic")
 async def synthesize_mapping_agentic(
     req: SynthesizeRequest,
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Synthesize FieldMap with LLM semantic reasoning over ambiguous/vendor host fields."""
     domain_enum = EntityType(req.domain.upper())
@@ -300,53 +308,46 @@ async def synthesize_mapping_agentic(
         discovered=discovered,
         canonical_type=domain_enum,
     )
-    mapping_store.save_mapping(tenant_id=x_tenant_id, mapping=mapping)
+    mapping_store.save_mapping(tenant_id=auth.tenant_id, mapping=mapping)
     return report.model_dump()
 
 
-@app.get("/v1/schema/mappings")
-def list_schema_mappings(x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id")):
+@router.get("/v1/schema/mappings")
+def list_schema_mappings(auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA))):
     """List all persisted dynamic entity mappings for this tenant."""
     return {
-        "tenant_id": x_tenant_id,
-        "mappings": mapping_store.list_mappings(x_tenant_id),
+        "tenant_id": auth.tenant_id,
+        "mappings": mapping_store.list_mappings(auth.tenant_id),
     }
 
 
-@app.get("/v1/schema/mappings/{vendor}/{entity_type}")
+@router.get("/v1/schema/mappings/{vendor}/{entity_type}")
 def get_schema_mapping(
     vendor: str,
     entity_type: str,
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Retrieve the exact compiled FieldMap for a given vendor and entity type."""
-    mapping = mapping_store.load_mapping(x_tenant_id, vendor, entity_type)
+    mapping = mapping_store.load_mapping(auth.tenant_id, vendor, entity_type)
     if not mapping:
         raise HTTPException(status_code=404, detail=f"No mapping found for {vendor}/{entity_type}")
     from hrms_plugin.storage.mapping_store import entity_mapping_to_dict
     return entity_mapping_to_dict(mapping)
 
 
-@app.post("/v1/remediate/execute")
+@router.post("/v1/remediate/execute")
 def execute_remediation(
     req: RemediationExecuteRequest,
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    auth: AuthContext = Depends(
+        require(Permission.EXECUTE_REMEDIATION, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
 ):
     """Execute human-approved compliance remediation patch with signed host audit attribution headers."""
-    auth = AuthContext(
-        user_id=req.approver_id,
-        tenant_id=x_tenant_id,
-        role=UserRole(req.approver_role),
-    )
-
-    if not rbac_enforcer.is_authorized(auth, Permission.EXECUTE_REMEDIATION):
-        raise HTTPException(status_code=403, detail="Approver lacks EXECUTE_REMEDIATION permission")
-
     # Generate Host Audit Attribution Headers
     headers = audit_gateway.create_attribution_headers(
-        tenant_id=x_tenant_id,
+        tenant_id=auth.tenant_id,
         agent_name="StatutoryComplianceAuditor",
-        hitl_approver_id=req.approver_id,
+        hitl_approver_id=auth.user_id,
         reasoning_payload={
             "violation_id": req.violation_id,
             "entity": req.target_entity,
@@ -364,11 +365,11 @@ def execute_remediation(
     }
 
 
-@app.get("/v1/compliance/diagnose")
-@app.get("/api/compliance/agent/diagnose")
+@router.get("/v1/compliance/diagnose")
+@router.get("/api/compliance/agent/diagnose")
 def get_compliance_diagnosis(
     jurisdiction: str = "AE",
-    tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    auth: AuthContext = Depends(require(Permission.VIEW_COMPLIANCE)),
 ):
     """Diagnose live employee and payroll records against statutory legal requirements."""
     # Simulated sample employee batch to demonstrate live multi-agent audit
@@ -396,7 +397,7 @@ def get_compliance_diagnosis(
 
     jur_enum = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
     audit_res = compliance_agent.audit_employees(
-        tenant_id=tenant_id,
+        tenant_id=auth.tenant_id,
         jurisdiction=jur_enum,
         employees=sample_employees,
     )
@@ -444,9 +445,9 @@ def get_compliance_diagnosis(
     }
 
 
-@app.get("/v1/compliance/dashboard/live")
-@app.get("/api/compliance/dashboard/live")
-def get_compliance_dashboard_live():
+@router.get("/v1/compliance/dashboard/live")
+@router.get("/api/compliance/dashboard/live")
+def get_compliance_dashboard_live(auth: AuthContext = Depends(require(Permission.VIEW_COMPLIANCE))):
     """Live statutory setup matrix verification."""
     return {
         "success": True,
@@ -461,14 +462,15 @@ def get_compliance_dashboard_live():
     }
 
 
-@app.post("/api/compliance/agent/chat")
+@router.post("/api/compliance/agent/chat")
 def legacy_chat_adapter(
     req: Dict[str, Any],
-    x_tenant_id: str = Header(default="DEFAULT", alias="X-Tenant-Id"),
+    request: Request,
+    auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Legacy endpoint adapter for Next.js ComplianceCopilotSidecar."""
     msg = str(req.get("message", ""))
-    resp = supervisor.process_message(
+    resp = request.app.state.supervisor.process_message(
         message=msg,
         jurisdiction="AE" if "uae" in msg.lower() or "aed" in msg.lower() or "eosb" in msg.lower() else "IN",
         context=req.get("context", {}),
@@ -487,9 +489,12 @@ class GenerateArchetypesRequest(BaseModel):
     options: Optional[Dict[str, Any]] = None
 
 
-@app.post("/api/requisitions/generate-archetypes")
-@app.post("/v1/requisitions/generate-archetypes")
-def generate_requisition_archetypes(req: GenerateArchetypesRequest):
+@router.post("/api/requisitions/generate-archetypes")
+@router.post("/v1/requisitions/generate-archetypes")
+def generate_requisition_archetypes(
+    req: GenerateArchetypesRequest,
+    auth: AuthContext = Depends(require(Permission.MANAGE_RECRUITMENT)),
+):
     """Generate multi-archetype job requisition proposals for Next.js SmartRequisitionArchetypeSelector."""
     p = req.prompt.strip()
     loc = req.location or "Hybrid / Flexible"
@@ -606,3 +611,55 @@ def generate_requisition_archetypes(req: GenerateArchetypesRequest):
         "prompt": p,
         "archetypes": archetypes,
     }
+
+
+async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content=exc.body, headers=exc.headers)
+
+
+async def _permission_denied_handler(_request: Request, exc: PermissionDenied) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"error": "FORBIDDEN", "permission": exc.permission.value})
+
+
+def create_app(
+    *,
+    registry: TenantRegistry,
+    jwks_cache: JwksCache,
+    clock: Callable[[], float] = time.time,
+    supervisor_agent: Optional[SupervisorAgent] = None,
+    env: Optional[Mapping[str, str]] = None,
+) -> FastAPI:
+    env = os.environ if env is None else env
+    docs = env.get(API_DOCS_ENV_VAR) == "true"
+    application = FastAPI(
+        title="Agentic HRMS AI Plugin Service",
+        version="2.0.0",
+        description="Universal, host-agnostic AI copilot and statutory compliance sidecar for HRMS suites.",
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
+    application.state.token_verifier = TokenVerifier(registry, jwks_cache, clock=clock)
+    application.state.clock = clock
+    application.state.supervisor = supervisor_agent or supervisor
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=registry.all_origins(),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Tenant-Id"],
+    )
+    application.add_exception_handler(ApiError, _api_error_handler)
+    application.add_exception_handler(PermissionDenied, _permission_denied_handler)
+    application.include_router(router)
+    return application
+
+
+def _create_default_app() -> FastAPI:
+    return create_app(
+        registry=load_registry_from_env(),
+        jwks_cache=JwksCache(make_httpx_fetcher(httpx.AsyncClient())),
+    )
+
+
+app = _create_default_app()
