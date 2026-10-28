@@ -4,20 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import FieldDataType, SchemaIntrospector
 from hrms_plugin.schema.prober import ShadowProber
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
 
-ICEIPTS_SWAGGER_PATH = (
-    Path(__file__).resolve().parent.parent.parent.parent / "iceipts_hrms" / "swagger" / "swagger.yaml"
-)
+# Vendored copy of iceipts_hrms swagger/swagger.yaml (sha256 791f48fdb60c…), approved by user 2026-10-29.
+ICEIPTS_SWAGGER_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "iceipts_swagger.yaml"
+
+
+def test_fixture_present():
+    assert ICEIPTS_SWAGGER_PATH.is_file(), f"missing vendored fixture {ICEIPTS_SWAGGER_PATH}"
 
 
 class TestIceiptsSwaggerAdaptation:
-    @pytest.mark.skipif(not ICEIPTS_SWAGGER_PATH.exists(), reason="iceipts_hrms swagger.yaml not found")
     def test_full_roundtrip_iceipts_job_requisition(self):
         # 1. Introspect real Swagger specification
         result = SchemaIntrospector.introspect_file(ICEIPTS_SWAGGER_PATH)

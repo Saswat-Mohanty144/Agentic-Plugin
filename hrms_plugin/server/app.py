@@ -409,8 +409,8 @@ def get_compliance_diagnosis(
             {
                 "id": v.violation_id,
                 "severity": v.severity,
-                "title": f"Statutory Violation: {v.rule_name}",
-                "description": v.description,
+                "title": f"Statutory Violation: {v.summary}",
+                "description": v.detailed_findings,
                 "affected_count": 1,
                 "action_type": "APPLY_STATUTORY_REMEDIATION",
                 "statutory_ref": v.statutory_citation,
@@ -423,7 +423,7 @@ def get_compliance_diagnosis(
                 },
                 "remediation_patch": {
                     "action_type": "UPDATE_RECORD",
-                    "entity_id": v.employee_id or "EMP-101",
+                    "entity_id": v.entity_id,
                     "target_endpoint": "/api/employees/update",
                     "http_method": "PATCH",
                     "diff_preview": {

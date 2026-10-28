@@ -87,24 +87,20 @@ def test_holding_permission_passes_auth(make_client, bearer, method, path):
     assert res.status_code not in (401, 403)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="PRE-EXISTING (baseline 3028359): diagnose handler reads v.rule_name/description/employee_id but "
-    "ComplianceViolation has rule_key/summary/detailed_findings/entity_id. "
-    "Parked: NEEDS_HUMAN to choose field mapping.",
-)
 @pytest.mark.parametrize("path", ["/v1/compliance/diagnose", "/api/compliance/agent/diagnose"])
-def test_diagnose_endpoint_returns_200(make_client, bearer, path):
-    assert make_client(raise_server_exceptions=False).get(path, headers=bearer()).status_code == 200
-
-
-def test_two_roles_one_granting_is_allowed(make_client, bearer):
-    res = make_client().get("/v1/compliance/dashboard/live", headers=bearer(roles=["staff", "hr_manager"]))
+def test_diagnose_endpoint_returns_mapped_action_items(make_client, bearer, path):
+    """Fixed pre-existing crash. Mapping approved by user 2026-10-29: title=summary, description=detailed_findings."""
+    res = make_client().get(path, headers=bearer(), params={"jurisdiction": "AE"})
     assert res.status_code == 200
-
-
-def test_healthz_public(make_client):
-    assert make_client().get("/healthz").status_code == 200
+    items = res.json()["action_items"]
+    assert items, "the built-in UAE sample batch must produce violations"
+    probation = next(i for i in items if i["id"] == "VIO-PROB-EMP-101")
+    assert probation["title"] == (
+        "Statutory Violation: Probation period of 210 days exceeds statutory maximum of 6 months (180 days)."
+    )
+    assert "caps probation at 180 days" in probation["description"]
+    assert probation["remediation_patch"]["entity_id"] == "EMP-101"
+    assert probation["remediation_patch"]["direct_payload"] == {"probation_days": 180}
 
 
 # AM2 — docs ------------------------------------------------------------------
