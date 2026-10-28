@@ -151,8 +151,8 @@ async def chat_endpoint(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
-            tenant_id=auth.tenant_id,
             history=req.history,
+            auth=auth,
         )
     else:
         response = agent.process_message(
@@ -186,7 +186,7 @@ async def chat_stream_endpoint(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
-            tenant_id=auth.tenant_id,
+            auth=auth,
         ):
             yield f"data: {json.dumps(chunk)}\n\n"
 
@@ -227,7 +227,7 @@ async def voice_turn(
     agent_res = await request.app.state.supervisor.process_agentic(
         message=transcript,
         jurisdiction=req.jurisdiction,
-        tenant_id=auth.tenant_id,
+        auth=auth,
     )
 
     # Synthesize spoken voice reply

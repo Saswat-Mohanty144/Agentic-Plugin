@@ -16,6 +16,9 @@ from hrms_plugin.ai.llm import (
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
+from hrms_plugin.security.rbac import AuthContext, UserRole
+
+ADMIN = AuthContext(user_id="test-admin", tenant_id="acme", roles=frozenset({UserRole.SUPER_ADMIN}))
 
 
 @pytest.fixture
@@ -88,7 +91,7 @@ async def test_agentic_orchestrator_react_loop(orchestrator):
     resp = await orchestrator.run(
         user_message=user_msg,
         jurisdiction="AE",
-        tenant_id="tenant_dubai",
+        auth=ADMIN,
     )
     assert resp.reply_text
     assert resp.routed_agent == "AgenticBrain"
@@ -103,6 +106,7 @@ async def test_agentic_orchestrator_streaming(orchestrator):
     async for chunk in orchestrator.run_stream(
         user_message="Structure a monthly salary of AED 15000",
         jurisdiction="AE",
+        auth=ADMIN,
     ):
         events.append(chunk)
 
@@ -118,6 +122,7 @@ async def test_supervisor_agentic_methods():
     resp = await supervisor.process_agentic(
         message="Calculate end of service gratuity for 4 years with basic 12000 AED",
         jurisdiction="AE",
+        auth=ADMIN,
     )
     assert resp.reply_text
     assert resp.routed_agent == "AgenticBrain"
@@ -126,6 +131,7 @@ async def test_supervisor_agentic_methods():
     async for chunk in supervisor.stream_agentic(
         message="Check attendance anomaly between punches",
         jurisdiction="IN",
+        auth=ADMIN,
     ):
         stream_chunks.append(chunk)
     assert len(stream_chunks) > 0

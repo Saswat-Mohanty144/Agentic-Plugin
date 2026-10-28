@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from hrms_plugin.agents.supervisor import AgentResponse, UserIntent
 from hrms_plugin.agents.tools import AgenticToolRegistry
 from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
+from hrms_plugin.security.rbac import AuthContext
 
 logger = logging.getLogger(__name__)
 
@@ -153,11 +154,19 @@ class AgenticOrchestrator:
         state: _RunState,
         thought: Optional[str],
         iteration: int,
+        auth: AuthContext,
     ) -> Dict[str, Any]:
         """Single dispatch path shared by run() and run_stream()."""
         definition = self.tool_registry.get_definition(tc.name)
         if definition is None:
             output: Dict[str, Any] = {"error": "UNKNOWN_TOOL", "tool": tc.name}
+            arguments, overrides = dict(tc.arguments), []
+        elif not self.tool_registry.is_permitted(tc.name, auth):
+            logger.warning(
+                "tool call not permitted",
+                extra={"reason": "TOOL_NOT_PERMITTED", "tenant": auth.tenant_id, "sub": auth.user_id, "tool": tc.name},
+            )
+            output = {"error": "TOOL_NOT_PERMITTED", "tool": tc.name}
             arguments, overrides = dict(tc.arguments), []
         else:
             arguments, overrides = build_trusted_arguments(definition, tc.arguments, trusted)
@@ -196,17 +205,19 @@ class AgenticOrchestrator:
         user_message: str,
         jurisdiction: str = "IN",
         context: Optional[Dict[str, Any]] = None,
-        tenant_id: str = "DEFAULT",
         history: Optional[List[Dict[str, str]]] = None,
+        *,
+        auth: AuthContext,
     ) -> AgentResponse:
         """Execute autonomous ReAct agent loop until final answer is formulated."""
+        tenant_id = auth.tenant_id
         ctx = context or {}
         messages: List[ChatMessage] = [self._system_message(jurisdiction, tenant_id, ctx)]
         for h in history or []:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
         messages.append(ChatMessage(role="user", content=user_message))
 
-        tools = self.tool_registry.get_definitions()
+        tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
         state = _RunState()
 
@@ -222,7 +233,7 @@ class AgenticOrchestrator:
                 return self._response(state, llm_resp.content, 0.98)
 
             for tc in llm_resp.tool_calls:
-                output = await self._execute_tool_call(tc, trusted, state, thought, iteration)
+                output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
                 messages.append(ChatMessage(role="assistant", content=llm_resp.content, tool_calls=[tc]))
                 messages.append(
                     ChatMessage(role="tool", content=json.dumps(output), tool_call_id=tc.id, name=tc.name)
@@ -237,11 +248,13 @@ class AgenticOrchestrator:
         user_message: str,
         jurisdiction: str = "IN",
         context: Optional[Dict[str, Any]] = None,
-        tenant_id: str = "DEFAULT",
+        *,
+        auth: AuthContext,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream real-time SSE events for thoughts, tool dispatches, final tokens and the resolved intent."""
+        tenant_id = auth.tenant_id
         ctx = context or {}
-        tools = self.tool_registry.get_definitions()
+        tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
         state = _RunState()
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
@@ -259,7 +272,7 @@ class AgenticOrchestrator:
         if llm_resp.tool_calls:
             for tc in llm_resp.tool_calls:
                 yield {"event": "tool_call", "data": {"name": tc.name, "arguments": tc.arguments}}
-                output = await self._execute_tool_call(tc, trusted, state, llm_resp.thought_process, 1)
+                output = await self._execute_tool_call(tc, trusted, state, llm_resp.thought_process, 1, auth)
                 step_call = state.steps[-1].tool_call or {}
                 yield {
                     "event": "tool_observation",

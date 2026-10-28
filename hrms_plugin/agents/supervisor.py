@@ -15,6 +15,7 @@ from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.travel_expense import TravelExpenseAgent
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
+from hrms_plugin.security.rbac import AuthContext
 
 
 class UserIntent(str, Enum):
@@ -579,8 +580,9 @@ class SupervisorAgent:
         message: str,
         jurisdiction: Jurisdiction | str = Jurisdiction.INDIA,
         context: Optional[Dict[str, Any]] = None,
-        tenant_id: str = "DEFAULT",
         history: Optional[List[Dict[str, str]]] = None,
+        *,
+        auth: AuthContext,
     ) -> AgentResponse:
         """Execute autonomous ReAct tool loop for multi-step reasoning."""
         jur_val = jurisdiction.value if isinstance(jurisdiction, Jurisdiction) else str(jurisdiction)
@@ -589,8 +591,8 @@ class SupervisorAgent:
             user_message=message,
             jurisdiction=jur_val,
             context=context,
-            tenant_id=tenant_id,
             history=history,
+            auth=auth,
         )
 
     async def stream_agentic(
@@ -598,7 +600,8 @@ class SupervisorAgent:
         message: str,
         jurisdiction: Jurisdiction | str = Jurisdiction.INDIA,
         context: Optional[Dict[str, Any]] = None,
-        tenant_id: str = "DEFAULT",
+        *,
+        auth: AuthContext,
     ):
         """Stream real-time SSE events from autonomous ReAct loop."""
         jur_val = jurisdiction.value if isinstance(jurisdiction, Jurisdiction) else str(jurisdiction)
@@ -607,6 +610,6 @@ class SupervisorAgent:
             user_message=message,
             jurisdiction=jur_val,
             context=context,
-            tenant_id=tenant_id,
+            auth=auth,
         ):
             yield chunk

@@ -8,9 +8,11 @@ from hrms_plugin.agents.orchestrator import AgenticOrchestrator, build_trusted_a
 from hrms_plugin.agents.supervisor import UserIntent
 from hrms_plugin.agents.tools import AgenticToolRegistry
 from hrms_plugin.ai.llm import ToolDefinition
+from hrms_plugin.security.rbac import AuthContext, UserRole
 from tests.support.scripted_llm import final, tool_call, tool_calls
 from tests.unit.test_tool_intents import EXPECTED
 
+ADMIN = AuthContext(user_id="t", tenant_id="acme", roles=frozenset({UserRole.SUPER_ADMIN}))
 EMPLOYEE = {"id": "EMP-901", "basic_salary": 4000.0, "gross_salary": 10000.0, "probation_days": 210,
             "weekly_hours": 54, "uae_wps_registered": False}
 
@@ -21,13 +23,13 @@ def _orchestrator(gateway, max_iterations=5):
 
 async def _run(orch, **kw):
     kw.setdefault("jurisdiction", "AE")
-    kw.setdefault("tenant_id", "acme")
+    kw.setdefault("auth", ADMIN)
     return await orch.run(user_message="go", **kw)
 
 
 async def _stream(orch, **kw):
     kw.setdefault("jurisdiction", "AE")
-    kw.setdefault("tenant_id", "acme")
+    kw.setdefault("auth", ADMIN)
     return [e async for e in orch.run_stream(user_message="go", **kw)]
 
 
@@ -93,7 +95,7 @@ async def test_llm_jurisdiction_is_overridden_and_recorded(scripted):
 
 async def test_tenant_id_is_injected_from_request(scripted):
     gateway, _ = scripted(tool_call("audit_statutory_compliance", tenant_id="other"), final("ok"))
-    resp = await _run(_orchestrator(gateway), tenant_id="acme", context={"employees": [EMPLOYEE]})
+    resp = await _run(_orchestrator(gateway), auth=ADMIN, context={"employees": [EMPLOYEE]})
     assert resp.tool_calls[0]["arguments"]["tenant_id"] == "acme"
 
 
