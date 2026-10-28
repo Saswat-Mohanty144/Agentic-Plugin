@@ -11,3 +11,7 @@ Branch feat/piece-e-llm-layer (stacked on piece C @ 3d966bf). anthropic 1.17.0 v
 - RED: 6 failed (refusal tests already passed — a refusal has no tool calls so the loop returned its text; kept as guards).
 - Updated `test_stream_without_tools_reports_general_hr`: it scripted two responses to document the double call; now one.
 - GREEN: orchestrator suites 96 passed.
+
+## E-c — synthesizer applies LLM matches (E5)
+- RED: 4 failed (FieldMap TypeError swallowed → LLM match lost; no log; config error swallowed), 1 passed (unknown host field ignored — guard).
+- GREEN: 5 passed; full suite 752. `LLMNotConfigured` now propagates (route is LLM-backed); other LLM failures logged as LLM_MAPPING_FAILED with the rule mapping returned.

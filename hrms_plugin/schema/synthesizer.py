@@ -7,6 +7,7 @@ and generates deterministic, production-ready EntityMapping instances.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -21,6 +22,8 @@ __all__ = [
     "SynthesisReport",
     "MappingSynthesizer",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 class SynthesizedFieldMap(BaseModel):
@@ -789,12 +792,12 @@ class MappingSynthesizer:
         if not report.unmapped_canonical_fields or not report.unmapped_host_fields:
             return mapping, report
 
+        from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass
+
+        # Configuration errors (LLMNotConfigured) must surface: this path exists to use the LLM (piece E5/E6).
+        gateway = llm_gateway or LLMGateway()
         try:
             import json
-
-            from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass
-
-            gateway = llm_gateway or LLMGateway()
 
             prompt = (
                 f"You are a Senior Data Architect mapping host HRMS fields to Canonical Domain Models.\n"
@@ -830,8 +833,8 @@ class MappingSynthesizer:
                     rat = str(match_info.get("rationale", "LLM Semantic Match"))
                     if h_field in report.unmapped_host_fields and h_field in discovered.fields:
                         f_map = FieldMap(
-                            canonical=can_field,
-                            host=discovered.fields[h_field].path,
+                            target=can_field,
+                            source=discovered.fields[h_field].path,
                             transform="string",
                         )
                         new_field_maps.append(f_map)
@@ -857,5 +860,9 @@ class MappingSynthesizer:
             report.field_mappings = synthesized_fms
             report.average_confidence = sum(f.confidence for f in synthesized_fms) / max(1, len(synthesized_fms))
             return upgraded_mapping, report
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — keep the rule-based mapping, but never silently
+            logger.warning(
+                "LLM schema mapping failed; returning rule-based mapping",
+                extra={"reason": "LLM_MAPPING_FAILED", "error": f"{type(exc).__name__}: {exc}"},
+            )
             return mapping, report
