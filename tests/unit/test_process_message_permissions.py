@@ -107,3 +107,21 @@ def test_http_non_agentic_audit_ignores_context_tenant(make_client, bearer):
     assert res.status_code == 200
     assert "malicious_corp" not in res.json()["reply_text"]
     assert "acme" in res.json()["reply_text"]
+
+
+# agy F6 — the gate is exercised through process_message itself, for every intent --------------
+
+@pytest.mark.parametrize("intent", list(UserIntent))
+def test_process_message_denies_every_intent_without_permission(monkeypatch, intent):
+    agent = SupervisorAgent()
+    monkeypatch.setattr(agent, "classify_intent", lambda message: (intent, 0.99))
+    with pytest.raises(PermissionDenied) as info:
+        agent.process_message("anything", jurisdiction="IN", auth=auth())
+    assert info.value.permission is required_permission(intent, "anything")
+
+
+@pytest.mark.parametrize("intent", list(UserIntent))
+def test_process_message_allows_every_intent_with_permission(monkeypatch, intent):
+    agent = SupervisorAgent()
+    monkeypatch.setattr(agent, "classify_intent", lambda message: (intent, 0.99))
+    assert agent.process_message("anything", jurisdiction="IN", auth=auth(R.SUPER_ADMIN)).reply_text
