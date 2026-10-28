@@ -392,7 +392,7 @@ class AgenticToolRegistry:
         )
 
     # Handler wrappers
-    def _tool_calculate_salary(self, gross_or_ctc: float, jurisdiction: str = "IN") -> Dict[str, Any]:
+    def _tool_calculate_salary(self, gross_or_ctc: float, jurisdiction: str) -> Dict[str, Any]:
         jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.INDIA
         if jur == Jurisdiction.UAE:
             res = self.payroll_agent.structure_uae_salary(monthly_gross=float(gross_or_ctc))
@@ -401,7 +401,7 @@ class AgenticToolRegistry:
             res = self.payroll_agent.structure_india_salary(annual_ctc=float(gross_or_ctc))
             return res.model_dump()
 
-    def _tool_calculate_eosb(self, basic_wage: float, tenure_years: float, jurisdiction: str = "AE") -> Dict[str, Any]:
+    def _tool_calculate_eosb(self, basic_wage: float, tenure_years: float, jurisdiction: str) -> Dict[str, Any]:
         jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
         if jur == Jurisdiction.UAE:
             res = self.payroll_agent.calculate_uae_eosb(
@@ -416,7 +416,7 @@ class AgenticToolRegistry:
 
     def _tool_audit_compliance(
         self,
-        jurisdiction: str = "AE",
+        jurisdiction: str,
         employees: Optional[List[Dict[str, Any]]] = None,
         tenant_id: str = "DEFAULT",
     ) -> Dict[str, Any]:
@@ -435,7 +435,7 @@ class AgenticToolRegistry:
         res = self.compliance_agent.audit_employees(tenant_id=tenant_id, jurisdiction=jur, employees=sample_emps)
         return res.model_dump()
 
-    def _tool_search_laws(self, query: str, jurisdiction: str = "AE", limit: int = 3) -> Dict[str, Any]:
+    def _tool_search_laws(self, query: str, jurisdiction: str, limit: int = 3) -> Dict[str, Any]:
         jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
         results = self.kb.search(query=query, jurisdiction=jur, limit=limit)
         return {
@@ -498,7 +498,8 @@ class AgenticToolRegistry:
         currency: str = "INR",
         band_min: Optional[float] = None,
         band_max: Optional[float] = None,
-        jurisdiction: str = "IN",
+        *,
+        jurisdiction: str,
     ) -> Dict[str, Any]:
         jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.INDIA
         res = self.onboarding_agent.evaluate_offer(
@@ -552,7 +553,8 @@ class AgenticToolRegistry:
         unpaid_work_days: int = 0,
         notice_days_to_pay: int = 0,
         notice_days_to_deduct: int = 0,
-        jurisdiction: str = "AE",
+        *,
+        jurisdiction: str,
     ) -> Dict[str, Any]:
         jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
         res = self.offboarding_agent.compute_final_settlement(
