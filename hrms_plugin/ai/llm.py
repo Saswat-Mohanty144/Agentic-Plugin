@@ -32,7 +32,7 @@ try:
 except ImportError:
     pass
 
-from hrms_plugin.security.masking import PiiMaskingGateway
+from hrms_plugin.security.pii import PiiEgressBlocked, PiiSession, StreamRestorer
 
 logger = logging.getLogger(__name__)
 
@@ -641,14 +641,46 @@ class GeminiClient(BaseLLMClient):
 class LLMGateway:
     """The central enterprise gateway managing LLM interactions, PII safety, and multi-tenancy."""
 
-    def __init__(
-        self,
-        config: Optional[LLMConfig] = None,
-        pii_gateway: Optional[PiiMaskingGateway] = None,
-    ):
+    def __init__(self, config: Optional[LLMConfig] = None):
         self.config = config or self._resolve_config_from_env()
-        self.pii_gateway = pii_gateway or PiiMaskingGateway()
         self.client = self._create_client(self.config)
+
+    @staticmethod
+    def _redact_obj(obj: Any, pii: PiiSession) -> Any:
+        if isinstance(obj, str):
+            return pii.redact_text(obj)
+        if isinstance(obj, dict):
+            return {k: LLMGateway._redact_obj(v, pii) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [LLMGateway._redact_obj(v, pii) for v in obj]
+        return obj
+
+    @staticmethod
+    def _protect(messages: List[ChatMessage], pii: PiiSession) -> List[ChatMessage]:
+        """Redact every outgoing message, then refuse to send if anything identifiable is still present."""
+        protected: List[ChatMessage] = []
+        leaked: List[str] = []
+        for m in messages:
+            content = pii.redact_text(m.content) if m.content else m.content
+            tool_calls = (
+                [
+                    ToolCall(id=tc.id, name=tc.name, arguments=LLMGateway._redact_obj(tc.arguments, pii))
+                    for tc in m.tool_calls
+                ]
+                if m.tool_calls
+                else m.tool_calls
+            )
+            leaked += pii.find_pii(content or "")
+            for tc in tool_calls or []:
+                leaked += pii.find_pii(json.dumps(tc.arguments, default=str))
+            protected.append(
+                ChatMessage(
+                    role=m.role, content=content, tool_calls=tool_calls, tool_call_id=m.tool_call_id, name=m.name
+                )
+            )
+        if leaked:
+            raise PiiEgressBlocked(leaked)
+        return protected
 
     def _resolve_config_from_env(self) -> LLMConfig:
         """Autodetect active LLM provider from environment variables."""
@@ -716,39 +748,21 @@ class LLMGateway:
         task_class: TaskClass = TaskClass.AGENT_REACT,
         temperature: Optional[float] = None,
         tenant_id: str = "DEFAULT",
-        mask_pii: bool = True,
+        pii: Optional[PiiSession] = None,
     ) -> LLMResponse:
-        """Execute chat turn with automatic PII masking & temperature pinning by TaskClass."""
+        """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C)."""
+        pii = pii or PiiSession()
         # Pin deterministic temperature for high-stakes tasks
         effective_temp = 0.0 if task_class in (TaskClass.SCORING, TaskClass.EVALUATION) else temperature
-
-        # Mask PII in messages before transmission
-        sanitized_messages: List[ChatMessage] = []
-        for m in messages:
-            content = m.content
-            if mask_pii and content:
-                content, _ = self.pii_gateway.mask_text(content, tenant_id=tenant_id)
-            sanitized_messages.append(
-                ChatMessage(
-                    role=m.role,
-                    content=content,
-                    tool_calls=m.tool_calls,
-                    tool_call_id=m.tool_call_id,
-                    name=m.name,
-                )
-            )
-
-        # Call underlying provider
         response = await self.client.chat(
-            messages=sanitized_messages,
+            messages=self._protect(messages, pii),
             tools=tools,
             temperature=effective_temp,
         )
-
-        # Re-hydrate PII on response content
-        if mask_pii and response.content:
-            response.content = self.pii_gateway.unmask_text(response.content, tenant_id=tenant_id)
-
+        response.content = pii.restore(response.content)
+        response.tool_calls = [
+            ToolCall(id=tc.id, name=tc.name, arguments=pii.restore_obj(tc.arguments)) for tc in response.tool_calls
+        ]
         return response
 
     async def chat_stream(
@@ -756,26 +770,25 @@ class LLMGateway:
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         tenant_id: str = "DEFAULT",
-        mask_pii: bool = True,
+        pii: Optional[PiiSession] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        """Stream SSE events with token-by-token delivery and PII de-tokenization."""
-        sanitized_messages: List[ChatMessage] = []
-        for m in messages:
-            content = m.content
-            if mask_pii and content:
-                content, _ = self.pii_gateway.mask_text(content, tenant_id=tenant_id)
-            sanitized_messages.append(
-                ChatMessage(
-                    role=m.role,
-                    content=content,
-                    tool_calls=m.tool_calls,
-                    tool_call_id=m.tool_call_id,
-                    name=m.name,
-                )
-            )
-
-        async for chunk in self.client.chat_stream(sanitized_messages, tools):
-            yield chunk
+        """Stream SSE events; PII is redacted before sending and tokens are restored in streamed text."""
+        pii = pii or PiiSession()
+        protected = self._protect(messages, pii)
+        restorer = StreamRestorer(pii)
+        async for chunk in self.client.chat_stream(protected, tools):
+            if chunk.get("event") == "token":
+                text = restorer.feed(str(chunk.get("data", "")))
+                if text:
+                    yield {**chunk, "data": text}
+                continue
+            pending = restorer.flush()
+            if pending:
+                yield {"event": "token", "data": pending}
+            yield {**chunk, "data": pii.restore_obj(chunk.get("data"))}
+        pending = restorer.flush()
+        if pending:
+            yield {"event": "token", "data": pending}
 
     async def complete(
         self,

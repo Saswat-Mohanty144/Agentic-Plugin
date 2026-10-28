@@ -53,7 +53,6 @@ async def test_llm_gateway_direct_chat_and_pii_masking(gateway):
     resp = await gateway.chat(
         messages=[ChatMessage(role="user", content=prompt)],
         tenant_id="tenant_alpha",
-        mask_pii=True,
     )
     assert resp.content
     assert resp.finish_reason == "stop"
