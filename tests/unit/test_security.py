@@ -69,8 +69,8 @@ def test_pii_mask_record_dict(pii_gateway):
 
 def test_rbac_authorization(rbac_enforcer):
     """Test RBAC role-to-permission mapping."""
-    hr_admin = AuthContext(user_id="USR-HR", tenant_id="T1", role=UserRole.HR_ADMIN)
-    employee = AuthContext(user_id="USR-EMP", tenant_id="T1", role=UserRole.EMPLOYEE)
+    hr_admin = AuthContext(user_id="USR-HR", tenant_id="T1", roles=frozenset({UserRole.HR_ADMIN}))
+    employee = AuthContext(user_id="USR-EMP", tenant_id="T1", roles=frozenset({UserRole.EMPLOYEE}))
 
     assert rbac_enforcer.is_authorized(hr_admin, Permission.MUTATE_EMPLOYEE) is True
     assert rbac_enforcer.is_authorized(hr_admin, Permission.EXECUTE_REMEDIATION) is True
@@ -83,7 +83,7 @@ def test_rbac_authorization(rbac_enforcer):
 
 def test_separation_of_duties_self_approval(rbac_enforcer):
     """Test prevention of self-approval for leave and salary mutations."""
-    manager = AuthContext(user_id="MGR-001", tenant_id="T1", role=UserRole.DEPARTMENT_MANAGER)
+    manager = AuthContext(user_id="MGR-001", tenant_id="T1", roles=frozenset({UserRole.DEPARTMENT_MANAGER}))
 
     # Manager approving peer's leave -> Allowed
     assert (
