@@ -1,0 +1,77 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed!",
+    "pytest": "564 passed, 1 warning in 10.78s",
+    "startup_without_registry": "exit 1: RegistryError: HRMS_TENANT_REGISTRY is not set; the plugin cannot authenticate requests without it"
+  },
+  "requirements_checked": 22,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "security",
+      "file": "hrms_plugin/agents/supervisor.py",
+      "line": 280,
+      "requirement": "§6.6",
+      "finding": "SupervisorAgent.process_message reads tenant_id from request context instead of AuthContext.tenant_id, allowing tenant confusion in non-agentic compliance audits.",
+      "evidence": ".venv/bin/python -c 'from hrms_plugin.security.rbac import AuthContext, UserRole; from hrms_plugin.agents.supervisor import SupervisorAgent; s = SupervisorAgent(); a = AuthContext(user_id=\"u\", tenant_id=\"acme\", roles=frozenset({UserRole.SUPER_ADMIN})); r = s.process_message(\"run compliance audit\", context={\"tenant_id\": \"malicious_corp\"}, auth=a); print(r.reply_text)' -> output: 'Compliance Audit completed for malicious_corp [IN]. Result: COMPLIANT (0 violations).'",
+      "reproduce": "Call SupervisorAgent.process_message with message='run compliance audit', context={'tenant_id': 'malicious_corp'}, and auth=AuthContext(..., tenant_id='acme'); observe response and compliance agent call use 'malicious_corp' instead of 'acme'."
+    },
+    {
+      "id": "F2",
+      "severity": "MEDIUM",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/agents/tools.py",
+      "line": 108,
+      "requirement": "§5 A5",
+      "finding": "ToolDefinition JSON schemas declare default values and omit jurisdiction from required parameters for 5 of the 7 tools taking jurisdiction.",
+      "evidence": "AgenticToolRegistry definitions reveal: calculate_salary_structure (required=False, default='IN'), calculate_eosb_gratuity (required=False, default='AE'), search_labor_regulations (required=False, default='AE'), evaluate_onboarding_offer (required=False, default='IN'), compute_final_settlement (required=False, default='AE'). Only audit_statutory_compliance and verify_onboarding_documents list jurisdiction in required.",
+      "reproduce": "Inspect registry.get_definition(name).parameters for each of the 7 tools; observe 'required' does not contain 'jurisdiction' and properties['jurisdiction'] contains 'default' for 5 tools."
+    },
+    {
+      "id": "F3",
+      "severity": "HIGH",
+      "category": "deploy",
+      "file": "deploy/docker-compose.yml",
+      "line": 12,
+      "requirement": "§6.1",
+      "finding": "Deployment manifests docker-compose.yml and k8s/deployment.yaml do not configure HRMS_TENANT_REGISTRY or mount a registry file, causing immediate container crash on startup.",
+      "evidence": "In deploy/docker-compose.yml lines 12-18 and deploy/k8s/deployment.yaml lines 25-37, HRMS_TENANT_REGISTRY is missing from environment/env blocks and no volume mounts for tenant registry YAML exist. Running the image without HRMS_TENANT_REGISTRY exits 1 with RegistryError.",
+      "reproduce": "Inspect deploy/docker-compose.yml and deploy/k8s/deployment.yaml; observe HRMS_TENANT_REGISTRY is not set in container environment."
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/server/app.py",
+      "line": 667,
+      "requirement": "§6.1",
+      "finding": "Module-level instantiation of app in app.py triggers load_registry_from_env() at import time, preventing programmatic import of create_app without an environment variable.",
+      "evidence": "env -u HRMS_TENANT_REGISTRY .venv/bin/python -c 'from hrms_plugin.server.app import create_app' -> raises RegistryError: HRMS_TENANT_REGISTRY is not set; the plugin cannot authenticate requests without it.",
+      "reproduce": "Unset HRMS_TENANT_REGISTRY in environment and execute python -c 'from hrms_plugin.server.app import create_app'; observe immediate crash during module import."
+    },
+    {
+      "id": "F5",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_route_security.py",
+      "line": 178,
+      "requirement": "§6.6",
+      "finding": "test_handlers_use_token_tenant passes vacuously because the request sends matching token tenant and X-Tenant-Id header, failing to prove handlers read from AuthContext.",
+      "evidence": "tests/unit/test_route_security.py:179-180: headers = {**bearer(roles=['platform_admin']), 'X-Tenant-Id': 'acme'}. Because both token and header are 'acme', an implementation reading tenant from X-Tenant-Id header would still pass.",
+      "reproduce": "Read tests/unit/test_route_security.py lines 178-180; observe that headers includes 'X-Tenant-Id': 'acme' identical to the token's tenant 'acme'."
+    },
+    {
+      "id": "F6",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_process_message_permissions.py",
+      "line": 19,
+      "requirement": "§6.5a",
+      "finding": "test_every_intent_has_a_permission tests only the required_permission helper and never executes process_message across all intents.",
+      "evidence": "tests/unit/test_process_message_permissions.py:19-21: @pytest.mark.parametrize('intent', list(UserIntent)) def test_every_intent_has_a_permission(intent): assert isinstance(required_permission(intent, ''), P). The test does not call process_message, failing to verify that each branch in process_message enforces permissions.",
+      "reproduce": "Read tests/unit/test_process_message_permissions.py lines 19-21; observe it calls only required_permission and does not test SupervisorAgent.process_message."
+    }
+  ]
+}

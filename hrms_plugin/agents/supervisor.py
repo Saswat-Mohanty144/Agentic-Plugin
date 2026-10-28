@@ -277,7 +277,7 @@ class SupervisorAgent:
 
         # 3. Compliance Audit
         elif intent == UserIntent.COMPLIANCE_AUDIT:
-            tenant_id = str(ctx.get("tenant_id", "TENANT-01"))
+            tenant_id = auth.tenant_id  # never from request context (agy F1)
             employees = ctx.get("employees", [])
             audit_res = self.compliance_agent.audit_employees(
                 tenant_id=tenant_id, jurisdiction=jur, employees=employees
