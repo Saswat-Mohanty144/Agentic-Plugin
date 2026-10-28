@@ -16,7 +16,7 @@ services:
       - DEFAULT_JURISDICTION=UAE
       - HOST_HRMS_BASE_URL=http://host.docker.internal:5000
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 30s
       timeout: 10s
       retries: 3

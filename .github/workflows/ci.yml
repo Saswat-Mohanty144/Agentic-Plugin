@@ -33,3 +33,30 @@ jobs:
     - name: Run Test Suites
       run: |
         pytest tests/ -v
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build image
+      run: docker build -f deploy/Dockerfile -t hrms-plugin:ci .
+    - name: Run container
+      run: |
+        docker run -d --name hrms -p 8000:8000 \
+          -e HRMS_TENANT_REGISTRY=/etc/hrms/tenants.yaml \
+          -v "$PWD/tests/fixtures/tenant_registry.yaml:/etc/hrms/tenants.yaml:ro" \
+          hrms-plugin:ci
+    - name: Healthz within 30 s
+      run: |
+        for i in $(seq 1 30); do
+          if curl -fsS http://localhost:8000/healthz | grep -q '"status":"healthy"'; then exit 0; fi
+          sleep 1
+        done
+        docker logs hrms; exit 1
+    - name: Runs as non-root
+      run: test "$(docker exec hrms id -u)" = "10001"
+    - name: Remediation without token is rejected
+      run: |
+        code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8000/v1/remediate/execute \
+          -H 'Content-Type: application/json' -d '{}')
+        test "$code" = "401"

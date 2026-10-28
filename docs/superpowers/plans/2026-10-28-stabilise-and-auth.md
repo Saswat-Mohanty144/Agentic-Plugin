@@ -660,7 +660,10 @@ def test_query_string_is_ignored_when_matching():
         - name: Runs as non-root
           run: test "$(docker exec hrms id -u)" = "10001"
         - name: Remediation without token is rejected
-          run: test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8000/v1/remediate/execute -H 'Content-Type: application/json' -d '{}')" = "401"
+          run: |
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8000/v1/remediate/execute \
+              -H 'Content-Type: application/json' -d '{}')
+            test "$code" = "401"
     ```
 
 - [ ] **Step 4: Verify** — the deploy-path tests pass (3). If Docker is available locally, also run `docker build -f deploy/Dockerfile -t hrms-plugin:local .`. If not, record "docker unavailable locally; verified by CI job" in the TDD log.

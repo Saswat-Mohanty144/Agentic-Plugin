@@ -19,11 +19,16 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000
+    HOST=0.0.0.0 \
+    PORT=8000 \
+    HRMS_DATA_DIR=/var/lib/hrms
 
 COPY --from=builder /app/wheels /wheels
-RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
+RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels \
+    && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin hrms \
+    && mkdir -p /var/lib/hrms && chown hrms /var/lib/hrms && chmod 700 /var/lib/hrms
 
+USER 10001
 EXPOSE 8000
 
 CMD ["python", "-m", "hrms_plugin.server"]
