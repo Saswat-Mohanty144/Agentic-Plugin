@@ -6,3 +6,8 @@ Branch feat/piece-e-llm-layer (stacked on piece C @ 3d966bf). anthropic 1.17.0 v
 - RED: `ImportError: cannot import name 'LLMNotConfigured'`.
 - GREEN: test_llm_providers.py 23 passed — wire-level checks: model claude-opus-5-5, max_tokens 16000, output_config.effort, fallbacks "default" + beta header, no temperature; thinking block replayed byte-identical; 2 tool_results grouped in one user message; refusal → safe text, no tools, no raw replay; nothing/unknown provider → LLMNotConfigured; retries 429/503/529 with Retry-After honoured and capped at 30 s; 400 not retried; one shared httpx client; Gemini key in x-goog-api-key header, not URL.
 - Full suite 740 passed.
+
+## E-b — orchestrator: one assistant message per turn, raw_content carried, single-call stream (E2, E3, E4)
+- RED: 6 failed (refusal tests already passed — a refusal has no tool calls so the loop returned its text; kept as guards).
+- Updated `test_stream_without_tools_reports_general_hr`: it scripted two responses to document the double call; now one.
+- GREEN: orchestrator suites 96 passed.

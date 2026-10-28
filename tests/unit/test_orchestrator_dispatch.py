@@ -157,8 +157,7 @@ async def test_stream_reports_intent_and_injects_same_arguments(scripted):
 
 
 async def test_stream_without_tools_reports_general_hr(scripted):
-    # run_stream calls the LLM twice when no tool is used (known waste, fixed in piece E).
-    gateway, _ = scripted(final("hi"), final("hi"))
+    gateway, _ = scripted(final("hi"))  # piece E4: a single LLM call when no tool is used
     events = await _stream(_orchestrator(gateway))
     assert events[-1] == {"event": "intent", "data": "GENERAL_HR"}
 

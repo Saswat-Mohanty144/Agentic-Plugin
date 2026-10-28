@@ -194,6 +194,15 @@ class AgenticOrchestrator:
         )
         return output
 
+    @staticmethod
+    def _assistant_turn(llm_resp: Any) -> ChatMessage:
+        return ChatMessage(
+            role="assistant",
+            content=llm_resp.content,
+            tool_calls=list(llm_resp.tool_calls),
+            raw_content=llm_resp.raw_content,
+        )
+
     def _intent(self, state: _RunState) -> UserIntent:
         return self.tool_registry.intent_for(state.executed_tools[0]) if state.executed_tools else UserIntent.GENERAL_HR
 
@@ -243,9 +252,10 @@ class AgenticOrchestrator:
                 _collect_from_text(llm_resp.content, state)
                 return self._response(state, llm_resp.content, 0.98)
 
+            # One assistant message per LLM turn carrying every tool call (piece E2).
+            messages.append(self._assistant_turn(llm_resp))
             for tc in llm_resp.tool_calls:
                 output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
-                messages.append(ChatMessage(role="assistant", content=llm_resp.content, tool_calls=[tc]))
                 messages.append(
                     ChatMessage(role="tool", content=json.dumps(output, default=str), tool_call_id=tc.id, name=tc.name)
                 )
@@ -281,6 +291,15 @@ class AgenticOrchestrator:
         if llm_resp.thought_process:
             yield {"event": "thinking", "data": llm_resp.thought_process}
 
+        if not llm_resp.tool_calls:
+            # Stream the answer we already have instead of calling the LLM again (piece E4).
+            if llm_resp.content:
+                yield {"event": "token", "data": llm_resp.content}
+            yield {"event": "done", "data": {"finish_reason": llm_resp.finish_reason}}
+            yield {"event": "intent", "data": self._intent(state).value}
+            return
+
+        messages.append(self._assistant_turn(llm_resp))
         if llm_resp.tool_calls:
             for tc in llm_resp.tool_calls:
                 yield {"event": "tool_call", "data": {"name": tc.name, "arguments": tc.arguments}}
@@ -295,7 +314,6 @@ class AgenticOrchestrator:
                         "output": output,
                     },
                 }
-                messages.append(ChatMessage(role="assistant", content="", tool_calls=[tc]))
                 messages.append(
                     ChatMessage(role="tool", content=json.dumps(output, default=str), tool_call_id=tc.id, name=tc.name)
                 )
