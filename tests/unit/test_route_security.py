@@ -24,6 +24,7 @@ EXPECTED = {
     ("GET", "/v1/schema/fingerprints/quarantine"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/governance/llm-egress"): P.VIEW_COMPLIANCE,
+    ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals/{proposal_id}/approve"): P.MUTATE_EMPLOYEE,
     ("POST", "/v1/writeback/proposals/{proposal_id}/rollback"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/compliance/diagnose"): P.VIEW_COMPLIANCE,
@@ -37,6 +38,9 @@ CONCRETE = {
     "/v1/schema/mappings/{vendor}/{entity_type}": "/v1/schema/mappings/zoho/EMPLOYEE",
     "/v1/writeback/proposals/{proposal_id}/approve": "/v1/writeback/proposals/p1/approve",
     "/v1/writeback/proposals/{proposal_id}/rollback": "/v1/writeback/proposals/p1/rollback",
+    "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve": (
+        "/v1/schema/mappings/zoho/EMPLOYEE/versions/1/approve"
+    ),
 }
 # Role in the fixture registry that LACKS / HOLDS each permission.
 LACKING = {

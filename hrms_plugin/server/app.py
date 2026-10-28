@@ -44,7 +44,7 @@ from hrms_plugin.security.rbac import AuthContext, Permission, PermissionDenied
 from hrms_plugin.security.tenant_registry import TenantRegistry, load_registry_from_env
 from hrms_plugin.security.token_verifier import TokenVerifier
 from hrms_plugin.storage.base import BaseKeyValueStore
-from hrms_plugin.storage.mapping_store import MappingStore
+from hrms_plugin.storage.mapping_store import MappingGovernanceError, MappingStore
 from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
 from hrms_plugin.writeback.service import WritebackError, WritebackService
 
@@ -352,8 +352,8 @@ def synthesize_mapping(
         discovered=discovered,
         canonical_type=domain_enum,
     )
-    mapping_store.save_mapping(tenant_id=auth.tenant_id, mapping=mapping)
-    return report.model_dump()
+    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id)
+    return {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
 
 
 @router.post("/v1/schema/synthesize/agentic")
@@ -374,8 +374,8 @@ async def synthesize_mapping_agentic(
         canonical_type=domain_enum,
         tenant_id=auth.tenant_id,
     )
-    mapping_store.save_mapping(tenant_id=auth.tenant_id, mapping=mapping)
-    return report.model_dump()
+    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id)
+    return {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
 
 
 @router.get("/v1/schema/mappings")
@@ -384,6 +384,7 @@ def list_schema_mappings(auth: AuthContext = Depends(require(Permission.MANAGE_S
     return {
         "tenant_id": auth.tenant_id,
         "mappings": mapping_store.list_mappings(auth.tenant_id),
+        "versions": mapping_store.list_versions(auth.tenant_id),
     }
 
 
@@ -435,6 +436,24 @@ async def approve_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH
 @router.post("/v1/writeback/proposals/{proposal_id}/rollback")
 async def rollback_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH_MUTATE)):
     return await writeback_service.rollback(auth, proposal_id)
+
+
+@router.post("/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve")
+def approve_mapping_version(
+    vendor: str,
+    entity_type: str,
+    version: int,
+    auth: AuthContext = Depends(
+        require(Permission.MANAGE_SCHEMA, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
+):
+    """Activate a proposed mapping version; the approver must differ from the proposer (piece G4)."""
+    try:
+        row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id)
+    except MappingGovernanceError as exc:
+        status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409}.get(exc.code, 400)
+        raise ApiError(status, {"error": exc.code}) from None
+    return {k: v for k, v in row.items() if k != "mapping"}
 
 
 @router.get("/v1/governance/llm-egress")

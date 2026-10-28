@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 from hrms_plugin.schema.canonical import EntityType
@@ -64,6 +65,13 @@ def entity_mapping_from_dict(data: Dict[str, Any]) -> EntityMapping:
     )
 
 
+class MappingGovernanceError(Exception):
+    def __init__(self, code: str, detail: str = ""):
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+
 class MappingStore:
     """Persistent registry for tenant-specific compiled schema mappings."""
 
@@ -117,3 +125,60 @@ class MappingStore:
 
     def clear(self) -> None:
         self.backend.clear(self.NAMESPACE)
+        self.backend.clear(self.VERSIONS_NAMESPACE)
+
+    # Governance (piece G4): proposals are versioned; only an approved version becomes the active mapping ----------
+    VERSIONS_NAMESPACE = "entity_mapping_versions"
+
+    def _versions(self, tenant_id: str, vendor: str, entity_type: str | EntityType) -> Dict[int, Dict]:
+        prefix = self._make_key(tenant_id, vendor, entity_type) + ":"
+        return {
+            int(key[len(prefix):]): row
+            for key, row in self.backend.get_all(self.VERSIONS_NAMESPACE).items()
+            if key.startswith(prefix)
+        }
+
+    def _put_version(self, tenant_id: str, vendor: str, entity_type: str | EntityType, row: Dict) -> None:
+        key = f"{self._make_key(tenant_id, vendor, entity_type)}:{row['version']:06d}"
+        self.backend.set(self.VERSIONS_NAMESPACE, key, row)
+
+    def propose_mapping(self, tenant_id: str, mapping: EntityMapping, proposed_by: str) -> int:
+        existing = self._versions(tenant_id, mapping.vendor, mapping.entity_type)
+        version = max(existing, default=0) + 1
+        _tenant, vendor, entity = self._make_key(tenant_id, mapping.vendor, mapping.entity_type).split(":")
+        self._put_version(tenant_id, mapping.vendor, mapping.entity_type, {
+            "version": version,
+            "vendor": vendor,
+            "entity_type": entity,
+            "status": "PROPOSED",
+            "proposed_by": proposed_by,
+            "proposed_at": time.time(),
+            "mapping": entity_mapping_to_dict(mapping),
+        })
+        return version
+
+    def approve_version(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
+                        approver: str) -> Dict:
+        versions = self._versions(tenant_id, vendor, entity_type)
+        row = versions.get(version)
+        if row is None:
+            raise MappingGovernanceError("NOT_FOUND", f"version {version}")
+        if row["status"] == "ACTIVE":
+            return row
+        if row["status"] != "PROPOSED":
+            raise MappingGovernanceError("INVALID_STATE", row["status"])
+        if approver == row["proposed_by"]:
+            raise MappingGovernanceError("SAME_PERSON", "the approver must not be the proposer")
+        for other in versions.values():
+            if other["status"] == "ACTIVE":
+                other["status"] = "SUPERSEDED"
+                self._put_version(tenant_id, vendor, entity_type, other)
+        row.update(status="ACTIVE", approved_by=approver, approved_at=time.time())
+        self._put_version(tenant_id, vendor, entity_type, row)
+        self.backend.set(self.NAMESPACE, self._make_key(tenant_id, vendor, entity_type), row["mapping"])
+        return row
+
+    def list_versions(self, tenant_id: str) -> List[Dict]:
+        prefix = f"{tenant_id}:"
+        rows = [r for k, r in sorted(self.backend.get_all(self.VERSIONS_NAMESPACE).items()) if k.startswith(prefix)]
+        return [{k: v for k, v in r.items() if k != "mapping"} for r in rows]
