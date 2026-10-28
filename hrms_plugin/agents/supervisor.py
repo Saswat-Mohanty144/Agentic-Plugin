@@ -15,7 +15,7 @@ from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.travel_expense import TravelExpenseAgent
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
-from hrms_plugin.security.rbac import AuthContext
+from hrms_plugin.security.rbac import AuthContext, Permission, PermissionDenied, RbacPolicyEnforcer
 
 
 class UserIntent(str, Enum):
@@ -32,6 +32,33 @@ class UserIntent(str, Enum):
     TRAVEL_EXPENSE = "TRAVEL_EXPENSE"
     LEGAL_QNA = "LEGAL_QNA"
     GENERAL_HR = "GENERAL_HR"
+
+
+ONBOARDING_DOCUMENT_KEYWORDS = ("document", "kyc", "pan", "aadhaar", "emirates id")
+
+INTENT_PERMISSIONS: Dict[UserIntent, Permission] = {
+    UserIntent.PAYROLL_STRUCTURE: Permission.VIEW_SALARY,
+    UserIntent.PAYROLL_EOSB: Permission.VIEW_SALARY,
+    UserIntent.COMPLIANCE_AUDIT: Permission.VIEW_COMPLIANCE,
+    UserIntent.LEAVE_APPLY: Permission.APPLY_LEAVE,
+    UserIntent.ATTENDANCE_ANOMALY: Permission.APPROVE_LEAVE,
+    UserIntent.RECRUITMENT_ATS: Permission.MANAGE_RECRUITMENT,
+    UserIntent.RECRUITMENT_BIAS: Permission.MANAGE_RECRUITMENT,
+    UserIntent.RECRUITMENT_REQUISITION: Permission.MANAGE_RECRUITMENT,
+    UserIntent.OFFBOARDING_FNF: Permission.VIEW_SALARY,
+    UserIntent.TRAVEL_EXPENSE: Permission.APPROVE_EXPENSE,
+    UserIntent.LEGAL_QNA: Permission.USE_COPILOT,
+    UserIntent.GENERAL_HR: Permission.USE_COPILOT,
+}
+
+
+def required_permission(intent: UserIntent, message_lower: str) -> Permission:
+    """Permission for the action process_message will take for this intent and message."""
+    if intent == UserIntent.ONBOARDING:
+        if any(k in message_lower for k in ONBOARDING_DOCUMENT_KEYWORDS):
+            return Permission.VIEW_EMPLOYEE
+        return Permission.MANAGE_RECRUITMENT
+    return INTENT_PERMISSIONS[intent]
 
 
 class AgentResponse(BaseModel):
@@ -73,6 +100,7 @@ class SupervisorAgent:
         self.llm_gateway = llm_gateway
         self.tool_registry = tool_registry
         self._orchestrator = None
+        self._rbac = RbacPolicyEnforcer()
 
     def classify_intent(self, message: str) -> tuple[UserIntent, float]:
         """Classify user intent using deterministic keyword intent heuristic with confidence scoring."""
@@ -185,12 +213,17 @@ class SupervisorAgent:
         message: str,
         jurisdiction: Jurisdiction | str = Jurisdiction.INDIA,
         context: Optional[Dict[str, Any]] = None,
+        *,
+        auth: AuthContext,
     ) -> AgentResponse:
         """Route message to appropriate specialist agent and generate unified response."""
         intent, confidence = self.classify_intent(message)
         jur = Jurisdiction(jurisdiction) if isinstance(jurisdiction, str) else jurisdiction
         ctx = context or {}
         msg = message.lower()
+        permission = required_permission(intent, msg)
+        if not self._rbac.is_authorized(auth, permission):
+            raise PermissionDenied(permission)
 
         # 1. Statutory Salary Structuring
         if intent == UserIntent.PAYROLL_STRUCTURE:
@@ -350,7 +383,7 @@ class SupervisorAgent:
         # 8. Onboarding Specialist
         elif intent == UserIntent.ONBOARDING:
             cand_name = str(ctx.get("candidate_name", "Jane Doe"))
-            if any(k in msg for k in ["document", "kyc", "pan", "aadhaar", "emirates id"]):
+            if any(k in msg for k in ONBOARDING_DOCUMENT_KEYWORDS):
                 docs = ctx.get("documents", {})
                 doc_res = self.onboarding_agent.verify_onboarding_documents(
                     candidate_name=cand_name,

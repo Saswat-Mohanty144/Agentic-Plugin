@@ -159,6 +159,7 @@ async def chat_endpoint(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
+            auth=auth,
         )
 
     # De-tokenize if masked
@@ -474,6 +475,7 @@ def legacy_chat_adapter(
         message=msg,
         jurisdiction="AE" if "uae" in msg.lower() or "aed" in msg.lower() or "eosb" in msg.lower() else "IN",
         context=req.get("context", {}),
+        auth=auth,
     )
     return {
         "success": True,

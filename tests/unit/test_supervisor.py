@@ -4,6 +4,9 @@ import pytest
 
 from hrms_plugin.agents.supervisor import SupervisorAgent, UserIntent
 from hrms_plugin.rag.store import Jurisdiction
+from hrms_plugin.security.rbac import AuthContext, UserRole
+
+ADMIN = AuthContext(user_id="test-admin", tenant_id="acme", roles=frozenset({UserRole.SUPER_ADMIN}))
 
 
 @pytest.fixture
@@ -38,6 +41,7 @@ def test_process_payroll_message(supervisor):
     response = supervisor.process_message(
         message="Calculate CTC breakdown and net take home",
         jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
         context={"annual_ctc": 1200000.0},
     )
 
@@ -53,6 +57,7 @@ def test_process_eosb_message(supervisor):
     response = supervisor.process_message(
         message="Calculate UAE end of service severance gratuity",
         jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
         context={"basic_wage_monthly": 10000.0, "tenure_years": 4.0},
     )
 
@@ -68,6 +73,7 @@ def test_process_onboarding_message(supervisor):
     response = supervisor.process_message(
         message="Evaluate offer letter for new hire candidate",
         jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
         context={
             "candidate_name": "Deepak Patel",
             "job_title": "Product Designer",
@@ -88,6 +94,7 @@ def test_process_offboarding_message(supervisor):
     response = supervisor.process_message(
         message="Check Article 53 statutory settlement timeline deadline",
         jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
         context={
             "employee_id": "EMP-99",
             "employee_name": "Tariq Ali",
@@ -107,6 +114,7 @@ def test_process_travel_message(supervisor):
     response = supervisor.process_message(
         message="Audit travel expense claim for hotel and meals",
         jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
         context={
             "claim_id": "CLM-55",
             "employee_id": "EMP-TRV",
