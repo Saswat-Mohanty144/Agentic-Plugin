@@ -55,10 +55,10 @@ async def test_first_executed_tool_wins(scripted):
 
 async def test_step_limit_still_reports_intent(scripted):
     gateway, _ = scripted(tool_call("search_labor_regulations", query="a"),
-                          tool_call("search_labor_regulations", query="b"))
+                          tool_call("search_labor_regulations", query="b"), final("forced answer"))
     resp = await _run(_orchestrator(gateway, max_iterations=2))
     assert resp.intent == UserIntent.LEGAL_QNA
-    assert resp.reply_text.startswith("Completed")
+    assert resp.reply_text == "forced answer" and resp.partial is True  # token waste #5
 
 
 async def test_unknown_tool_is_not_executed(scripted):

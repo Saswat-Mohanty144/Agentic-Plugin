@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -85,9 +86,27 @@ INTENT_KEYWORDS: Tuple[Tuple[UserIntent, float, Tuple[str, ...]], ...] = (
 )
 
 
+# Everyday whole words that only widen tool-subset selection (token waste #3); classify_intent ignores them so the
+# non-agentic first-match routing is unchanged.
+SUBSET_WORDS: Tuple[Tuple[UserIntent, Tuple[str, ...]], ...] = (
+    (UserIntent.PAYROLL_EOSB, ("gratuity", "eosb")),
+    (UserIntent.PAYROLL_STRUCTURE, ("salary", "ctc", "payslip", "pf", "epf", "payroll")),
+    (UserIntent.COMPLIANCE_AUDIT, ("audit", "wps")),
+    (UserIntent.LEAVE_APPLY, ("leave", "vacation")),
+    (UserIntent.ATTENDANCE_ANOMALY, ("punch", "attendance")),
+    (UserIntent.RECRUITMENT_ATS, ("resume", "cv", "candidate")),
+    (UserIntent.ONBOARDING, ("onboarding", "joining")),
+    (UserIntent.OFFBOARDING_FNF, ("resign", "resigned", "exit")),
+    (UserIntent.TRAVEL_EXPENSE, ("expense", "expenses", "reimbursement")),
+    (UserIntent.RECRUITMENT_REQUISITION, ("requisition", "requisitions", "hiring")),
+)
+_SUBSET_PATTERNS = tuple((intent, re.compile(r"\b(" + "|".join(words) + r")\b")) for intent, words in SUBSET_WORDS)
+
+
 def matching_intents(message: str) -> Set[UserIntent]:
     msg = (message or "").lower()
-    return {intent for intent, _, keywords in INTENT_KEYWORDS if any(w in msg for w in keywords)}
+    found = {intent for intent, _, keywords in INTENT_KEYWORDS if any(w in msg for w in keywords)}
+    return found | {intent for intent, pattern in _SUBSET_PATTERNS if pattern.search(msg)}
 
 
 class AgentResponse(BaseModel):
@@ -100,6 +119,9 @@ class AgentResponse(BaseModel):
     suggested_actions: List[Dict[str, Any]] = Field(default_factory=list)
     thought_process: Optional[List[str]] = Field(default_factory=list)
     tool_calls: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    truncated: bool = False  # the final answer was stopped by its output cap (#9)
+    partial: bool = False  # the step limit was reached; answer built from the results gathered so far (#5)
+    history_trimmed: int = 0  # oldest history turns dropped to fit the budget (token waste #7)
 
 
 class SupervisorAgent:

@@ -110,6 +110,26 @@ introspector = SchemaIntrospector()
 synthesizer = MappingSynthesizer()
 
 
+# Request size limits (token waste #7): one request must never fill the context window.
+MESSAGE_MAX_CHARS = 8000
+HISTORY_BUDGET_CHARS = 24000
+
+
+def check_message(text: str) -> None:
+    if len(text) > MESSAGE_MAX_CHARS:
+        raise ApiError(422, {"error": "MESSAGE_TOO_LONG", "max_chars": MESSAGE_MAX_CHARS})
+
+
+def trim_history(history: List[Dict[str, str]]) -> "tuple[List[Dict[str, str]], int]":
+    """Drop the oldest turns until the history fits the budget; what remains starts with a user turn."""
+    start = 0
+    total = sum(len(h["content"]) for h in history)
+    while start < len(history) and (total > HISTORY_BUDGET_CHARS or history[start]["role"] != "user"):
+        total -= len(history[start]["content"])
+        start += 1
+    return history[start:], start
+
+
 # Request / Response Schemas
 class HistoryItem(BaseModel):
     """Prior conversation turn supplied by the client. Only user/assistant roles: a client must never be able to
@@ -221,6 +241,8 @@ async def chat_endpoint(
 ):
     """Unified conversational AI copilot endpoint with automatic PII masking and agentic tool reasoning."""
     _rate_limit(request, auth)
+    check_message(req.message)
+    history, trimmed = trim_history([h.model_dump() for h in req.history or []])
     agent: SupervisorAgent = request.app.state.supervisor
     text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
 
@@ -229,7 +251,7 @@ async def chat_endpoint(
             message=text_to_process,
             jurisdiction=req.jurisdiction,
             context=req.context,
-            history=[h.model_dump() for h in req.history] if req.history else None,
+            history=history or None,
             auth=auth,
         )
     else:
@@ -239,7 +261,7 @@ async def chat_endpoint(
             context=req.context,
             auth=auth,
         )
-
+    response.history_trimmed = trimmed
     return response
 
 
@@ -251,6 +273,8 @@ async def chat_stream_endpoint(
 ):
     """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
     _rate_limit(request, auth)
+    check_message(req.message)
+    history, trimmed = trim_history([h.model_dump() for h in req.history or []])
     agent: SupervisorAgent = request.app.state.supervisor
     # Resolve LLM configuration, tenant policy and budget before streaming starts → plain 503/403/429
     # (agy E-F7, pieces G2 and H4)
@@ -258,13 +282,15 @@ async def chat_stream_endpoint(
 
     async def event_generator():
         text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
+        if trimmed:
+            yield f"data: {json.dumps({'event': 'history_trimmed', 'data': trimmed})}\n\n"
 
         try:
             async for chunk in agent.stream_agentic(
                 message=text_to_process,
                 jurisdiction=req.jurisdiction,
                 context=req.context,
-                history=[h.model_dump() for h in req.history] if req.history else None,
+                history=history or None,
                 auth=auth,
             ):
                 yield f"data: {json.dumps(chunk, default=str)}\n\n"
@@ -373,6 +399,7 @@ async def voice_synthesize(
 ):
     """Synthesize text into natural voice audio via Sarvam AI Bulbul model."""
     _rate_limit(request, auth)
+    check_message(req.text)
     _require_voice_opt_in(request, auth.tenant_id)
     return await _synthesize(auth, req.text, target_language=req.target_language, speaker=req.speaker)
 
@@ -477,10 +504,15 @@ async def synthesize_mapping_agentic(
         f["name"]: DiscoveredField(name=f["name"], path=f.get("path", f["name"])) for f in req.discovered_fields
     }
     discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
+    try:  # the app's one gateway: no client, egress store or SQLite connection built per request (#2)
+        gateway = request.app.state.supervisor.get_orchestrator().llm_gateway
+    except AttributeError:
+        raise LLMNotConfigured("no application LLM gateway") from None
     mapping, report = await synthesizer.synthesize_agentic(
         discovered=discovered,
         canonical_type=domain_enum,
         tenant_id=auth.tenant_id,
+        llm_gateway=gateway,
     )
     version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id)
     return {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
@@ -881,6 +913,7 @@ def legacy_chat_adapter(
 ):
     """Legacy endpoint adapter for Next.js ComplianceCopilotSidecar."""
     _rate_limit(request, auth)
+    check_message(req.message)
     resp = request.app.state.supervisor.process_message(
         message=req.message,
         jurisdiction=req.jurisdiction,

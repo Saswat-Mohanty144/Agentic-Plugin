@@ -603,7 +603,7 @@ async def test_llm_anthropic_chat_stream_events_positive():
     """Positive path: AnthropicClient.chat_stream yields usage, token, and done events."""
     client = AnthropicClient(LLMConfig(provider=LLMProvider.ANTHROPIC, api_key="k"))
 
-    async def fake_chat(messages, tools=None, temperature=None, tool_choice=None):
+    async def fake_chat(messages, tools=None, temperature=None, tool_choice=None, **_options):
         return LLMResponse(
             content="Streamed response",
             usage={"input_tokens": 15, "output_tokens": 5},
@@ -683,7 +683,7 @@ async def test_llm_gemini_chat_stream_and_aclose_positive():
     client = GeminiClient(LLMConfig(provider=LLMProvider.GEMINI, api_key="k"))
     assert client._owns_http is True
 
-    async def fake_chat(messages, tools=None, temperature=None):
+    async def fake_chat(messages, tools=None, temperature=None, **_options):
         return LLMResponse(content="gemini stream text", finish_reason="STOP", provider="gemini")
 
     client.chat = fake_chat

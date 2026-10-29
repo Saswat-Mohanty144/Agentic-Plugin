@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from hrms_plugin.agents.supervisor import AgentResponse, UserIntent, matching_intents
 from hrms_plugin.agents.tools import AgenticToolRegistry
-from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
+from hrms_plugin.ai.llm import LENGTH_STOP_REASONS, ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
 from hrms_plugin.security.pii import PiiSession
 from hrms_plugin.security.rbac import AuthContext
 
@@ -345,19 +345,31 @@ class AgenticOrchestrator:
                 if llm_resp.finish_reason == "refusal":
                     return self._response(state, llm_resp.content, 0.0)  # declined: no confidence, no scraping
                 _collect_from_text(llm_resp.content, state)
-                return self._response(state, llm_resp.content, 0.98)
+                response = self._response(state, llm_resp.content, 0.98)
+                response.truncated = llm_resp.finish_reason in LENGTH_STOP_REASONS  # cut by its output cap (#9)
+                return response
 
             # One assistant message per LLM turn carrying every tool call (piece E2).
             messages.append(self._assistant_turn(llm_resp))
             for tc in llm_resp.tool_calls:
                 output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
-                messages.append(
-                    ChatMessage(role="tool", content=tool_result_content(output), tool_call_id=tc.id, name=tc.name)
-                )
+                messages.append(ChatMessage(
+                    role="tool", content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
+                    tool_call_id=tc.id, name=tc.name))
 
-        return self._response(
-            state, f"Completed {len(state.steps)} agentic reasoning steps. Review findings above.", 0.90
+        # Step limit reached (#5): one more call with tool use forbidden, answering from the results gathered so far.
+        final_resp = await self.llm_gateway.chat(
+            messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii,
+            text_only=True,
         )
+        _collect_from_text(final_resp.content or "", state)
+        reply = final_resp.content or (
+            "I reached the step limit before finishing. The tool results gathered so far are attached."
+        )
+        response = self._response(state, reply, 0.60)
+        response.partial = True
+        response.truncated = final_resp.finish_reason in LENGTH_STOP_REASONS
+        return response
 
     async def run_stream(
         self,
@@ -412,9 +424,9 @@ class AgenticOrchestrator:
                         "output": output,
                     },
                 }
-                messages.append(
-                    ChatMessage(role="tool", content=tool_result_content(output), tool_call_id=tc.id, name=tc.name)
-                )
+                messages.append(ChatMessage(
+                    role="tool", content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
+                    tool_call_id=tc.id, name=tc.name))
             yield {"event": "thinking", "data": "Synthesizing verified compliant response..."}
 
         # Same tools as the first turn so the cached prefix matches; the gateway forbids their use here (agy H-F1).

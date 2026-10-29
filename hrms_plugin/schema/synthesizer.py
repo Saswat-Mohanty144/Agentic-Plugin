@@ -7,6 +7,7 @@ and generates deterministic, production-ready EntityMapping instances.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -865,13 +866,8 @@ class MappingSynthesizer:
                         report.unmapped_canonical_fields.remove(can_field)
                         report.unmapped_host_fields.remove(h_field)
 
-            upgraded_mapping = EntityMapping(
-                vendor=mapping.vendor,
-                entity_type=mapping.entity_type,
-                id_path=mapping.id_path,
-                fields=tuple(new_field_maps),
-                writeback=mapping.writeback,
-            )
+            # Copy, replacing only the fields: version_path, collection_path etc. are kept (token waste #2).
+            upgraded_mapping = dataclasses.replace(mapping, fields=tuple(new_field_maps))
             report.field_mappings = synthesized_fms
             report.average_confidence = sum(f.confidence for f in synthesized_fms) / max(1, len(synthesized_fms))
             return upgraded_mapping, report

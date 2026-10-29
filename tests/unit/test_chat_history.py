@@ -14,7 +14,8 @@ def test_unconfigured_llm_returns_503_on_agentic_chat(make_client, bearer, monke
 
 def test_unconfigured_llm_returns_503_on_agentic_synthesis(make_client, bearer, monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "bard")
-    res = make_client().post("/v1/schema/synthesize/agentic", headers=bearer(roles=["platform_admin"]),
+    res = make_client(supervisor_agent=SupervisorAgent()).post(
+        "/v1/schema/synthesize/agentic", headers=bearer(roles=["platform_admin"]),
                              json={"domain": "EMPLOYEE", "discovered_fields": [{"name": "zq_given"}]})
     assert res.status_code == 503 and res.json() == {"error": "LLM_NOT_CONFIGURED"}
 

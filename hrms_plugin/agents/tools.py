@@ -37,6 +37,27 @@ USER_STATED_PARAMS: Dict[str, Tuple[str, ...]] = {
                                  "unpaid_work_days", "notice_days_to_pay", "notice_days_to_deduct"),
     "audit_travel_expense_claim": ("expenses",),
 }
+_VIOLATION_KEYS = ("violation_id", "severity", "entity_id", "summary", "statutory_citation",
+                   "remediation_recommendation")
+
+
+def _archetypes_view(out: Dict[str, Any]) -> Dict[str, Any]:
+    return {**{k: out[k] for k in ("success", "source", "requires_review", "total_archetypes") if k in out},
+            "archetypes": [{"name": a.get("name"), "badge": a.get("badge")} for a in out.get("archetypes", [])]}
+
+
+def _audit_view(out: Dict[str, Any]) -> Dict[str, Any]:
+    keep = ("jurisdiction", "total_records_audited", "violations_count", "critical_count", "high_count",
+            "is_compliant", "input_source")
+    return {**{k: out[k] for k in keep if k in out},
+            "violations": [{k: v.get(k) for k in _VIOLATION_KEYS} for v in out.get("violations", [])]}
+
+
+# What the model sees of UI-heavy tool output (token waste #4); the UI always receives the full output.
+MODEL_VIEWS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
+    "generate_requisition_archetypes": _archetypes_view,
+    "audit_statutory_compliance": _audit_view,
+}
 HOST_RECORD_TOOLS: Tuple[str, ...] = ("calculate_pf_contribution",)  # inputs fetched from the host by ID
 _JSON_TYPES: Dict[str, tuple] = {"string": (str,), "number": (int, float), "integer": (int,), "boolean": (bool,),
                                  "object": (dict,), "array": (list,)}
@@ -123,6 +144,13 @@ class AgenticToolRegistry:
     @staticmethod
     def user_stated_params(name: str) -> Tuple[str, ...]:
         return USER_STATED_PARAMS.get(name, ())
+
+    @staticmethod
+    def model_view(name: str, output: Any) -> Any:
+        view = MODEL_VIEWS.get(name)
+        if view is None or not isinstance(output, dict) or "error" in output:
+            return output
+        return view(output)
 
     @staticmethod
     def input_source(name: str) -> Optional[str]:

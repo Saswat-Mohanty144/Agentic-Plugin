@@ -675,9 +675,8 @@ def test_e2e_schema_synthesize_agentic(make_client, bearer, keys, monkeypatch):
     mock_gateway = LLMGateway(config=LLMConfig(provider=LLMProvider.FAKE))
     mock_gateway.client = client_llm
 
-    monkeypatch.setattr("hrms_plugin.ai.llm.LLMGateway", lambda *args, **kwargs: mock_gateway)
-
-    client = make_client()
+    # The route uses the application's gateway (token waste #2), so the test hands it to the supervisor.
+    client = make_client(supervisor_agent=SupervisorAgent(llm_gateway=mock_gateway))
 
     synth_body = {
         "domain": "EMPLOYEE",
@@ -698,7 +697,7 @@ def test_e2e_schema_synthesize_agentic(make_client, bearer, keys, monkeypatch):
     disallowed_gateway.policy_resolver = lambda tid, prov: (_ for _ in ()).throw(
         LlmNotAllowed("tenant not allowed")
     )
-    monkeypatch.setattr("hrms_plugin.ai.llm.LLMGateway", lambda *args, **kwargs: disallowed_gateway)
+    client = make_client(supervisor_agent=SupervisorAgent(llm_gateway=disallowed_gateway))
 
     disallowed_resp = client.post(
         "/v1/schema/synthesize/agentic",

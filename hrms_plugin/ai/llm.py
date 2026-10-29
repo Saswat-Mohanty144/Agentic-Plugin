@@ -70,6 +70,17 @@ class TaskClass(str, Enum):
     AGENT_REACT = "AGENT_REACT"
 
 
+# Output cap per task (token waste #9). Anthropic is exempt: its max_tokens also bounds adaptive thinking, so light
+# tasks get effort "low" there instead (LIGHT_TASKS).
+TASK_MAX_TOKENS: Dict["TaskClass", int] = {
+    TaskClass.CLASSIFICATION: 512, TaskClass.SCORING: 512, TaskClass.EVALUATION: 512,
+    TaskClass.EXTRACTION: 1024, TaskClass.AGENT_REACT: 2048, TaskClass.POLICY_QA: 2048,
+    TaskClass.SYNTHESIS: 4096, TaskClass.DRAFTING: 4096,
+}
+LIGHT_TASKS = (TaskClass.CLASSIFICATION, TaskClass.SCORING, TaskClass.EVALUATION, TaskClass.EXTRACTION)
+LENGTH_STOP_REASONS = ("length", "max_tokens", "MAX_TOKENS")
+
+
 @dataclass
 class ToolDefinition:
     name: str
@@ -215,6 +226,8 @@ class BaseLLMClient(ABC):
     stream_reports_usage = False
     # True when chat()/chat_stream() accept tool_choice="none": tools stay in the cached prefix, no call is possible
     supports_tool_choice_none = False
+    accepts_max_tokens = False  # chat()/chat_stream() take a per-call max_tokens (#9)
+    accepts_effort = False  # chat()/chat_stream() take a per-call effort (#9, Anthropic)
     """Abstract client contract for LLM backends."""
 
     def __init__(self, config: LLMConfig):
@@ -402,6 +415,7 @@ class FakeLLMClient(BaseLLMClient):
 
 
 class OpenAICompatibleClient(BaseLLMClient):
+    accepts_max_tokens = True
     """Client for OpenAI, Groq, OpenRouter, NVIDIA NIM, and local OpenAI-compatible engines."""
 
     def __init__(
@@ -428,12 +442,13 @@ class OpenAICompatibleClient(BaseLLMClient):
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> LLMResponse:
         payload: Dict[str, Any] = {
             "model": self.config.model,
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature if temperature is not None else self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            "max_tokens": max_tokens or self.config.max_tokens,
         }
         if tools:
             payload["tools"] = [t.to_openai_schema() for t in tools]
@@ -486,12 +501,13 @@ class OpenAICompatibleClient(BaseLLMClient):
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         payload: Dict[str, Any] = {
             "model": self.config.model,
             "messages": [m.to_dict() for m in messages],
             "temperature": temperature if temperature is not None else self.config.temperature,
-            "max_tokens": self.config.max_tokens,
+            "max_tokens": max_tokens or self.config.max_tokens,
             "stream": True,
         }
         if tools:
@@ -526,6 +542,7 @@ class OpenAICompatibleClient(BaseLLMClient):
 
 
 class AnthropicClient(BaseLLMClient):
+    accepts_effort = True
     stream_reports_usage = True
     supports_tool_choice_none = True
     """Claude via the official Anthropic SDK (piece E1). Follows the bundled claude-api reference:
@@ -596,13 +613,14 @@ class AnthropicClient(BaseLLMClient):
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,  # accepted for interface parity; never sent (400 since 2026-10-21)
         tool_choice: Optional[str] = None,
+        effort: Optional[str] = None,
     ) -> LLMResponse:
         system_parts, converted = self._convert(messages)
         kwargs: Dict[str, Any] = {
             "model": self.config.model,
             "max_tokens": self.config.max_tokens,
             "messages": converted,
-            "output_config": {"effort": self.config.effort},
+            "output_config": {"effort": effort or self.config.effort},
             "betas": [ANTHROPIC_FALLBACK_BETA],
             "fallbacks": "default",
             "cache_control": {"type": "ephemeral"},  # automatic breakpoint on the growing ReAct tail (piece H1)
@@ -649,8 +667,9 @@ class AnthropicClient(BaseLLMClient):
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
         tool_choice: Optional[str] = None,
+        effort: Optional[str] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        resp = await self.chat(messages, tools, temperature, tool_choice=tool_choice)
+        resp = await self.chat(messages, tools, temperature, tool_choice=tool_choice, effort=effort)
         yield {"event": "usage", "data": resp.usage}  # first, so an abandoned stream is still accounted (agy H-F3)
         if resp.content:
             yield {"event": "token", "data": resp.content}
@@ -658,6 +677,7 @@ class AnthropicClient(BaseLLMClient):
 
 
 class GeminiClient(BaseLLMClient):
+    accepts_max_tokens = True
     """Client for Google Gemini REST API."""
 
     def __init__(
@@ -679,6 +699,7 @@ class GeminiClient(BaseLLMClient):
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> LLMResponse:
         contents = []
         system_instruction = None
@@ -723,7 +744,7 @@ class GeminiClient(BaseLLMClient):
             "contents": contents,
             "generationConfig": {
                 "temperature": temperature if temperature is not None else self.config.temperature,
-                "maxOutputTokens": self.config.max_tokens,
+                "maxOutputTokens": max_tokens or self.config.max_tokens,
             },
         }
         if system_instruction:
@@ -762,15 +783,26 @@ class GeminiClient(BaseLLMClient):
             finish_reason=cand.get("finishReason", "STOP"),
             model=self.model,
             provider="gemini",
+            usage=self._usage(data.get("usageMetadata")),
         )
+
+    @staticmethod
+    def _usage(meta: Any) -> Dict[str, int]:
+        """Gemini's promptTokenCount includes cached tokens; report them apart so nothing is counted twice (#8)."""
+        if not isinstance(meta, dict) or "promptTokenCount" not in meta:
+            return {}
+        cached = int(meta.get("cachedContentTokenCount") or 0)
+        return {"input_tokens": int(meta["promptTokenCount"]) - cached,
+                "output_tokens": int(meta.get("candidatesTokenCount") or 0), "cache_read_input_tokens": cached}
 
     async def chat_stream(
         self,
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        resp = await self.chat(messages, tools, temperature)
+        resp = await self.chat(messages, tools, temperature, max_tokens=max_tokens)
         yield {"event": "token", "data": resp.content}
         yield {"event": "done", "data": {"finish_reason": resp.finish_reason}}
 
@@ -796,6 +828,15 @@ class LLMGateway:
         self.policy_resolver = policy_resolver
         # Region of the provider endpoint, set by the deployment; checked against a tenant's residency rule (QF).
         self.provider_region: Optional[str] = (os.environ.get("LLM_PROVIDER_REGION") or None) if from_env else None
+
+    def _task_options(self, task_class: "TaskClass") -> Dict[str, Any]:
+        """Per-call output controls the client understands (#9): a token cap, or effort for Anthropic."""
+        options: Dict[str, Any] = {}
+        if getattr(self.client, "accepts_max_tokens", False):
+            options["max_tokens"] = TASK_MAX_TOKENS[task_class]
+        if getattr(self.client, "accepts_effort", False) and task_class in LIGHT_TASKS:
+            options["effort"] = "low"
+        return options
 
     def policy_for(self, tenant_id: str) -> Any:
         from hrms_plugin.security.tenant_registry import LlmPolicy
@@ -840,6 +881,12 @@ class LLMGateway:
         for cache_field in ("cache_creation_input_tokens", "cache_read_input_tokens"):
             if cache_field in usage:
                 fields[cache_field] = usage[cache_field]
+        details = usage.get("prompt_tokens_details")
+        if "prompt_tokens" in usage and isinstance(details, dict) and "cached_tokens" in details:
+            # OpenAI's prompt_tokens includes cached tokens: split them out so a budget never counts them twice (#8)
+            cached = details["cached_tokens"] or 0
+            fields["input_tokens"] = usage["prompt_tokens"] - cached
+            fields["cache_read_input_tokens"] = cached
         return fields
 
     _TOKEN_KIND = re.compile(r"\[PII_([A-Z_]+?)_\d+_[0-9a-f]{8}\]")
@@ -989,8 +1036,11 @@ class LLMGateway:
         temperature: Optional[float] = None,
         tenant_id: str = "DEFAULT",
         pii: Optional[PiiSession] = None,
+        text_only: bool = False,
     ) -> LLMResponse:
-        """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C)."""
+        """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C).
+        text_only forbids tool use: tools are kept with tool_choice none where the provider supports it (cached
+        prefix still matches), otherwise withheld; any tool call that still comes back is dropped (#5)."""
         tier = TIER_SCHEMA_ONLY if task_class is TaskClass.EXTRACTION else TIER_PSEUDONYMISED
         policy = self.preflight(tenant_id, tier)  # refused before anything is sent (G2, H4, QF)
         if policy.egress_retention_days and self.egress_log is not None:
@@ -999,19 +1049,24 @@ class LLMGateway:
         # Pin deterministic temperature for high-stakes tasks
         effective_temp = 0.0 if task_class in (TaskClass.SCORING, TaskClass.EVALUATION) else temperature
         protected = self._protect(messages, pii)
+        offered, kwargs = tools, self._task_options(task_class)
+        if text_only:
+            offered = tools if (tools and self.client.supports_tool_choice_none) else None
+            kwargs = {**kwargs, "tool_choice": "none"} if offered else kwargs
         egress_key = self._record_egress(tenant_id, protected)
         try:
             response = await self.client.chat(
                 messages=protected,
-                tools=tools,
+                tools=offered,
                 temperature=effective_temp,
+                **kwargs,
             )
         except BaseException:
             self._finish_egress(egress_key, status="FAILED")
             raise
         self._finish_egress(egress_key, status="COMPLETED", **self._usage_fields(response.usage or {}))
         response.content = pii.restore(response.content)
-        response.tool_calls = [
+        response.tool_calls = [] if text_only else [
             ToolCall(id=tc.id, name=tc.name, arguments=pii.restore_obj(tc.arguments)) for tc in response.tool_calls
         ]
         return response
@@ -1041,7 +1096,9 @@ class LLMGateway:
         egress_key = self._record_egress(tenant_id, protected)
         restorer = StreamRestorer(pii)
         status = "ABORTED"
-        kwargs = {"tool_choice": "none"} if offered else {}
+        kwargs = self._task_options(TaskClass.AGENT_REACT)
+        if offered:
+            kwargs["tool_choice"] = "none"
         try:
             async for chunk in self.client.chat_stream(protected, offered, **kwargs):
                 event = chunk.get("event")
