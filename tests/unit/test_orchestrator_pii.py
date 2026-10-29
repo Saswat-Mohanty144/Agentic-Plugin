@@ -126,4 +126,6 @@ async def test_remediation_actions_identify_the_record(scripted):
     gateway, _ = scripted(tool_call("audit_statutory_compliance"), final("done"))
     resp = await orch(gateway).run("audit", jurisdiction="AE", auth=ADMIN, context={"employees": EMPLOYEES})
     assert resp.suggested_actions
-    assert all(a["entity_id"] == "EMP-901" for a in resp.suggested_actions if a.get("action") == "REMEDIATE_PATCH")
+    remediations = [a for a in resp.suggested_actions if a.get("action") == "REMEDIATE_PATCH"]
+    assert remediations
+    assert all(a["entity_id"] == "EMP-901" and a["entity_type"] == "EMPLOYEE" for a in remediations)

@@ -44,8 +44,9 @@
     str = str.replace(/^###\s+(.*$)/gim, '<h4 class="md-h4">$1</h4>');
     str = str.replace(/^##\s+(.*$)/gim, '<h3 class="md-h3">$1</h3>');
     str = str.replace(/^#\s+(.*$)/gim, '<h2 class="md-h2">$1</h2>');
-    // Links: https only; the URL may not contain '&' (so no escaped quote/angle entities) or whitespace.
-    str = str.replace(/\[([^\]]+)\]\((https:\/\/[^\s)&]+)\)/g,
+    // Links: https only. The (already escaped) URL may contain '&amp;' but no other entity (so no quotes or angle
+    // brackets), no whitespace and no code placeholder (agy D-F4, D-F9).
+    str = str.replace(/\[([^\]]+)\]\((https:\/\/(?:[^\s)&⟦⟧]|&amp;)+)\)/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
     str = str.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
     str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -111,15 +112,41 @@
     return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
   }
 
-  function buildRemediationBody(action) {
-    if (!action || typeof action.violation_id !== 'string' || typeof action.entity_id !== 'string') return null;
-    if (!action.patch || typeof action.patch !== 'object') return null;
-    return { violation_id: action.violation_id, target_entity: 'EMPLOYEE', entity_id: action.entity_id,
-      patch_payload: action.patch };
+  // Host document types the SDK may propose changes to; anything else is not offered (agy D-F6).
+  const PROPOSAL_DOCTYPES = Object.freeze({ EMPLOYEE: 'Employee' });
+
+  function isPlainObject(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
   }
 
+  // A remediation becomes a write-back PROPOSAL; a different person approves it server-side (piece F2, agy D-F2).
+  function buildProposalBody(action) {
+    if (!action || typeof action !== 'object') return null;
+    if (typeof action.entity_id !== 'string' || !RECORD_ID_RE.test(action.entity_id) ||
+        /(^|\/)\.\.?(\/|$)/.test(action.entity_id)) return null;  // no dot path segments (defence in depth)
+    if (typeof action.entity_type !== 'string' ||
+        !Object.prototype.hasOwnProperty.call(PROPOSAL_DOCTYPES, action.entity_type)) return null;
+    if (!isPlainObject(action.patch) || Object.keys(action.patch).length === 0) return null;  // agy D-F7
+    return { doctype: PROPOSAL_DOCTYPES[action.entity_type], name: action.entity_id, patch: action.patch };
+  }
+
+  // Plain text: the caller renders it with textContent, so nothing is escaped here (agy D-F3).
   function describePatch(patch) {
-    return Object.keys(patch || {}).map(function (k) { return escapeHtml(k) + ' → ' + escapeHtml(patch[k]); });
+    return Object.keys(patch || {}).map(function (k) { return k + ' → ' + String(patch[k]); });
+  }
+
+  function confirmationText(proposal) {
+    return ['Propose this change to ' + proposal.doctype + ' ' + proposal.name + '?']
+      .concat(describePatch(proposal.patch))
+      .concat(['A different approver must approve it before anything is written.'])
+      .join('\n');
+  }
+
+  function describeHttpError(status, body) {
+    const code = body && typeof body.error === 'string' ? body.error : '';
+    return 'Request failed (' + status + ')' + (code ? ': ' + code : '');
   }
 
   function normalizeJurisdiction(value) {
@@ -127,7 +154,7 @@
   }
 
   const core = { escapeHtml, formatMarkdown, isTrustedMessage, sanitizeContext, validateApiUrl, buildHeaders,
-    buildRemediationBody, describePatch, normalizeJurisdiction };
+    buildProposalBody, describePatch, confirmationText, describeHttpError, normalizeJurisdiction };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = core;
@@ -233,14 +260,18 @@
           headers: await this.authHeaders(),
           body: JSON.stringify({ audio_base64: base64Audio, jurisdiction: this.jurisdiction }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          this.appendPlain('assistant', `⚠️ ${describeHttpError(res.status, data)}`);
+          return;
+        }
         this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations);
         if (data.reply_audio_base64) {
           const audio = new Audio('data:audio/wav;base64,' + data.reply_audio_base64);
           audio.play().catch(() => {});
         }
       } catch (err) {
-        this.appendMessage('assistant', `⚠️ Voice processing error: ${err.message}`);
+        this.appendPlain('assistant', `⚠️ Voice processing error: ${err.message}`);
       }
     }
 
@@ -264,10 +295,14 @@
           }),
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          this.appendPlain('assistant', `⚠️ ${describeHttpError(res.status, data)}`);
+          return;
+        }
         this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations, data.thought_process);
       } catch (err) {
-        this.appendMessage('assistant', `⚠️ Could not reach AI sidecar: ${err.message}`);
+        this.appendPlain('assistant', `⚠️ Could not reach AI sidecar: ${err.message}`);
       }
     }
 
@@ -275,7 +310,12 @@
       return formatMarkdown(text);
     }
 
-    appendMessage(sender, text, actions = [], citations = [], thoughts = []) {
+    // Text we compose ourselves (errors, confirmations) is shown verbatim, never parsed as markdown (agy D-F3).
+    appendPlain(sender, text, actions = []) {
+      return this.appendMessage(sender, text, actions, [], [], { plain: true });
+    }
+
+    appendMessage(sender, text, actions = [], citations = [], thoughts = [], options = {}) {
       const chatLogs = this.shadowRoot.querySelector('#chat-logs');
       const msgDiv = document.createElement('div');
       msgDiv.className = `msg ${sender}`;
@@ -288,7 +328,12 @@
       }
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      bubble.innerHTML = formatMarkdown(text);  // escaped before any markup is produced
+      if (options.plain) {
+        bubble.style.whiteSpace = 'pre-line';
+        bubble.textContent = String(text == null ? '' : text);
+      } else {
+        bubble.innerHTML = formatMarkdown(text);  // escaped before any markup is produced
+      }
       msgDiv.appendChild(bubble);
 
       if (citations && citations.length > 0) {
@@ -326,48 +371,46 @@
     handleAction(action) {
       if (action.action_type === 'APPLY_ARCHETYPE' || action.archetype) {
         if (!this.hostOrigin) {
-          this.appendMessage('assistant', '⚠️ Cannot hand the archetype to the host: data-host-origin is not set.');
+          this.appendPlain('assistant', '⚠️ Cannot hand the archetype to the host: data-host-origin is not set.');
           return;
         }
         window.postMessage({ type: 'HRMS_APPLY_ARCHETYPE', archetype: action.archetype || action }, this.hostOrigin);
-        this.appendMessage('assistant', `⚡ **Action dispatched**: auto-filling the requisition form with **${action.name || action.badge || 'archetype'}**.`);
+        this.appendPlain('assistant', `⚡ Action dispatched: auto-filling the requisition form with ${action.name || action.badge || 'archetype'}.`);
         return;
       }
       this.confirmRemediation(action);
     }
 
     confirmRemediation(action) {
-      const body = buildRemediationBody(action);
-      if (!body) {
-        this.appendMessage('assistant', '⚠️ This suggestion does not identify the record to change, so it cannot be applied.');
+      const proposal = buildProposalBody(action);
+      if (!proposal) {
+        this.appendPlain('assistant', '⚠️ This suggestion does not identify a record this assistant may change, so it cannot be proposed.');
         return;
       }
-      const lines = describePatch(body.patch_payload).map((l) => `- ${l}`).join('\n');
-      this.appendMessage('assistant', `Review the change for **${escapeHtml(body.entity_id)}** before approving:\n\n${lines}`, [
-        { label: '✅ Approve this change', name: 'confirm', confirm: body },
-      ]);
+      const confirm = { label: '📝 Propose this change', name: 'confirm' };
+      this.appendPlain('assistant', confirmationText(proposal), [confirm]);
       const buttons = this.shadowRoot.querySelectorAll('.action-btn');
       const confirmBtn = buttons[buttons.length - 1];
       const fresh = confirmBtn.cloneNode(true);
       confirmBtn.replaceWith(fresh);
-      fresh.addEventListener('click', () => this.executeRemediation(body), { once: true });
+      fresh.addEventListener('click', () => this.proposeRemediation(proposal), { once: true });
     }
 
-    async executeRemediation(body) {
+    async proposeRemediation(proposal) {
       try {
-        const res = await fetch(`${this.apiUrl}/v1/remediate/execute`, {
+        const res = await fetch(`${this.apiUrl}/v1/writeback/proposals`, {
           method: 'POST',
-          headers: await this.authHeaders(),  // fresh token: the server requires one issued in the last 5 minutes
-          body: JSON.stringify(body),
+          headers: await this.authHeaders(),
+          body: JSON.stringify(proposal),
         });
-        const result = await res.json();
+        const result = await res.json().catch(() => null);
         if (!res.ok) {
-          this.appendMessage('assistant', `❌ Not applied: ${escapeHtml(result.error || res.status)}`);
+          this.appendPlain('assistant', `❌ Not proposed: ${describeHttpError(res.status, result)}`);
           return;
         }
-        this.appendMessage('assistant', `✅ Change approved. Audit invocation: ${escapeHtml((result.audit_tracing || {})['X-Agent-Invocation-Id'] || '')}`);
+        this.appendPlain('assistant', `📝 Proposal ${result.id} created (${result.status}). A different approver must approve it in the HRMS before anything is written.`);
       } catch (err) {
-        this.appendMessage('assistant', `❌ Remediation error: ${escapeHtml(err.message)}`);
+        this.appendPlain('assistant', `❌ Proposal error: ${err.message}`);
       }
     }
 

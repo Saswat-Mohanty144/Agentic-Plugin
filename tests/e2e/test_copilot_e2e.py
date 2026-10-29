@@ -65,7 +65,7 @@ def test_e2e_compliance_audit_and_remediation_lifecycle(make_client, bearer, scr
     assert rem_resp.status_code == 200
     rem_data = rem_resp.json()
 
-    assert rem_data["status"] == "APPROVED_AND_QUEUED"
+    assert rem_data["status"] == "ATTRIBUTION_ONLY" and rem_data["applied"] is False
     audit_trace = rem_data["audit_tracing"]
     assert audit_trace["X-HITL-Approver-Id"] == "USR-MGR-501"
     assert audit_trace["X-Agent-Name"] == "StatutoryComplianceAuditor"

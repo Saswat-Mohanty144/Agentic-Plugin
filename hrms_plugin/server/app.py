@@ -469,7 +469,8 @@ def execute_remediation(
         require(Permission.EXECUTE_REMEDIATION, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
     ),
 ):
-    """Execute human-approved compliance remediation patch with signed host audit attribution headers."""
+    """Issue host audit attribution headers for a reviewed remediation. This endpoint writes NOTHING to the host:
+    changes are made only through /v1/writeback/proposals, approved by a different person (piece F2, agy D-F2)."""
     # Generate Host Audit Attribution Headers
     headers = audit_gateway.create_attribution_headers(
         tenant_id=auth.tenant_id,
@@ -484,7 +485,8 @@ def execute_remediation(
     )
 
     return {
-        "status": "APPROVED_AND_QUEUED",
+        "status": "ATTRIBUTION_ONLY",
+        "applied": False,
         "violation_id": req.violation_id,
         "entity_id": req.entity_id,
         "patch_applied": req.patch_payload,

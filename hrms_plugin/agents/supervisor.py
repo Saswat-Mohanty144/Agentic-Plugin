@@ -295,7 +295,13 @@ class SupervisorAgent:
                 structured_data=audit_res.model_dump(),
                 statutory_citations=[v.statutory_citation for v in audit_res.violations],
                 suggested_actions=[
-                    {"action": "REMEDIATE_PATCH", "violation_id": v.violation_id, "patch": v.remediation_patch}
+                    {
+                        "action": "REMEDIATE_PATCH",
+                        "violation_id": v.violation_id,
+                        "entity_id": v.entity_id,
+                        "entity_type": v.entity_type,
+                        "patch": v.remediation_patch,
+                    }
                     for v in audit_res.violations
                     if v.remediation_patch
                 ],

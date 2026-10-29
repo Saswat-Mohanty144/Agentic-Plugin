@@ -67,7 +67,8 @@ def test_remediation_execute_endpoint(client, bearer):
     res = client.post("/v1/remediate/execute", json=payload, headers=bearer(sub="MGR-007", roles=["hr_manager"]))
     assert res.status_code == 200
     data = res.json()
-    assert data["status"] == "APPROVED_AND_QUEUED"
+    # Nothing is written by this endpoint; it must not claim otherwise (agy D-F2). Writes go through proposals.
+    assert data["status"] == "ATTRIBUTION_ONLY" and data["applied"] is False
     assert data["audit_tracing"]["X-HITL-Approver-Id"] == "MGR-007"
     assert data["audit_tracing"]["X-Agent-Name"] == "StatutoryComplianceAuditor"
 

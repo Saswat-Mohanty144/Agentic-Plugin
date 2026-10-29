@@ -130,3 +130,15 @@ def test_process_travel_message(supervisor):
     assert response.routed_agent == "TravelExpenseAgent"
     assert response.structured_data["is_fully_approved"] is True
     assert response.structured_data["total_approved"] == "1500.00"
+
+
+def test_non_agentic_compliance_actions_identify_the_record(supervisor):
+    """agy D-F1: the SDK refuses REMEDIATE_PATCH actions that do not name the entity."""
+    from tests.unit.test_orchestrator_pii import EMPLOYEES
+
+    response = supervisor.process_message(
+        message="audit compliance", jurisdiction=Jurisdiction.UAE, auth=ADMIN, context={"employees": EMPLOYEES}
+    )
+    remediations = [a for a in response.suggested_actions if a.get("action") == "REMEDIATE_PATCH"]
+    assert remediations
+    assert all(a["entity_id"] == "EMP-901" and a["entity_type"] == "EMPLOYEE" for a in remediations)
