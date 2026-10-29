@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
@@ -568,6 +569,17 @@ async def calculate_pf(req: PfCalculateRequest, auth: AuthContext = Depends(requ
     if "error" in result:
         raise ApiError(_PF_ERROR_STATUS.get(result["error"], 502), result)
     return result
+
+
+@router.get("/v1/payroll/pf/results/{employee_id}/{period}")
+def get_pf_result(employee_id: str, period: str, auth: AuthContext = Depends(require(Permission.VIEW_SALARY))):
+    """A stored PF result with its provenance (QB): what was calculated, from which document, under which rules."""
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+        raise ApiError(422, {"error": "INVALID_ARGUMENT", "detail": "period must be YYYY-MM"})
+    stored = payroll_service.get_result(auth.tenant_id, employee_id, period)
+    if stored is None:
+        raise ApiError(404, {"error": "NOT_FOUND"})
+    return stored
 
 
 _CONNECTOR_ERROR_STATUS = {"HOST_NOT_CONFIGURED": 409, "ENTITY_NOT_SUPPORTED": 409, "VENDOR_MISMATCH": 500}

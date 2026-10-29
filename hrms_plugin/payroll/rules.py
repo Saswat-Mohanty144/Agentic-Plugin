@@ -48,6 +48,8 @@ class PfRules(BaseModel):
     eps_wage_ceiling: Decimal
     apply_ceiling_to_employee: StrictBool
     apply_ceiling_to_employer: StrictBool
+    # Month-over-month PF wage change (percent) above which a result needs human review (QB). Absent -> not checked.
+    variance_review_percent: Optional[Decimal] = None
 
     @field_validator("employee_rate", "employer_rate", "eps_rate", mode="before")
     @classmethod
@@ -62,6 +64,15 @@ class PfRules(BaseModel):
         if not isinstance(value, str):
             raise ValueError("ceilings must be decimal strings, e.g. \"15000\"")
         return _decimal(value, minimum_exclusive=Decimal(0))
+
+    @field_validator("variance_review_percent", mode="before")
+    @classmethod
+    def _variance(cls, value: object) -> Optional[Decimal]:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("variance_review_percent must be a decimal string, e.g. \"10\"")
+        return _decimal(value, minimum_exclusive=Decimal(0), maximum=Decimal(100))
 
     @model_validator(mode="after")
     def _disjoint(self) -> "PfRules":

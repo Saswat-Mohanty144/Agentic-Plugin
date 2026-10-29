@@ -143,6 +143,9 @@ class AgenticToolRegistry:
             return {"success": False, "error": "JURISDICTION_NOT_SUPPORTED",
                     "jurisdiction": arguments["jurisdiction"], "supported": sorted(supported)}
         problems = check_arguments(schema, arguments)
+        if not problems and tool_name == "compute_final_settlement":
+            if arguments["basic_wage_monthly"] > arguments["gross_wage_monthly"]:  # canonical cross-check (QB)
+                problems = ["basic_wage_monthly>gross_wage_monthly"]
         if problems:
             return {"success": False, "error": "INVALID_ARGUMENTS", "problems": problems}
         try:

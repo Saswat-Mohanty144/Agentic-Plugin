@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Dict, List
 
+from hrms_plugin.payroll.canonical import SalaryFacts, SalaryFactsError
 from hrms_plugin.payroll.fingerprint import slip_fingerprint
 from hrms_plugin.payroll.rules import TenantPayrollRules
 
@@ -32,7 +33,7 @@ def _round(value: Decimal) -> Decimal:
     return value.quantize(_RUPEE, rounding=ROUND_HALF_UP)
 
 
-def compute_pf(slip: Dict[str, Any], rules: TenantPayrollRules) -> Dict[str, Any]:
+def compute_pf(slip: Dict[str, Any], rules: TenantPayrollRules, jurisdiction: str = "IN") -> Dict[str, Any]:
     if slip.get("currency") != rules.currency:
         raise PfError("INCONSISTENT_PAYLOAD", f"currency {slip.get('currency')!r} != rules currency {rules.currency}")
     earnings = slip.get("earnings")
@@ -71,6 +72,11 @@ def compute_pf(slip: Dict[str, Any], rules: TenantPayrollRules) -> Dict[str, Any
             wage += entry["amount"]
             used.append({"abbr": abbr, "salary_component": str(entry["row"].get("salary_component", "")),
                          "amount": str(entry["amount"])})
+
+    try:  # canonical cross-checks before any figure is produced (QB)
+        SalaryFacts(jurisdiction=jurisdiction, currency=rules.currency, gross_monthly=gross, pf_wage_monthly=wage)
+    except SalaryFactsError as exc:
+        raise PfError("INCONSISTENT_PAYLOAD", str(exc)) from None
 
     employee_base = min(wage, pf.wage_ceiling) if pf.apply_ceiling_to_employee else wage
     employer_base = min(wage, pf.wage_ceiling) if pf.apply_ceiling_to_employer else wage

@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import re
 import time
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Callable, Dict, List, Optional
 
 from hrms_plugin.integrations.frappe import SALARY_SLIP, FrappeClient, FrappeError
 from hrms_plugin.integrations.host_registry import HostConfig, HostRegistryError, load_host_registry_from_env
+from hrms_plugin.payroll.canonical import previous_period
 from hrms_plugin.payroll.fingerprint import slip_fingerprint
 from hrms_plugin.payroll.pf import PfError, compute_pf
 from hrms_plugin.payroll.rules import RulesError, load_payroll_rules_from_env
@@ -18,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 APPROVED_NS = "approved_fingerprints"
 QUARANTINE_NS = "quarantine"
+RESULTS_NS = "pf_results"  # latest result per tenant, employee and period, with provenance (QB)
 VENDOR = "frappe"
 _EMPLOYEE_ID = re.compile(r"^[A-Za-z0-9._/ -]{1,140}$")
 _PERIOD = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
@@ -50,6 +53,30 @@ class PayrollService:
         record = {"fingerprint": fingerprint, "approved_by": approved_by, "approved_at": self._clock()}
         self._store.set(APPROVED_NS, self._key(tenant_id, vendor, doctype), record)
         return record
+
+    @staticmethod
+    def _result_key(tenant_id: str, employee_id: str, period: str) -> str:
+        return f"{tenant_id}:{employee_id}:{period}"
+
+    def get_result(self, tenant_id: str, employee_id: str, period: str) -> Optional[Dict[str, Any]]:
+        """The stored result and its provenance: which document, fingerprint, rules version and components."""
+        return self._store.get(RESULTS_NS, self._result_key(tenant_id, employee_id, period))
+
+    def _variance(self, tenant_id: str, employee_id: str, period: str, wage: Decimal,
+                  threshold: Optional[Decimal]) -> Dict[str, Any]:
+        """Month-over-month PF wage change against a tenant-configured threshold; never a guessed one (QB)."""
+        if threshold is None:
+            return {"status": "NOT_CONFIGURED"}
+        before = previous_period(period)
+        previous = self.get_result(tenant_id, employee_id, before)
+        if previous is None:
+            return {"status": "NO_PREVIOUS_PERIOD"}
+        old = Decimal(previous["result"]["pf_wage"])
+        change = (wage - old) / old * 100 if old else Decimal("Infinity") if wage else Decimal(0)
+        status = "REVIEW_REQUIRED" if abs(change) > threshold else "WITHIN_THRESHOLD"
+        shown = str(change.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if change.is_finite() else "inf"
+        return {"status": status, "previous_period": before, "previous_pf_wage": str(old), "change_percent": shown,
+                "threshold_percent": str(threshold)}
 
     def list_quarantine(self, tenant_id: str) -> List[Dict[str, Any]]:
         prefix = f"{tenant_id}:"
@@ -98,6 +125,13 @@ class PayrollService:
             logger.warning("schema drift quarantined", extra={"reason": "SCHEMA_DRIFT", "tenant": tenant_id})
             return _error("SCHEMA_DRIFT", observed_fingerprint=observed)
         try:
-            return compute_pf(slip, rules)
+            result = compute_pf(slip, rules, jurisdiction)
         except PfError as exc:
             return _error(exc.code, detail=exc.detail)
+        variance = self._variance(tenant_id, employee_id, period, Decimal(result["pf_wage"]),
+                                  rules.pf.variance_review_percent)
+        result = {**result, "period": period, "variance": variance,
+                  "review_required": variance["status"] == "REVIEW_REQUIRED"}
+        self._store.set(RESULTS_NS, self._result_key(tenant_id, employee_id, period),
+                        {"result": result, "calculated_at": self._clock()})
+        return result
