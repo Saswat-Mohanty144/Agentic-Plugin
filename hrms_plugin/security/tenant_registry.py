@@ -46,6 +46,7 @@ class LlmPolicy(BaseModel):
         Literal["fake", "openai", "groq", "openrouter", "anthropic", "gemini", "nvidia"], ...
     ] = Field(min_length=1)
     tokenize_compensation: StrictBool = False
+    daily_token_budget: Optional[StrictInt] = Field(default=None, ge=1)  # absent → no cap (piece H4)
 
 
 class TenantConfig(BaseModel):

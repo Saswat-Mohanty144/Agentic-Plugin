@@ -44,6 +44,16 @@ SUPER_AGENT_SYSTEM_PROMPT = (
 LLM_VISIBLE_CONTEXT_KEYS: Tuple[str, ...] = ("entity", "record_id", "route")
 # Values that only the server may set; context entries with these names are ignored.
 SERVER_OWNED_PARAMS: Tuple[str, ...] = ("jurisdiction", "tenant_id")
+# Tool results above this size are not sent to the LLM; the UI still receives them (piece H5).
+MAX_TOOL_RESULT_CHARS = 20000
+
+
+def tool_result_content(output: Any) -> str:
+    """Compact JSON for the LLM; an oversized result becomes an explicit error instead of silent truncation."""
+    text = json.dumps(output, default=str, separators=(",", ":"))
+    if len(text) > MAX_TOOL_RESULT_CHARS:
+        return json.dumps({"error": "TOOL_OUTPUT_TOO_LARGE", "chars": len(text)}, separators=(",", ":"))
+    return text
 
 
 class AgenticExecutionStep(BaseModel):
@@ -135,7 +145,8 @@ class AgenticOrchestrator:
         self.tool_registry = tool_registry or AgenticToolRegistry()
         self.max_iterations = max_iterations
 
-    def _system_message(self, jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> ChatMessage:
+    def _system_messages(self, jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> List[ChatMessage]:
+        """Frozen prompt first (cacheable prefix, piece H1), then this request's jurisdiction, tenant and context."""
         keys = sorted(k for k in ctx if k not in SERVER_OWNED_PARAMS)
         navigation = [f"{k}={ctx[k]}" for k in LLM_VISIBLE_CONTEXT_KEYS if k in ctx]
         context_str = (
@@ -143,15 +154,13 @@ class AgenticOrchestrator:
             + (", ".join(keys) if keys else "none")
             + ("; navigation: " + ", ".join(navigation) if navigation else "")
         )
-        return ChatMessage(
-            role="system",
-            content=(
-                f"{SUPER_AGENT_SYSTEM_PROMPT}\n"
-                f"Current Jurisdiction: {jurisdiction}\n"
-                f"Tenant ID: {tenant_id}\n"
-                f"Context: {context_str}"
+        return [
+            ChatMessage(role="system", content=SUPER_AGENT_SYSTEM_PROMPT),
+            ChatMessage(
+                role="system",
+                content=f"Current Jurisdiction: {jurisdiction}\nTenant ID: {tenant_id}\nContext: {context_str}",
             ),
-        )
+        ]
 
     @staticmethod
     def _trusted_values(jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,10 +243,10 @@ class AgenticOrchestrator:
         """Execute autonomous ReAct agent loop until final answer is formulated."""
         tenant_id = auth.tenant_id
         ctx = context or {}
-        policy = self.llm_gateway.policy_for(tenant_id)  # fail closed before any work (piece G2)
+        policy = self.llm_gateway.preflight(tenant_id)  # fail closed before any work (piece G2)
         state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation))
         state.pii.learn(ctx)
-        messages: List[ChatMessage] = [self._system_message(jurisdiction, tenant_id, ctx)]
+        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
         for h in history or []:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
         messages.append(ChatMessage(role="user", content=user_message))
@@ -263,7 +272,7 @@ class AgenticOrchestrator:
             for tc in llm_resp.tool_calls:
                 output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
                 messages.append(
-                    ChatMessage(role="tool", content=json.dumps(output, default=str), tool_call_id=tc.id, name=tc.name)
+                    ChatMessage(role="tool", content=tool_result_content(output), tool_call_id=tc.id, name=tc.name)
                 )
 
         return self._response(
@@ -284,12 +293,12 @@ class AgenticOrchestrator:
         ctx = context or {}
         tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
-        policy = self.llm_gateway.policy_for(tenant_id)
+        policy = self.llm_gateway.preflight(tenant_id)
         state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation))
         state.pii.learn(ctx)
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
-        messages: List[ChatMessage] = [self._system_message(jurisdiction, tenant_id, ctx)]
+        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
         for h in history or []:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
         messages.append(ChatMessage(role="user", content=user_message))
@@ -323,7 +332,7 @@ class AgenticOrchestrator:
                     },
                 }
                 messages.append(
-                    ChatMessage(role="tool", content=json.dumps(output, default=str), tool_call_id=tc.id, name=tc.name)
+                    ChatMessage(role="tool", content=tool_result_content(output), tool_call_id=tc.id, name=tc.name)
                 )
             yield {"event": "thinking", "data": "Synthesizing verified compliant response..."}
 

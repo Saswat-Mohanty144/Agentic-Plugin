@@ -70,7 +70,8 @@ class AgenticToolRegistry:
         return permission is not None and self._rbac.is_authorized(auth, permission)
 
     def definitions_for(self, auth: AuthContext) -> List[ToolDefinition]:
-        return [d for name, d in self._tools.items() if self.is_permitted(name, auth)]
+        # Sorted: tools render first in the prompt, so their order is part of the cache key (piece H2).
+        return [d for name, d in sorted(self._tools.items()) if self.is_permitted(name, auth)]
 
     def get_definition(self, name: str) -> Optional[ToolDefinition]:
         return self._tools.get(name)

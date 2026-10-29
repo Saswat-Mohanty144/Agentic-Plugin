@@ -11,6 +11,10 @@ class LlmNotAllowed(Exception):
     """This tenant may not send data to the configured LLM provider."""
 
 
+class LlmBudgetExceeded(Exception):
+    """This tenant has used its daily LLM token budget (piece H4)."""
+
+
 PolicyResolver = Callable[[str, str], LlmPolicy]
 
 

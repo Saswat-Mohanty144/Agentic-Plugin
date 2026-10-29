@@ -205,6 +205,8 @@ async def _post_with_retry(
 
 
 class BaseLLMClient(ABC):
+    # True when chat_stream's "done" event carries {"usage": ...}; budgeted tenants never stream otherwise (piece H4)
+    stream_reports_usage = False
     """Abstract client contract for LLM backends."""
 
     def __init__(self, config: LLMConfig):
@@ -516,6 +518,7 @@ class OpenAICompatibleClient(BaseLLMClient):
 
 
 class AnthropicClient(BaseLLMClient):
+    stream_reports_usage = True
     """Claude via the official Anthropic SDK (piece E1). Follows the bundled claude-api reference:
     adaptive thinking (parameter omitted), effort via output_config, no temperature, server-side refusal fallback.
     """
@@ -576,7 +579,7 @@ class AnthropicClient(BaseLLMClient):
                     out.append({"role": "assistant", "content": content})
             elif m.content:  # user turn; empty user text is never sent
                 out.append({"role": "user", "content": m.content})
-        return ("\n".join(system_parts) or None), out
+        return system_parts, out
 
     async def chat(
         self,
@@ -584,7 +587,7 @@ class AnthropicClient(BaseLLMClient):
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,  # accepted for interface parity; never sent (400 since 2026-10-21)
     ) -> LLMResponse:
-        system, converted = self._convert(messages)
+        system_parts, converted = self._convert(messages)
         kwargs: Dict[str, Any] = {
             "model": self.config.model,
             "max_tokens": self.config.max_tokens,
@@ -592,13 +595,21 @@ class AnthropicClient(BaseLLMClient):
             "output_config": {"effort": self.config.effort},
             "betas": [ANTHROPIC_FALLBACK_BETA],
             "fallbacks": "default",
+            "cache_control": {"type": "ephemeral"},  # automatic breakpoint on the growing ReAct tail (piece H1)
         }
-        if system:
-            kwargs["system"] = system
+        if system_parts:
+            # The first system block is frozen; its breakpoint caches tools + that block for every request.
+            kwargs["system"] = [{"type": "text", "text": system_parts[0], "cache_control": {"type": "ephemeral"}}] + [
+                {"type": "text", "text": part} for part in system_parts[1:]
+            ]
         if tools:
             kwargs["tools"] = [t.to_anthropic_schema() for t in tools]
         response = await self._client.beta.messages.create(**kwargs)
         usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+        for cache_field in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+            value = getattr(response.usage, cache_field, None)
+            if value is not None:
+                usage[cache_field] = value
         if response.stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
             category = getattr(details, "category", None)
@@ -628,7 +639,7 @@ class AnthropicClient(BaseLLMClient):
         resp = await self.chat(messages, tools, temperature)
         if resp.content:
             yield {"event": "token", "data": resp.content}
-        yield {"event": "done", "data": {"finish_reason": resp.finish_reason}}
+        yield {"event": "done", "data": {"finish_reason": resp.finish_reason, "usage": resp.usage}}
 
 
 class GeminiClient(BaseLLMClient):
@@ -659,7 +670,8 @@ class GeminiClient(BaseLLMClient):
 
         for m in messages:
             if m.role == "system":
-                system_instruction = {"parts": [{"text": m.content}]}
+                system_instruction = system_instruction or {"parts": []}
+                system_instruction["parts"].append({"text": m.content})
             elif m.role == "tool":
                 try:
                     res_obj = json.loads(m.content)
@@ -779,6 +791,30 @@ class LLMGateway:
 
             raise LlmNotAllowed(f"no LLM policy resolver configured for provider {self.config.provider.value!r}")
         return self.policy_resolver(tenant_id, self.config.provider.value)
+
+    def preflight(self, tenant_id: str) -> Any:
+        """Everything that must hold before a call leaves: tenant policy (G2) and daily budget (H4)."""
+        policy = self.policy_for(tenant_id)
+        if policy.daily_token_budget is not None:
+            if self.egress_log is None:
+                raise LLMNotConfigured("a token budget needs the egress log to count usage")
+            from hrms_plugin.governance.llm_policy import LlmBudgetExceeded
+
+            if self.egress_log.tokens_today(tenant_id) >= policy.daily_token_budget:
+                logger.warning("LLM budget exhausted", extra={"reason": "LLM_BUDGET_EXHAUSTED", "tenant": tenant_id})
+                raise LlmBudgetExceeded(tenant_id)
+        return policy
+
+    @staticmethod
+    def _usage_fields(usage: Dict[str, Any]) -> Dict[str, Any]:
+        fields = {
+            "input_tokens": usage.get("input_tokens", usage.get("prompt_tokens")),
+            "output_tokens": usage.get("output_tokens", usage.get("completion_tokens")),
+        }
+        for cache_field in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+            if cache_field in usage:
+                fields[cache_field] = usage[cache_field]
+        return fields
 
     _TOKEN_KIND = re.compile(r"\[PII_([A-Z_]+?)_\d+_[0-9a-f]{8}\]")
 
@@ -929,7 +965,7 @@ class LLMGateway:
         pii: Optional[PiiSession] = None,
     ) -> LLMResponse:
         """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C)."""
-        policy = self.policy_for(tenant_id)  # raises LlmNotAllowed before anything is sent (piece G2)
+        policy = self.preflight(tenant_id)  # LlmNotAllowed / LlmBudgetExceeded before anything is sent (G2, H4)
         pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
         # Pin deterministic temperature for high-stakes tasks
         effective_temp = 0.0 if task_class in (TaskClass.SCORING, TaskClass.EVALUATION) else temperature
@@ -944,13 +980,7 @@ class LLMGateway:
         except BaseException:
             self._finish_egress(egress_key, status="FAILED")
             raise
-        usage = response.usage or {}
-        self._finish_egress(
-            egress_key,
-            status="COMPLETED",
-            input_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
-            output_tokens=usage.get("output_tokens", usage.get("completion_tokens")),
-        )
+        self._finish_egress(egress_key, status="COMPLETED", **self._usage_fields(response.usage or {}))
         response.content = pii.restore(response.content)
         response.tool_calls = [
             ToolCall(id=tc.id, name=tc.name, arguments=pii.restore_obj(tc.arguments)) for tc in response.tool_calls
@@ -965,12 +995,22 @@ class LLMGateway:
         pii: Optional[PiiSession] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream SSE events; PII is redacted before sending and tokens are restored in streamed text."""
-        policy = self.policy_for(tenant_id)
+        policy = self.preflight(tenant_id)
+        if policy.daily_token_budget is not None and not self.client.stream_reports_usage:
+            # A budget must see every token: use the call that reports usage, then re-emit its text (piece H4).
+            resp = await self.chat(messages, tools, tenant_id=tenant_id, pii=pii)
+            if resp.content:
+                yield {"event": "token", "data": resp.content}
+            yield {"event": "done", "data": {"finish_reason": resp.finish_reason}}
+            return
         pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
         protected = self._protect(messages, pii)
-        egress_key = self._record_egress(tenant_id, protected)  # stream token usage is not reported → stays None
+        egress_key = self._record_egress(tenant_id, protected)
         restorer = StreamRestorer(pii)
+        usage: Dict[str, Any] = {}
         async for chunk in self.client.chat_stream(protected, tools):
+            if chunk.get("event") == "done" and isinstance(chunk.get("data"), dict):
+                usage = chunk["data"].get("usage") or {}
             if chunk.get("event") == "token":
                 text = restorer.feed(str(chunk.get("data", "")))
                 if text:
@@ -983,7 +1023,7 @@ class LLMGateway:
         pending = restorer.flush()
         if pending:
             yield {"event": "token", "data": pending}
-        self._finish_egress(egress_key, status="COMPLETED")
+        self._finish_egress(egress_key, status="COMPLETED", **(self._usage_fields(usage) if usage else {}))
 
     async def complete(
         self,

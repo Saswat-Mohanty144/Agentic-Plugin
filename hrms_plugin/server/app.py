@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
@@ -30,7 +30,7 @@ from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.voice import VoiceAgent
 from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.governance.egress_log import EgressLog
-from hrms_plugin.governance.llm_policy import LlmNotAllowed
+from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
 from hrms_plugin.payroll.service import PayrollService
 from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
@@ -233,8 +233,9 @@ async def chat_stream_endpoint(
 ):
     """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
     agent: SupervisorAgent = request.app.state.supervisor
-    # Resolve LLM configuration and tenant policy before streaming starts → plain 503/403 (agy E-F7, piece G2)
-    agent.get_orchestrator().llm_gateway.policy_for(auth.tenant_id)
+    # Resolve LLM configuration, tenant policy and budget before streaming starts → plain 503/403/429
+    # (agy E-F7, pieces G2 and H4)
+    agent.get_orchestrator().llm_gateway.preflight(auth.tenant_id)
 
     async def event_generator():
         text_to_process = req.message  # PII is redacted at the LLM gateway, not here (piece C)
@@ -250,6 +251,8 @@ async def chat_stream_endpoint(
                 yield f"data: {json.dumps(chunk, default=str)}\n\n"
         except LLMNotConfigured:
             yield f"data: {json.dumps({'event': 'error', 'data': {'error': 'LLM_NOT_CONFIGURED'}})}\n\n"
+        except LlmBudgetExceeded:  # budget ran out between ReAct turns
+            yield f"data: {json.dumps({'event': 'error', 'data': {'error': 'LLM_BUDGET_EXHAUSTED'}})}\n\n"
         except PiiEgressBlocked as exc:
             # HTTP 200 is already committed once streaming starts, so report the block in-band (agy F2).
             blocked = {"event": "error", "data": {"error": "PII_EGRESS_BLOCKED", "kinds": exc.kinds}}
@@ -454,6 +457,37 @@ def approve_mapping_version(
         status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409}.get(exc.code, 400)
         raise ApiError(status, {"error": exc.code}) from None
     return {k: v for k, v in row.items() if k != "mapping"}
+
+
+class PfCalculateRequest(BaseModel):
+    """IDs only: tenant comes from the token and PF is Indian payroll, so neither is a client field (piece H6)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    employee_id: StrictStr
+    period: StrictStr
+
+
+_PF_ERROR_STATUS = {
+    "INVALID_ARGUMENT": 422,
+    "NOT_APPLICABLE": 422,
+    "SLIP_NOT_FOUND": 404,
+    "HOST_NOT_CONFIGURED": 409,
+    "RULES_NOT_CONFIGURED": 409,
+    "MAPPING_NOT_APPROVED": 409,
+    "SCHEMA_DRIFT": 409,
+    "AMBIGUOUS_SLIPS": 409,
+    "PF_COMPONENT_MISSING": 409,
+}
+
+
+@router.post("/v1/payroll/pf/calculate")
+async def calculate_pf(req: PfCalculateRequest, auth: AuthContext = Depends(require(Permission.VIEW_SALARY))):
+    """Deterministic EPF/EPS calculation without any LLM call (piece H6, Q4)."""
+    result = await payroll_service.calculate_pf(auth.tenant_id, req.employee_id, req.period, "IN")
+    if "error" in result:
+        raise ApiError(_PF_ERROR_STATUS.get(result["error"], 502), result)
+    return result
 
 
 @router.get("/v1/governance/llm-egress")
@@ -756,6 +790,10 @@ async def _llm_not_allowed_handler(_request: Request, _exc: LlmNotAllowed) -> JS
     return JSONResponse(status_code=403, content={"error": "LLM_NOT_ALLOWED_FOR_TENANT"})
 
 
+async def _llm_budget_exceeded_handler(_request: Request, _exc: LlmBudgetExceeded) -> JSONResponse:
+    return JSONResponse(status_code=429, content={"error": "LLM_BUDGET_EXHAUSTED"})
+
+
 async def _llm_not_configured_handler(_request: Request, _exc: LLMNotConfigured) -> JSONResponse:
     return JSONResponse(status_code=503, content={"error": "LLM_NOT_CONFIGURED"})
 
@@ -801,6 +839,7 @@ def create_app(
     application.add_exception_handler(PiiEgressBlocked, _pii_egress_blocked_handler)
     application.add_exception_handler(LLMNotConfigured, _llm_not_configured_handler)
     application.add_exception_handler(LlmNotAllowed, _llm_not_allowed_handler)
+    application.add_exception_handler(LlmBudgetExceeded, _llm_budget_exceeded_handler)
     application.add_exception_handler(WritebackError, _writeback_error_handler)
     application.include_router(router)
     return application

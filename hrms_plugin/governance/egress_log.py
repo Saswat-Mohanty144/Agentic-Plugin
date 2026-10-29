@@ -10,6 +10,8 @@ from hrms_plugin.storage.base import BaseKeyValueStore
 
 NAMESPACE = "llm_egress"
 MAX_LISTED = 200
+DAY_SECONDS = 86400
+TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 
 
 class EgressLog:
@@ -37,3 +39,13 @@ class EgressLog:
     def list(self, tenant_id: str) -> List[Dict[str, Any]]:
         rows = [r for k, r in self._store.get_all(NAMESPACE).items() if k.startswith(f"{tenant_id}:")]
         return sorted(rows, key=lambda r: r["at"], reverse=True)[:MAX_LISTED]
+
+    def tokens_today(self, tenant_id: str) -> int:
+        """Every token this tenant used in the current UTC day, over all rows (not the capped listing)."""
+        day_start = self._clock() // DAY_SECONDS * DAY_SECONDS
+        return sum(
+            r.get(f) or 0
+            for k, r in self._store.get_all(NAMESPACE).items()
+            if k.startswith(f"{tenant_id}:") and r["at"] >= day_start
+            for f in TOKEN_FIELDS
+        )

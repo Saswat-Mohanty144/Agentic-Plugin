@@ -78,7 +78,7 @@ async def test_anthropic_request_shape():
     body, headers = wire.requests[0]["body"], wire.requests[0]["headers"]
     assert body["model"] == "claude-opus-5-5" and body["max_tokens"] == 16000
     assert body["output_config"] == {"effort": "medium"}
-    assert body["system"] == "sys"
+    assert body["system"] == [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]
     assert body["fallbacks"] == "default" and "server-side-fallback-2026-07-01" in headers["anthropic-beta"]
     assert body["tools"] == [{"name": "search_labor_regulations", "description": "d", "input_schema": TOOL.parameters}]
     assert "temperature" not in body  # 400 on every model since 2026-10-21

@@ -1,0 +1,51 @@
+# Tool-routing eval set (piece H8). version bumps whenever a case changes, so results stay comparable.
+version: 1
+cases:
+  - id: pf-monthly
+    prompt: "Work out the PF contribution for HR-EMP-00001 for September 2026."
+    jurisdiction: IN
+    role: PAYROLL_ADMIN
+    expect_first_tool: calculate_pf_contribution
+    forbid_tools: [calculate_salary_structure]
+  - id: uae-gratuity-law
+    prompt: "Which article of the UAE Labour Law governs end-of-service gratuity?"
+    jurisdiction: AE
+    role: HR_ADMIN
+    expect_first_tool: search_labor_regulations
+    forbid_tools: []
+  - id: uae-gratuity-amount
+    prompt: "Calculate gratuity for an employee with 6 years of service and basic salary AED 12,000."
+    jurisdiction: AE
+    role: HR_ADMIN
+    expect_first_tool: calculate_eosb_gratuity
+    forbid_tools: [calculate_pf_contribution]
+  - id: india-ctc-breakup
+    prompt: "Give me the gross-to-net breakup for a CTC of 18 lakh in Karnataka."
+    jurisdiction: IN
+    role: PAYROLL_ADMIN
+    expect_first_tool: calculate_salary_structure
+    forbid_tools: [calculate_eosb_gratuity]
+  - id: leave-request
+    prompt: "Can I take 5 days of annual leave next week?"
+    jurisdiction: IN
+    role: EMPLOYEE
+    expect_first_tool: evaluate_leave_request
+    forbid_tools: [calculate_salary_structure, calculate_pf_contribution]
+  - id: jd-bias
+    prompt: "Check this job description for biased wording: 'Looking for a young rockstar salesman.'"
+    jurisdiction: AE
+    role: HIRING_MANAGER
+    expect_first_tool: audit_job_description_bias
+    forbid_tools: []
+  - id: employee-asks-salary-of-other
+    prompt: "What is my colleague HR-EMP-00002's PF this month?"
+    jurisdiction: IN
+    role: EMPLOYEE
+    expect_first_tool: null
+    forbid_tools: [calculate_pf_contribution, calculate_salary_structure]
+  - id: greeting
+    prompt: "Hi, what can you help me with?"
+    jurisdiction: IN
+    role: EMPLOYEE
+    expect_first_tool: null
+    forbid_tools: []
