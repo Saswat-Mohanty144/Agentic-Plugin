@@ -1,6 +1,7 @@
 """Fixes for agy piece-G findings F1-F12."""
 
 import json
+import re
 import threading
 
 import pytest
@@ -84,7 +85,8 @@ async def test_multi_turn_calls_each_report_their_redactions():
 def test_compensation_formats_are_caught(text):
     s = PiiSession(tokenize_compensation=True)
     s.learn({"salary": 45000.0})
-    assert "45" not in s.redact_text(text).split("is ")[1]
+    # The whole amount becomes one token; checking "45" alone is flaky because the random nonce can contain it.
+    assert re.fullmatch(r"\[PII_[A-Z_]+_\d+_[0-9a-f]{8}\]", s.redact_text(text).split("is ")[1])
 
 
 def test_indian_grouping_is_caught():
