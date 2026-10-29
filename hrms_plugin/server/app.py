@@ -827,7 +827,8 @@ async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
 
 
 async def _voice_upstream_error_handler(request: Request, exc: VoiceUpstreamError) -> JSONResponse:
-    return JSONResponse(status_code=504 if exc.code == "VOICE_UPSTREAM_TIMEOUT" else 502, content={"error": exc.code})
+    status = {"VOICE_UPSTREAM_TIMEOUT": 504, "VOICE_NOT_CONFIGURED": 503}.get(exc.code, 502)
+    return JSONResponse(status_code=status, content={"error": exc.code})
 
 
 async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JSONResponse:

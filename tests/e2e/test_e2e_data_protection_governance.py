@@ -1003,7 +1003,16 @@ def test_e2e_requisitions_generate_archetypes_negatives(make_client, bearer):
 # ==============================================================================
 
 
-def test_e2e_voice_transcribe_synthesize_turn_positive(make_client, bearer):
+@pytest.fixture
+def offline_voice(monkeypatch):
+    """Without a Sarvam key the routes are 503 (VOICE-1); these tests ask for the canned voice explicitly."""
+    from hrms_plugin.agents.voice import VoiceAgent
+    from hrms_plugin.server import app as app_module
+
+    monkeypatch.setattr(app_module, "voice_agent", VoiceAgent(offline_mock=True))
+
+
+def test_e2e_voice_transcribe_synthesize_turn_positive(make_client, bearer, offline_voice):
     """Positive: /v1/voice/* endpoints process audio bytes, speech synthesis, and full-duplex voice turn."""
     agent, _ = make_echo_supervisor()
     client = make_client(supervisor_agent=agent)
@@ -1029,7 +1038,7 @@ def test_e2e_voice_transcribe_synthesize_turn_positive(make_client, bearer):
     assert "reply_text" in resp_turn.json()
 
 
-def test_e2e_voice_boundaries(make_client, bearer):
+def test_e2e_voice_boundaries(make_client, bearer, offline_voice):
     """Boundary: Allowed jurisdictions on turn, empty and unicode text on synthesize, large audio payload."""
     agent, _ = make_echo_supervisor()
     client = make_client(supervisor_agent=agent)

@@ -184,8 +184,12 @@ def test_api_chat_stream_endpoint(client, admin):
     assert len(resp.text) > 0
 
 
-def test_api_voice_endpoints(client, admin):
+def test_api_voice_endpoints(client, admin, monkeypatch):
     """Test voice transcribe, synthesize, and multimodal turn endpoints."""
+    from hrms_plugin.agents.voice import VoiceAgent
+    from hrms_plugin.server import app as app_module
+
+    monkeypatch.setattr(app_module, "voice_agent", VoiceAgent(offline_mock=True))
     dummy_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00"
     b64_audio = base64.b64encode(dummy_wav).decode("utf-8")
 

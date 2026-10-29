@@ -19,7 +19,7 @@ SARVAM_API_URL = "https://api.sarvam.ai"
 
 
 class VoiceUpstreamError(Exception):
-    """Sarvam failed or timed out; the API answers 502/504 instead of a 500 (GAPS-IO-1)."""
+    """Sarvam failed, timed out or is not configured; the API answers 502/504/503 instead of a 500 (GAPS-IO-1)."""
 
     def __init__(self, code: str):
         super().__init__(code)
@@ -44,8 +44,11 @@ class VoiceAgent:
         api_key: Optional[str] = None,
         default_language: str = "en-IN",
         target_speaker: str = "meera",
+        offline_mock: bool = False,
     ) -> None:
         self.api_key = api_key
+        # Canned answers only when a test asks for them; a missing key otherwise fails closed (VOICE-1).
+        self.offline_mock = offline_mock
         self.default_language = default_language
         self.target_speaker = target_speaker
 
@@ -58,7 +61,8 @@ class VoiceAgent:
         """Transcribe speech audio bytes to text with timestamp alignments."""
         lang = language_code or self.default_language
         if not self.api_key:
-            # Fallback mock for testing and offline environments
+            if not self.offline_mock:
+                raise VoiceUpstreamError("VOICE_NOT_CONFIGURED")
             return {
                 "transcript": "Apply sick leave for tomorrow due to fever",
                 "language_code": lang,
@@ -109,7 +113,8 @@ class VoiceAgent:
         spk = speaker or self.target_speaker
 
         if not self.api_key:
-            # Offline simulated waveform for tests
+            if not self.offline_mock:
+                raise VoiceUpstreamError("VOICE_NOT_CONFIGURED")
             dummy_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x44\xac\x00\x00"
             return {
                 "audio_base64": base64.b64encode(dummy_wav).decode("utf-8"),

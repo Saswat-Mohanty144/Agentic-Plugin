@@ -12,7 +12,7 @@ from hrms_plugin.agents.voice import VoiceAgent
 @pytest.mark.asyncio
 async def test_voice_agent_mock_stt_and_tts():
     """Verify VoiceAgent STT and TTS offline fallback execution."""
-    agent = VoiceAgent(api_key=None, default_language="en-IN", target_speaker="meera")
+    agent = VoiceAgent(api_key=None, default_language="en-IN", target_speaker="meera", offline_mock=True)
 
     # 1. Test STT
     dummy_audio = b"dummy_wav_content_bytes"
@@ -31,7 +31,7 @@ async def test_voice_agent_mock_stt_and_tts():
 @pytest.mark.asyncio
 async def test_voice_agent_handle_voice_turn():
     """Verify multimodal voice turn routing through SupervisorAgent."""
-    voice_agent = VoiceAgent(api_key=None)
+    voice_agent = VoiceAgent(api_key=None, offline_mock=True)
 
     mock_supervisor = MagicMock()
     mock_supervisor.process_turn = AsyncMock(
