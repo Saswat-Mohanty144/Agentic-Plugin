@@ -95,14 +95,18 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     elif args.command == "audit-compliance":
         comp = ComplianceAgent(kb=kb)
-        employees = []
-        if args.file:
-            path = Path(args.file)
-            if path.exists():
-                employees = json.loads(path.read_text(encoding="utf-8"))
-        else:
-            # Demo record
-            employees = [{"id": "DEMO-01", "probation_days": 210, "weekly_hours": 52, "uae_wps_registered": False}]
+        # Real records only: no built-in demo record, and an unreadable file is never reported as compliant.
+        if not args.file:
+            print("audit-compliance needs --file with a JSON list of employee records", file=sys.stderr)
+            return 2
+        try:
+            employees = json.loads(Path(args.file).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"cannot read employee records from {args.file}: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(employees, list) or not employees or not all(isinstance(e, dict) for e in employees):
+            print("--file must contain a non-empty JSON list of employee records", file=sys.stderr)
+            return 2
 
         report = comp.audit_employees(
             tenant_id="CLI_ADMIN",
@@ -113,7 +117,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Status: {'COMPLIANT' if report.is_compliant else 'NON-COMPLIANT'}")
         print(f"Violations Detected: {report.violations_count}")
         for v in report.violations:
-            print(f"- [{v.severity}] {v.rule_name}: {v.description}")
+            print(f"- [{v.severity.value}] {v.rule_key}: {v.summary}")
             print(f"  Citation: {v.statutory_citation}")
         return 0
 
