@@ -406,7 +406,9 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
         entities = {}
         for entity_name, samples in req.sample_records.items():
             discovered_ent = introspector.introspect_json_samples(entity_name, samples)
-            entities[entity_name] = discovered_ent.model_dump()
+            # Structure only (Q3): sample values, and "enums" inferred from them, are data and never leave.
+            entities[entity_name] = discovered_ent.model_dump(
+                exclude={"raw_sample": True, "fields": {"__all__": {"sample_values", "enum_values"}}})
         return {
             "entities_discovered": list(entities.keys()),
             "entities": entities,
@@ -521,20 +523,30 @@ async def rollback_writeback(proposal_id: str, auth: AuthContext = Depends(_FRES
     return await writeback_service.rollback(auth, proposal_id)
 
 
+class ApproveMappingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # field -> {"data_class": PII|COMPENSATION|INTERNAL|PUBLIC, "llm_visible": bool}; omitted fields count as PII (QD)
+    classification: Dict[str, Any] = Field(default_factory=dict)
+
+
 @router.post("/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve")
 def approve_mapping_version(
     vendor: str,
     entity_type: str,
     version: int,
+    req: Optional[ApproveMappingRequest] = None,
     auth: AuthContext = Depends(
         require(Permission.MANAGE_SCHEMA, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
     ),
 ):
     """Activate a proposed mapping version; the approver must differ from the proposer (piece G4)."""
     try:
-        row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id)
+        row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id,
+                                           classification=req.classification if req else None)
     except MappingGovernanceError as exc:
-        status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409}.get(exc.code, 400)
+        status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409, "CLASSIFICATION_UNKNOWN_FIELD": 422,
+                  "INVALID_CLASSIFICATION": 422, "SENSITIVE_FIELD_LLM_VISIBLE": 422}.get(exc.code, 400)
         raise ApiError(status, {"error": exc.code}) from None
     return {k: v for k, v in row.items() if k != "mapping"}
 

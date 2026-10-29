@@ -73,6 +73,29 @@ class MappingGovernanceError(Exception):
         self.detail = detail
 
 
+DATA_CLASSES = ("PII", "COMPENSATION", "INTERNAL", "PUBLIC")
+SENSITIVE_CLASSES = ("PII", "COMPENSATION")
+
+
+def classify_fields(mapping: Dict[str, Any], given: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """Q3: every mapped field gets a data class; anything a human did not classify counts as PII, not LLM-visible."""
+    targets = [f["target"] for f in mapping.get("fields", [])]
+    given = given or {}
+    unknown = sorted(set(given) - set(targets))
+    if unknown:
+        raise MappingGovernanceError("CLASSIFICATION_UNKNOWN_FIELD", ",".join(unknown))
+    result: Dict[str, Dict[str, Any]] = {}
+    for target in targets:
+        entry = given.get(target, {"data_class": "PII", "llm_visible": False})
+        if (not isinstance(entry, dict) or set(entry) != {"data_class", "llm_visible"}
+                or entry["data_class"] not in DATA_CLASSES or not isinstance(entry["llm_visible"], bool)):
+            raise MappingGovernanceError("INVALID_CLASSIFICATION", target)
+        if entry["llm_visible"] and entry["data_class"] in SENSITIVE_CLASSES:
+            raise MappingGovernanceError("SENSITIVE_FIELD_LLM_VISIBLE", target)
+        result[target] = {"data_class": entry["data_class"], "llm_visible": entry["llm_visible"]}
+    return result
+
+
 class MappingStore:
     """Persistent registry for tenant-specific compiled schema mappings."""
 
@@ -166,12 +189,12 @@ class MappingStore:
         return version
 
     def approve_version(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
-                        approver: str) -> Dict:
+                        approver: str, classification: Optional[Dict[str, Any]] = None) -> Dict:
         with self._lock:
-            return self._approve_locked(tenant_id, vendor, entity_type, version, approver)
+            return self._approve_locked(tenant_id, vendor, entity_type, version, approver, classification)
 
     def _approve_locked(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
-                        approver: str) -> Dict:
+                        approver: str, classification: Optional[Dict[str, Any]] = None) -> Dict:
         versions = self._versions(tenant_id, vendor, entity_type)
         row = versions.get(version)
         if row is None:
@@ -182,11 +205,12 @@ class MappingStore:
             raise MappingGovernanceError("INVALID_STATE", row["status"])
         if approver == row["proposed_by"]:
             raise MappingGovernanceError("SAME_PERSON", "the approver must not be the proposer")
+        classified = classify_fields(row["mapping"], classification)  # validated before anything changes
         for other in versions.values():
             if other["status"] == "ACTIVE":
                 other["status"] = "SUPERSEDED"
                 self._put_version(tenant_id, vendor, entity_type, other)
-        row.update(status="ACTIVE", approved_by=approver, approved_at=time.time())
+        row.update(status="ACTIVE", approved_by=approver, approved_at=time.time(), classification=classified)
         self._put_version(tenant_id, vendor, entity_type, row)
         self.backend.set(self.NAMESPACE, self._make_key(tenant_id, vendor, entity_type), row["mapping"])
         return row
