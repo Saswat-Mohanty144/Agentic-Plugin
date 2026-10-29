@@ -30,10 +30,15 @@ class HostConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tenant_id: StrictStr = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
-    vendor: Literal["frappe"]
+    vendor: Literal["frappe", "iceipts"]
     base_url: StrictStr
-    api_key_env: StrictStr = Field(pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
-    api_secret_env: StrictStr = Field(pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+    # frappe: `token key:secret`; iceipts: bearer token + the service account's user id (piece I6)
+    api_key_env: Optional[StrictStr] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+    api_secret_env: Optional[StrictStr] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+    token_env: Optional[StrictStr] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+    service_user_id: Optional[StrictStr] = Field(
+        default=None, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    )
     timeout_seconds: StrictInt = Field(ge=1, le=60)
     # Per-tenant write-back allowlist (piece F2, W3): doctype -> field -> value type. Empty means no writes.
     writable_fields: Dict[StrictStr, Dict[StrictStr, Literal["int", "date", "string", "decimal"]]] = Field(
@@ -61,12 +66,33 @@ class HostConfig(BaseModel):
             raise ValueError("base_url must not embed credentials; use api_key_env / api_secret_env")
         return value.rstrip("/")
 
+    @model_validator(mode="after")
+    def _vendor_fields(self) -> "HostConfig":
+        frappe = (self.api_key_env, self.api_secret_env)
+        iceipts = (self.token_env, self.service_user_id)
+        if self.vendor == "frappe":
+            if not all(frappe) or any(iceipts):
+                raise ValueError("frappe hosts need api_key_env and api_secret_env only")
+        elif not all(iceipts) or any(frappe) or self.writable_fields:
+            raise ValueError("iceipts hosts need token_env and service_user_id, and support no write-back")
+        return self
+
     def credentials(self, env: Optional[Mapping[str, str]] = None) -> Tuple[str, str]:
+        """Frappe API key and secret."""
+        if self.vendor != "frappe":
+            raise HostRegistryError(f"tenant {self.tenant_id!r} is not a frappe host")
         env = os.environ if env is None else env
         key, secret = env.get(self.api_key_env), env.get(self.api_secret_env)
         if not key or not secret:
             raise HostRegistryError(f"credentials for tenant {self.tenant_id!r} are not set in the environment")
         return key, secret
+
+    def bearer_token(self, env: Optional[Mapping[str, str]] = None) -> str:
+        env = os.environ if env is None else env
+        token = env.get(self.token_env) if self.token_env else None
+        if not token:
+            raise HostRegistryError(f"token for tenant {self.tenant_id!r} is not set in the environment")
+        return token
 
 
 class HostRegistry(BaseModel):

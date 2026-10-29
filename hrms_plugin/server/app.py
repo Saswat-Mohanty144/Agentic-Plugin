@@ -171,7 +171,7 @@ class WritebackProposalRequest(BaseModel):
 WRITEBACK_STATUS = {
     "NOT_FOUND": 404, "FIELD_NOT_WRITABLE": 422, "INVALID_VALUE": 422, "NO_CHANGE": 422, "CONFLICT": 409,
     "ROLLBACK_CONFLICT": 409, "ROLLBACK_UNAVAILABLE": 409, "EXPIRED": 409, "INVALID_STATE": 409, "SAME_PERSON": 403,
-    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502,
+    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502, "VENDOR_NOT_SUPPORTED": 409,
 }
 
 
@@ -473,6 +473,7 @@ _PF_ERROR_STATUS = {
     "NOT_APPLICABLE": 422,
     "SLIP_NOT_FOUND": 404,
     "HOST_NOT_CONFIGURED": 409,
+    "VENDOR_NOT_SUPPORTED": 409,
     "RULES_NOT_CONFIGURED": 409,
     "MAPPING_NOT_APPROVED": 409,
     "SCHEMA_DRIFT": 409,
@@ -488,6 +489,30 @@ async def calculate_pf(req: PfCalculateRequest, auth: AuthContext = Depends(requ
     if "error" in result:
         raise ApiError(_PF_ERROR_STATUS.get(result["error"], 502), result)
     return result
+
+
+_CONNECTOR_ERROR_STATUS = {"HOST_NOT_CONFIGURED": 409, "ENTITY_NOT_SUPPORTED": 409, "VENDOR_MISMATCH": 500}
+
+
+@router.get("/v1/hosts/requisitions")
+async def list_host_requisitions(auth: AuthContext = Depends(require(Permission.MANAGE_RECRUITMENT))):
+    """Requisitions from this tenant's host HRMS in canonical form, via its declarative profile (piece I7)."""
+    from hrms_plugin.integrations.declarative import ConnectorError, DeclarativeConnector, ProfileError, load_profile
+    from hrms_plugin.integrations.host_registry import HostRegistryError, load_host_registry_from_env
+
+    try:
+        host = load_host_registry_from_env().for_tenant(auth.tenant_id)
+    except HostRegistryError:
+        host = None
+    if host is None:
+        raise ApiError(409, {"error": "HOST_NOT_CONFIGURED"})
+    try:
+        result = await DeclarativeConnector(host, load_profile(host.vendor)).list_entity("REQUISITION")
+    except ProfileError:
+        raise ApiError(500, {"error": "PROFILE_INVALID"}) from None
+    except ConnectorError as exc:
+        raise ApiError(_CONNECTOR_ERROR_STATUS.get(exc.code, 502), {"error": exc.code}) from None
+    return {"vendor": host.vendor, "requisitions": result.records, "rejected": result.rejected}
 
 
 @router.get("/v1/governance/llm-egress")

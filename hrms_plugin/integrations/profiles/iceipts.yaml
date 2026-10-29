@@ -1,0 +1,20 @@
+# iCeipts HRMS. Source: tests/fixtures/iceipts_swagger.yaml — GET /job/getAllRequisition/{userId},
+# rows at data.pageData, page/size paging (size 1-100), data.totalPages; schema JobRequisitionDetails.
+vendor: iceipts
+auth: bearer
+entities:
+  REQUISITION:
+    path: /job/getAllRequisition/{service_user_id}
+    request_fields: false
+    items_at: data.pageData
+    pagination: {kind: page, page_param: page, size_param: size, size: 100, total_pages_at: data.totalPages}
+    id_from: id
+    fields:
+      title: {from: title}
+      location: {from: location}
+      headcount: {from: position, type: int}
+      status:
+        from: status
+        map: {DRAFT: DRAFT, PENDING_APPROVAL: PENDING, APPROVED: OPEN, REJECTED: REJECTED, JOB_CONVERTED: OPEN,
+              CLOSED: CLOSED}
+      description: {from: jobDescription}

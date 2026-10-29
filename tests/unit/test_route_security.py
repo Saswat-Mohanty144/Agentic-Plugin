@@ -24,6 +24,7 @@ EXPECTED = {
     ("GET", "/v1/schema/fingerprints/quarantine"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/governance/llm-egress"): P.VIEW_COMPLIANCE,
+    ("GET", "/v1/hosts/requisitions"): P.MANAGE_RECRUITMENT,
     ("POST", "/v1/payroll/pf/calculate"): P.VIEW_SALARY,
     ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals/{proposal_id}/approve"): P.MUTATE_EMPLOYEE,

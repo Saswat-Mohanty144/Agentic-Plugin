@@ -66,6 +66,8 @@ class PayrollService:
             host = load_host_registry_from_env().for_tenant(tenant_id)
             if host is None:
                 return _error("HOST_NOT_CONFIGURED")
+            if host.vendor != "frappe":
+                return _error("VENDOR_NOT_SUPPORTED")  # payroll is verified for Frappe only (piece I6)
             key, secret = host.credentials()
         except HostRegistryError:
             return _error("HOST_NOT_CONFIGURED")

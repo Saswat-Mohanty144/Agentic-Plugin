@@ -85,6 +85,8 @@ class WritebackService:
             host = load_host_registry_from_env().for_tenant(tenant_id)
             if host is None:
                 raise WritebackError("HOST_NOT_CONFIGURED")
+            if host.vendor != "frappe":
+                raise WritebackError("VENDOR_NOT_SUPPORTED")  # write-back is verified for Frappe only (piece I6)
             key, secret = host.credentials()
         except HostRegistryError:
             raise WritebackError("HOST_NOT_CONFIGURED") from None
