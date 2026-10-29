@@ -708,7 +708,7 @@ async def test_llm_gateway_complete_helper_positive():
 @pytest.mark.asyncio
 async def test_llm_gateway_stream_budget_fallback_chat_positive():
     """Positive path: LLMGateway.chat_stream falls back to chat and re-emits tokens when budget configured."""
-    policy = LlmPolicy(allowed_providers=("fake",), daily_token_budget=5000)
+    policy = LlmPolicy(allowed_providers=("fake",), max_data_tier=2, daily_token_budget=5000)
 
     class DummyEgressLog:
         def tokens_today(self, tenant_id: str) -> int:
@@ -995,7 +995,7 @@ def test_llm_gateway_policy_resolver_missing_negative():
 
 def test_llm_gateway_budget_without_egress_log_negative():
     """Negative path: Daily budget with missing egress log raises LLMNotConfigured."""
-    policy = LlmPolicy(allowed_providers=("fake",), daily_token_budget=1000)
+    policy = LlmPolicy(allowed_providers=("fake",), max_data_tier=2, daily_token_budget=1000)
     gateway = LLMGateway(
         LLMConfig(provider=LLMProvider.FAKE),
         egress_log=None,
@@ -1008,7 +1008,7 @@ def test_llm_gateway_budget_without_egress_log_negative():
 
 def test_llm_gateway_budget_exceeded_negative():
     """Negative path: Exceeding daily token budget raises LlmBudgetExceeded."""
-    policy = LlmPolicy(allowed_providers=("fake",), daily_token_budget=100)
+    policy = LlmPolicy(allowed_providers=("fake",), max_data_tier=2, daily_token_budget=100)
 
     class FullBudgetEgressLog:
         def tokens_today(self, tenant_id: str) -> int:

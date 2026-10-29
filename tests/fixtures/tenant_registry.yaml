@@ -25,6 +25,7 @@ tenants:
     allowed_providers:
     - fake
     tokenize_compensation: false
+    max_data_tier: 2
     voice_providers:
     - sarvam
 - tenant_id: globex
@@ -48,6 +49,7 @@ tenants:
     allowed_providers:
     - fake
     tokenize_compensation: false
+    max_data_tier: 2
 - tenant_id: initech
   issuer: https://idp.initech.test
   jwks_url: https://idp.initech.test/jwks.json

@@ -486,7 +486,8 @@ def test_e2e_chat_stream_in_band_budget_exhaustion(make_client, bearer):
     gw.egress_log = app_module.egress_log
     app_module.egress_log._clock = lambda: NOW
     # First turn uses 100 tokens which reaches the budget of 100
-    gw.policy_resolver = lambda tid, prov: LlmPolicy(allowed_providers=("fake",), daily_token_budget=100)
+    gw.policy_resolver = lambda tid, prov: LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget=100)
 
     # Ensure daily usage starts at 0 for acme
     day_key = app_module.egress_log._day_key("acme", NOW)
@@ -666,7 +667,8 @@ def test_e2e_llm_budget_preflight_exhausted_chat_429(make_client, bearer):
     gw.client = ScriptedLLMClient([final("Should not be called")])
     gw.egress_log = app_module.egress_log
     app_module.egress_log._clock = lambda: NOW
-    gw.policy_resolver = lambda tid, prov: LlmPolicy(allowed_providers=("fake",), daily_token_budget=100)
+    gw.policy_resolver = lambda tid, prov: LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget=100)
 
     # Exhaust budget in daily counter
     day_key = app_module.egress_log._day_key("acme", NOW)
@@ -689,7 +691,8 @@ def test_e2e_llm_budget_exact_limits_boundary(make_client, bearer):
     gw.client = client_llm
     gw.egress_log = app_module.egress_log
     app_module.egress_log._clock = lambda: NOW
-    gw.policy_resolver = lambda tid, prov: LlmPolicy(allowed_providers=("fake",), daily_token_budget=100)
+    gw.policy_resolver = lambda tid, prov: LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget=100)
 
     # Set tokens_today to exactly 99 (budget - 1)
     day_key = app_module.egress_log._day_key("acme", NOW)

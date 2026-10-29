@@ -132,7 +132,8 @@ def gateway(budget=None, log=None, client=None):
     gw = LLMGateway(
         config=LLMConfig(provider=LLMProvider.FAKE),
         egress_log=log,
-        policy_resolver=lambda tenant, provider: LlmPolicy(allowed_providers=("fake",), daily_token_budget=budget),
+        policy_resolver=lambda tenant, provider: LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget=budget),
     )
     gw.client = client or Client()
     return gw
@@ -170,9 +171,11 @@ def seed(log, tenant, at, **tokens):
 
 def test_budget_must_be_positive_integer():
     with pytest.raises(ValueError):
-        LlmPolicy(allowed_providers=("fake",), daily_token_budget=0)
+        LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget=0)
     with pytest.raises(ValueError):
-        LlmPolicy(allowed_providers=("fake",), daily_token_budget="100")
+        LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget="100")
     assert LlmPolicy(allowed_providers=("fake",)).daily_token_budget is None
 
 

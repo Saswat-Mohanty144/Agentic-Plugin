@@ -323,7 +323,7 @@ def test_e2e_tokenize_compensation_enabled(make_client, bearer):
     """Positive: When tenant policy has tokenize_compensation: true, salary and CTC amounts are tokenized."""
     agent, client_llm = make_echo_supervisor()
     agent.get_orchestrator().llm_gateway.policy_resolver = lambda tid, prov: LlmPolicy(
-        allowed_providers=("fake",), tokenize_compensation=True
+        allowed_providers=("fake",), tokenize_compensation=True, max_data_tier=2
     )
     client = make_client(supervisor_agent=agent)
 

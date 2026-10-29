@@ -720,6 +720,16 @@ def list_llm_egress(auth: AuthContext = Depends(require(Permission.VIEW_COMPLIAN
     return {"tenant_id": auth.tenant_id, "records": egress_log.list(auth.tenant_id)}
 
 
+@router.delete("/v1/governance/llm-egress")
+def delete_llm_egress(
+    auth: AuthContext = Depends(
+        require(Permission.MANAGE_GOVERNANCE, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
+):
+    """Deletion on request (QF): every egress row of the caller's tenant. Super admin, freshly authenticated."""
+    return {"tenant_id": auth.tenant_id, "deleted": egress_log.delete_tenant(auth.tenant_id)}
+
+
 @router.post("/v1/remediate/execute")
 def execute_remediation(
     req: RemediationExecuteRequest,
@@ -1032,7 +1042,7 @@ async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JS
 
 
 async def _llm_not_allowed_handler(_request: Request, _exc: LlmNotAllowed) -> JSONResponse:
-    return JSONResponse(status_code=403, content={"error": "LLM_NOT_ALLOWED_FOR_TENANT"})
+    return JSONResponse(status_code=403, content={"error": _exc.code})
 
 
 async def _llm_budget_exceeded_handler(_request: Request, _exc: LlmBudgetExceeded) -> JSONResponse:

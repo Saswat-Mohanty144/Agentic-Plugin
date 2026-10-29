@@ -31,6 +31,7 @@ class Permission(str, Enum):
     USE_COPILOT = "USE_COPILOT"
     MANAGE_SCHEMA = "MANAGE_SCHEMA"
     APPROVE_EXPENSE = "APPROVE_EXPENSE"
+    MANAGE_GOVERNANCE = "MANAGE_GOVERNANCE"  # deletion of governance records on request (QF); super admin only
 
 
 ROLE_PERMISSIONS: Dict[UserRole, Set[Permission]] = {

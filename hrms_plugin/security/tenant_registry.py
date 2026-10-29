@@ -51,6 +51,11 @@ class LlmPolicy(BaseModel):
     voice_providers: Tuple[Literal["sarvam"], ...] = ()
     # Requests per minute on LLM- and voice-backed routes (QE-3); absent -> no limit, like daily_token_budget.
     requests_per_minute: Optional[StrictInt] = Field(default=None, ge=1)
+    # Highest data tier this tenant allows to leave (QF): 1 = schema metadata only, 2 = pseudonymised operational
+    # data. Raw PII (tier 3) never leaves. Default 1: fail closed until the tenant's DPA says otherwise.
+    max_data_tier: StrictInt = Field(default=1, ge=1, le=2)
+    region: Optional[StrictStr] = Field(default=None, pattern=r"^[a-z]{2,}(-[a-z0-9]+)*$")  # required provider region
+    egress_retention_days: Optional[StrictInt] = Field(default=None, ge=1)  # egress-log rows kept this long
 
 
 class TenantConfig(BaseModel):

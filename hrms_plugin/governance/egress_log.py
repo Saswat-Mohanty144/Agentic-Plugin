@@ -59,6 +59,22 @@ class EgressLog:
         rows = [r for k, r in self._store.get_all(NAMESPACE).items() if k.startswith(f"{tenant_id}:")]
         return sorted(rows, key=lambda r: r["at"], reverse=True)[:MAX_LISTED]
 
+    def purge(self, tenant_id: str, retention_days: int) -> int:
+        """Delete this tenant's rows older than the retention period (QF); returns how many were removed."""
+        cutoff = self._clock() - retention_days * DAY_SECONDS
+        old = [k for k, r in self._store.get_all(NAMESPACE).items()
+               if k.startswith(f"{tenant_id}:") and r.get("at", 0) < cutoff]
+        for key in old:
+            self._store.delete(NAMESPACE, key)
+        return len(old)
+
+    def delete_tenant(self, tenant_id: str) -> int:
+        """Deletion on request (QF): every egress row of this tenant. Daily token counters are kept for budgets."""
+        keys = [k for k in self._store.get_all(NAMESPACE) if k.startswith(f"{tenant_id}:")]
+        for key in keys:
+            self._store.delete(NAMESPACE, key)
+        return len(keys)
+
     def tokens_today(self, tenant_id: str) -> int:
         """Every token this tenant used in the current UTC day (one counter read, not a scan)."""
         row = self._store.get(DAILY_NAMESPACE, self._day_key(tenant_id, self._clock()))

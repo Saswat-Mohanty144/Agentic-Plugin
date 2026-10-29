@@ -21,7 +21,8 @@ def gateway(client, budget=None, log=None):
     gw = LLMGateway(
         config=LLMConfig(provider=LLMProvider.FAKE),
         egress_log=log,
-        policy_resolver=lambda tenant, provider: LlmPolicy(allowed_providers=("fake",), daily_token_budget=budget),
+        policy_resolver=lambda tenant, provider: LlmPolicy(
+            allowed_providers=("fake",), max_data_tier=2, daily_token_budget=budget),
     )
     gw.client = client
     return gw
@@ -226,7 +227,7 @@ async def test_eval_cases_run_as_the_configured_tenant(scripted):
     gw, _ = scripted(final("hi"))
     tenants = []
     original = gw.preflight
-    gw.preflight = lambda tenant: tenants.append(tenant) or original(tenant)
+    gw.preflight = lambda tenant, *tier: tenants.append(tenant) or original(tenant, *tier)
     await run_case(EvalCase("g", "hi", "IN", UserRole.EMPLOYEE, None), gw, tenant_id="acme")
     assert set(tenants) == {"acme"}
 

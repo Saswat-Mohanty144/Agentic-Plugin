@@ -8,7 +8,11 @@ from hrms_plugin.security.tenant_registry import LlmPolicy, TenantRegistry, load
 
 
 class LlmNotAllowed(Exception):
-    """This tenant may not send data to the configured LLM provider."""
+    """This tenant may not send data to the configured LLM provider (or not at this data tier / region)."""
+
+    def __init__(self, message: str = "", code: str = "LLM_NOT_ALLOWED_FOR_TENANT"):
+        super().__init__(message)
+        self.code = code
 
 
 class LlmBudgetExceeded(Exception):

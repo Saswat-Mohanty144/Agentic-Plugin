@@ -53,6 +53,12 @@ class LLMProvider(str, Enum):
     NVIDIA = "nvidia"
 
 
+# Data tier each task sends (QF): schema extraction carries field names only; everything else carries pseudonymised
+# operational data. Raw PII (tier 3) is never sent because every payload is redacted first.
+TIER_SCHEMA_ONLY = 1
+TIER_PSEUDONYMISED = 2
+
+
 class TaskClass(str, Enum):
     EXTRACTION = "EXTRACTION"
     CLASSIFICATION = "CLASSIFICATION"
@@ -788,6 +794,8 @@ class LLMGateway:
             policy_resolver = policy_resolver or env_policy_resolver()
         self.egress_log = egress_log
         self.policy_resolver = policy_resolver
+        # Region of the provider endpoint, set by the deployment; checked against a tenant's residency rule (QF).
+        self.provider_region: Optional[str] = (os.environ.get("LLM_PROVIDER_REGION") or None) if from_env else None
 
     def policy_for(self, tenant_id: str) -> Any:
         from hrms_plugin.security.tenant_registry import LlmPolicy
@@ -795,15 +803,24 @@ class LLMGateway:
         if self.policy_resolver is None:
             # Fail closed (agy G-F8): without a resolver only the in-process fake provider may run (tests).
             if self.config.provider is LLMProvider.FAKE:
-                return LlmPolicy(allowed_providers=("fake",))
+                return LlmPolicy(allowed_providers=("fake",), max_data_tier=TIER_PSEUDONYMISED)
             from hrms_plugin.governance.llm_policy import LlmNotAllowed
 
             raise LlmNotAllowed(f"no LLM policy resolver configured for provider {self.config.provider.value!r}")
         return self.policy_resolver(tenant_id, self.config.provider.value)
 
-    def preflight(self, tenant_id: str) -> Any:
-        """Everything that must hold before a call leaves: tenant policy (G2) and daily budget (H4)."""
+    def preflight(self, tenant_id: str, data_tier: int = TIER_PSEUDONYMISED) -> Any:
+        """Everything that must hold before a call leaves: tenant policy (G2), data tier and residency (QF) and the
+        daily budget (H4)."""
+        from hrms_plugin.governance.llm_policy import LlmNotAllowed
+
         policy = self.policy_for(tenant_id)
+        if data_tier > policy.max_data_tier:
+            raise LlmNotAllowed(f"tenant {tenant_id!r} allows data tier {policy.max_data_tier}, task needs {data_tier}",
+                                code="DATA_TIER_NOT_ALLOWED")
+        if policy.region is not None and policy.region != self.provider_region:
+            raise LlmNotAllowed(f"tenant {tenant_id!r} requires region {policy.region!r}",
+                                code="DATA_RESIDENCY_MISMATCH")
         if policy.daily_token_budget is not None:
             if self.egress_log is None:
                 raise LLMNotConfigured("a token budget needs the egress log to count usage")
@@ -974,7 +991,10 @@ class LLMGateway:
         pii: Optional[PiiSession] = None,
     ) -> LLMResponse:
         """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C)."""
-        policy = self.preflight(tenant_id)  # LlmNotAllowed / LlmBudgetExceeded before anything is sent (G2, H4)
+        tier = TIER_SCHEMA_ONLY if task_class is TaskClass.EXTRACTION else TIER_PSEUDONYMISED
+        policy = self.preflight(tenant_id, tier)  # refused before anything is sent (G2, H4, QF)
+        if policy.egress_retention_days and self.egress_log is not None:
+            self.egress_log.purge(tenant_id, policy.egress_retention_days)
         pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
         # Pin deterministic temperature for high-stakes tasks
         effective_temp = 0.0 if task_class in (TaskClass.SCORING, TaskClass.EVALUATION) else temperature
