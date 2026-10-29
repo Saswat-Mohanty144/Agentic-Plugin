@@ -207,6 +207,8 @@ async def _post_with_retry(
 class BaseLLMClient(ABC):
     # True when chat_stream's "done" event carries {"usage": ...}; budgeted tenants never stream otherwise (piece H4)
     stream_reports_usage = False
+    # True when chat()/chat_stream() accept tool_choice="none": tools stay in the cached prefix, no call is possible
+    supports_tool_choice_none = False
     """Abstract client contract for LLM backends."""
 
     def __init__(self, config: LLMConfig):
@@ -519,6 +521,7 @@ class OpenAICompatibleClient(BaseLLMClient):
 
 class AnthropicClient(BaseLLMClient):
     stream_reports_usage = True
+    supports_tool_choice_none = True
     """Claude via the official Anthropic SDK (piece E1). Follows the bundled claude-api reference:
     adaptive thinking (parameter omitted), effort via output_config, no temperature, server-side refusal fallback.
     """
@@ -586,6 +589,7 @@ class AnthropicClient(BaseLLMClient):
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,  # accepted for interface parity; never sent (400 since 2026-10-21)
+        tool_choice: Optional[str] = None,
     ) -> LLMResponse:
         system_parts, converted = self._convert(messages)
         kwargs: Dict[str, Any] = {
@@ -604,6 +608,9 @@ class AnthropicClient(BaseLLMClient):
             ]
         if tools:
             kwargs["tools"] = [t.to_anthropic_schema() for t in tools]
+            if tool_choice == "none":
+                # tool_choice changes keep the tools+system cache (invalidation hierarchy), unlike dropping tools
+                kwargs["tool_choice"] = {"type": "none"}
         response = await self._client.beta.messages.create(**kwargs)
         usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
         for cache_field in ("cache_creation_input_tokens", "cache_read_input_tokens"):
@@ -635,11 +642,13 @@ class AnthropicClient(BaseLLMClient):
         messages: List[ChatMessage],
         tools: Optional[List[ToolDefinition]] = None,
         temperature: Optional[float] = None,
+        tool_choice: Optional[str] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        resp = await self.chat(messages, tools, temperature)
+        resp = await self.chat(messages, tools, temperature, tool_choice=tool_choice)
+        yield {"event": "usage", "data": resp.usage}  # first, so an abandoned stream is still accounted (agy H-F3)
         if resp.content:
             yield {"event": "token", "data": resp.content}
-        yield {"event": "done", "data": {"finish_reason": resp.finish_reason, "usage": resp.usage}}
+        yield {"event": "done", "data": {"finish_reason": resp.finish_reason}}
 
 
 class GeminiClient(BaseLLMClient):
@@ -994,11 +1003,15 @@ class LLMGateway:
         tenant_id: str = "DEFAULT",
         pii: Optional[PiiSession] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        """Stream SSE events; PII is redacted before sending and tokens are restored in streamed text."""
+        """Stream the FINAL TEXT answer. Text only: no tool call can come back (agy H-F6). Tools are sent only where
+        the provider can forbid their use (tool_choice none), so the cached tools prefix still matches (agy H-F1).
+        PII is redacted before sending and restored in streamed text; usage is recorded even if the consumer stops
+        early (agy H-F3)."""
         policy = self.preflight(tenant_id)
+        offered = tools if (tools and self.client.supports_tool_choice_none) else None
         if policy.daily_token_budget is not None and not self.client.stream_reports_usage:
             # A budget must see every token: use the call that reports usage, then re-emit its text (piece H4).
-            resp = await self.chat(messages, tools, tenant_id=tenant_id, pii=pii)
+            resp = await self.chat(messages, None, tenant_id=tenant_id, pii=pii)
             if resp.content:
                 yield {"event": "token", "data": resp.content}
             yield {"event": "done", "data": {"finish_reason": resp.finish_reason}}
@@ -1007,23 +1020,38 @@ class LLMGateway:
         protected = self._protect(messages, pii)
         egress_key = self._record_egress(tenant_id, protected)
         restorer = StreamRestorer(pii)
-        usage: Dict[str, Any] = {}
-        async for chunk in self.client.chat_stream(protected, tools):
-            if chunk.get("event") == "done" and isinstance(chunk.get("data"), dict):
-                usage = chunk["data"].get("usage") or {}
-            if chunk.get("event") == "token":
-                text = restorer.feed(str(chunk.get("data", "")))
-                if text:
-                    yield {**chunk, "data": text}
-                continue
+        status = "ABORTED"
+        kwargs = {"tool_choice": "none"} if offered else {}
+        try:
+            async for chunk in self.client.chat_stream(protected, offered, **kwargs):
+                event = chunk.get("event")
+                data = chunk.get("data")
+                if event == "usage" or (event == "done" and isinstance(data, dict) and data.get("usage")):
+                    usage = data if event == "usage" else data["usage"]
+                    if isinstance(usage, dict):
+                        self._finish_egress(egress_key, **self._usage_fields(usage))
+                    if event == "usage":
+                        continue
+                if event == "token":
+                    text = restorer.feed(str(data or ""))
+                    if text:
+                        yield {**chunk, "data": text}
+                    continue
+                pending = restorer.flush()
+                if pending:
+                    yield {"event": "token", "data": pending}
+                yield {**chunk, "data": pii.restore_obj(data)}
             pending = restorer.flush()
             if pending:
                 yield {"event": "token", "data": pending}
-            yield {**chunk, "data": pii.restore_obj(chunk.get("data"))}
-        pending = restorer.flush()
-        if pending:
-            yield {"event": "token", "data": pending}
-        self._finish_egress(egress_key, status="COMPLETED", **(self._usage_fields(usage) if usage else {}))
+            status = "COMPLETED"
+        except GeneratorExit:
+            raise  # consumer stopped: status stays ABORTED
+        except BaseException:
+            status = "FAILED"
+            raise
+        finally:
+            self._finish_egress(egress_key, status=status)
 
     async def complete(
         self,

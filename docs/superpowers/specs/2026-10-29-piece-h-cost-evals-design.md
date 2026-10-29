@@ -21,13 +21,15 @@ max 4 breakpoints, Opus 5.5 minimum 512 tokens, top-level automatic caching, usa
   first, the per-request block (jurisdiction, tenant, context) second. `AnthropicClient` renders system as text
   blocks; the FIRST block gets `cache_control: {"type": "ephemeral"}` (caches tools + frozen system), and the request
   carries top-level `cache_control: {"type": "ephemeral"}` (automatic caching for the growing ReAct tail). 5-minute
-  TTL: ReAct turns are seconds apart. Other providers keep joining system text (no behaviour change).
+  TTL: ReAct turns are seconds apart. Other providers receive the two system messages separately (OpenAI-compatible: two `system` messages; Gemini: two `system_instruction` parts — previously Gemini kept only the last one, a bug fixed here). (agy H-F7: wording corrected.)
+- H1a (agy H-F1/F6) `chat_stream` is the final-text call only: it sends the same tools with `tool_choice: none` where the provider supports it (Anthropic; a `tool_choice` change keeps the tools+system cache), otherwise no tools; it can never return a tool call.
 - H2 Tools are sorted by name in `definitions_for` (deterministic prefix).
 - H3 Usage: `cache_creation_input_tokens` and `cache_read_input_tokens` are recorded alongside input/output in
-  `LLMResponse.usage` and the egress log. The Anthropic stream `done` event carries usage; the gateway records it.
+  `LLMResponse.usage` and the egress log. The Anthropic stream emits a `usage` event FIRST (not forwarded to the
+  client); the gateway records it at once and marks the row COMPLETED / ABORTED (consumer stopped) / FAILED (agy H-F3).
 - H4 Per-tenant budget: `LlmPolicy.daily_token_budget: Optional[int] (>=1)`. Absent → no cap (value is owner input:
   NEEDS_HUMAN). Day = UTC calendar day. Counted = input + output + cache_creation + cache_read tokens of the
-  tenant's egress rows that day (all rows, not the 200-row listing). Checked before every send (chat and stream);
+  tenant's egress rows that day, kept as a running per-tenant/day counter updated with each row's delta (agy H-F4). Checked before every send (chat and stream);
   exceeded → `LlmBudgetExceeded` → HTTP 429 `{"error": "LLM_BUDGET_EXHAUSTED"}` (in-band SSE error event if it trips between ReAct turns of a stream). A tenant with a budget never
   streams through a client whose stream reports no usage: the gateway uses `chat` and re-emits the text.
   Known bound: concurrent in-flight calls can overshoot by at most (concurrency × one call); documented, not hidden.

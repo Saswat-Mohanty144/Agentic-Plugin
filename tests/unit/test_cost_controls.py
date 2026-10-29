@@ -102,11 +102,12 @@ async def test_anthropic_usage_includes_cache_fields():
     }
 
 
-async def test_anthropic_stream_done_event_carries_usage():
+async def test_anthropic_stream_reports_usage_first():
+    # usage leads the stream so a consumer that stops after the first token is still accounted (agy H-F3)
     wire = Wire(anthropic_reply([{"type": "text", "text": "x"}]))
     events = [e async for e in anthropic_client(wire).chat_stream([ChatMessage(role="user", content="q")])]
-    assert events[-1]["event"] == "done"
-    assert events[-1]["data"]["usage"]["input_tokens"] == 7 and events[-1]["data"]["usage"]["output_tokens"] == 3
+    assert [e["event"] for e in events] == ["usage", "token", "done"]
+    assert events[0]["data"]["input_tokens"] == 7 and events[0]["data"]["output_tokens"] == 3
 
 
 class Client(BaseLLMClient):

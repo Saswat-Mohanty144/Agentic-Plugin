@@ -52,7 +52,11 @@ def tool_result_content(output: Any) -> str:
     """Compact JSON for the LLM; an oversized result becomes an explicit error instead of silent truncation."""
     text = json.dumps(output, default=str, separators=(",", ":"))
     if len(text) > MAX_TOOL_RESULT_CHARS:
-        return json.dumps({"error": "TOOL_OUTPUT_TOO_LARGE", "chars": len(text)}, separators=(",", ":"))
+        replacement: Dict[str, Any] = {"error": "TOOL_OUTPUT_TOO_LARGE", "chars": len(text)}
+        code = output.get("error") if isinstance(output, dict) else None
+        if isinstance(code, str) and len(code) <= 100:
+            replacement["tool_error"] = code  # keep the tool's own error code visible (agy H-F8)
+        return json.dumps(replacement, separators=(",", ":"))
     return text
 
 
@@ -336,6 +340,7 @@ class AgenticOrchestrator:
                 )
             yield {"event": "thinking", "data": "Synthesizing verified compliant response..."}
 
-        async for chunk in self.llm_gateway.chat_stream(messages, tenant_id=tenant_id, pii=state.pii):
+        # Same tools as the first turn so the cached prefix matches; the gateway forbids their use here (agy H-F1).
+        async for chunk in self.llm_gateway.chat_stream(messages, tools=tools, tenant_id=tenant_id, pii=state.pii):
             yield chunk
         yield {"event": "intent", "data": self._intent(state).value}

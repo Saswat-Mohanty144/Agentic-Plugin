@@ -1,0 +1,99 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed! (0 errors)",
+    "pytest": "1080 passed in 34.35s",
+    "node": "79 pass, 0 fail"
+  },
+  "requirements_checked": 16,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "cost",
+      "file": "hrms_plugin/agents/orchestrator.py",
+      "line": 339,
+      "requirement": "H1",
+      "finding": "AgenticOrchestrator.run_stream omits tools when calling chat_stream, altering the prompt prefix in turn 2 and breaking Anthropic prompt caching prefix stability across ReAct streaming turns.",
+      "evidence": "In hrms_plugin/agents/orchestrator.py:339, line 339 calls `async for chunk in self.llm_gateway.chat_stream(messages, tenant_id=tenant_id, pii=state.pii):` without passing `tools=tools` (which is present in line 294 and passed in line 305). Because tools render at position 0 in Anthropic Messages API, client.calls[0][\"tools\"] contains 15 tools while client.calls[1][\"tools\"] is None, causing a cache prefix miss on the synthesis turn.",
+      "reproduce": "Run `PYTHONPATH=. python -c 'import asyncio; from hrms_plugin.agents.orchestrator import AgenticOrchestrator; from hrms_plugin.agents.tools import AgenticToolRegistry; from hrms_plugin.security.rbac import AuthContext, UserRole; from tests.support.scripted_llm import scripted_gateway, tool_call, final; gw, client = scripted_gateway([tool_call(\"search_labor_regulations\", query=\"gratuity\"), final(\"ok\")]); orch = AgenticOrchestrator(llm_gateway=gw, tool_registry=AgenticToolRegistry()); auth = AuthContext(user_id=\"u\", tenant_id=\"t\", roles=frozenset({UserRole.SUPER_ADMIN})); asyncio.run(orch.run_stream(\"q\", jurisdiction=\"AE\", auth=auth).__anext__()); print(\"Call 0:\", len(client.calls[0][\"tools\"]), \"Call 1:\", client.calls[1][\"tools\"])'`. Output: `Call 0: 15 Call 1: None`."
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "category": "correctness",
+      "file": "hrms_plugin/evals/runner.py",
+      "line": 100,
+      "requirement": "H8",
+      "finding": "Live eval runner CLI unconditionally crashes with LlmNotAllowed because run_case hardcodes an unregistered tenant ID which fails closed in LLM preflight.",
+      "evidence": "hrms_plugin/evals/runner.py:27 defines `EVAL_TENANT = \"eval\"` and line 100 creates `AuthContext(user_id=\"eval\", tenant_id=EVAL_TENANT, ...)`. Line 127 calls `asyncio.run(run_all(LLMGateway()))`. When run with HRMS_EVAL_LIVE_APPROVED=1 and HRMS_TENANT_REGISTRY=tests/fixtures/tenant_registry.yaml, orchestrator.run() calls preflight(\"eval\"), which invokes registry_policy_resolver, raising `LlmNotAllowed: tenant 'eval' may not use LLM provider`.",
+      "reproduce": "Run `PYTHONPATH=. python -c 'import os; from hrms_plugin.evals import runner; os.environ[\"HRMS_EVAL_LIVE_APPROVED\"] = \"1\"; os.environ[\"LLM_PROVIDER\"] = \"fake\"; os.environ[\"HRMS_TENANT_REGISTRY\"] = \"tests/fixtures/tenant_registry.yaml\"; runner.main([\"--live\"])'`. Result: `hrms_plugin.governance.llm_policy.LlmNotAllowed: tenant 'eval' may not use LLM provider 'fake'`."
+    },
+    {
+      "id": "F3",
+      "severity": "HIGH",
+      "category": "security",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 1011,
+      "requirement": "H4",
+      "finding": "LLMGateway.chat_stream lacks exception and cancellation handling around stream iteration, allowing clients that disconnect mid-stream to bypass token accounting completely.",
+      "evidence": "In hrms_plugin/ai/llm.py:1008-1026, egress_key is recorded with status=\"SENT\". Line 1011 iterates `async for chunk in self.client.chat_stream(protected, tools):` without a try...finally block. If the client disconnects or the consumer breaks early before the stream finishes, line 1026 (`self._finish_egress`) is never reached. The row remains status=\"SENT\" with input_tokens=None, and tokens_today() records 0 tokens.",
+      "reproduce": "Run `PYTHONPATH=. python -c 'import asyncio; from hrms_plugin.ai.llm import LLMGateway, LLMConfig, LLMProvider, ChatMessage, BaseLLMClient; from hrms_plugin.governance.egress_log import EgressLog; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; from hrms_plugin.security.tenant_registry import LlmPolicy; class C(BaseLLMClient): stream_reports_usage = True; async def chat(*a, **kw): pass; async def chat_stream(*a, **kw): yield {\"event\": \"token\", \"data\": \"x\"}; yield {\"event\": \"done\", \"data\": {\"usage\": {\"input_tokens\": 500}}}; log = EgressLog(MemoryKeyValueStore()); gw = LLMGateway(LLMConfig(LLMProvider.FAKE), egress_log=log, policy_resolver=lambda t, p: LlmPolicy(allowed_providers=(\"fake\",), daily_token_budget=1000)); gw.client = C(gw.config); async def run(): async for c in gw.chat_stream([ChatMessage(role=\"user\", content=\"q\")], tenant_id=\"acme\"): break; asyncio.run(run()); print(\"tokens_today:\", log.tokens_today(\"acme\"), \"row:\", log.list(\"acme\")[0][\"status\"])'`. Output: `tokens_today: 0 row: SENT`."
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "cost",
+      "file": "hrms_plugin/governance/egress_log.py",
+      "line": 48,
+      "requirement": "H4",
+      "finding": "EgressLog.tokens_today performs an unindexed full table scan and deserializes all historical JSON records across all tenants in SQLite on every LLM call.",
+      "evidence": "In hrms_plugin/governance/egress_log.py:46-51, `tokens_today` calls `self._store.get_all(NAMESPACE).items()`. In SqliteKeyValueStore (hrms_plugin/storage/sqlite_store.py:142-159), `get_all` performs `SELECT key, value FROM kv_store WHERE namespace = ?` and executes `json.loads(val_str)` on every row in the database table regardless of tenant or timestamp. Because preflight() runs on every ReAct iteration, this blocks the storage lock and degrades latency with O(N) database growth.",
+      "reproduce": "Seed 2,000 records across tenants into SqliteKeyValueStore for NAMESPACE='llm_egress'. Call `egress_log.tokens_today('tenant_1')`. Benchmark shows ~23 ms per call spent loading and deserializing all 2,000 JSON entries across all tenants for a single token check."
+    },
+    {
+      "id": "F5",
+      "severity": "MEDIUM",
+      "category": "test-quality",
+      "file": "tests/unit/test_cost_controls.py",
+      "line": 256,
+      "requirement": "H4",
+      "finding": "HTTP 429 budget enforcement tests bypass the actual preflight and egress log checking code by monkeypatching agent methods, and mid-stream SSE budget exhaustion has zero test coverage.",
+      "evidence": "In tests/unit/test_cost_controls.py:256, `monkeypatch.setattr(agent, \"process_agentic\", over_budget)` replaces the orchestrator execution with a static raise of LlmBudgetExceeded. In line 271, `monkeypatch.setattr(agent.get_orchestrator().llm_gateway, \"preflight\", refuse)` directly mocks preflight. Neither test verifies that exceeding daily_token_budget via egress_log.tokens_today actually triggers 429 via HTTP. Furthermore, the in-band SSE error yield in app.py:253-254 (`except LlmBudgetExceeded: yield ... LLM_BUDGET_EXHAUSTED`) is never executed or tested in any test.",
+      "reproduce": "Inspect tests/unit/test_cost_controls.py lines 248-276. Remove or comment out lines 253-254 in hrms_plugin/server/app.py: `pytest tests/unit/test_cost_controls.py` still passes completely (100%), proving zero test coverage for mid-stream budget error handling."
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 1001,
+      "requirement": "H4",
+      "finding": "When a budgeted tenant streams with a provider whose stream does not report usage, LLMGateway.chat_stream calls self.chat but silently drops any tool_calls returned by the model.",
+      "evidence": "In hrms_plugin/ai/llm.py:999-1005: `if policy.daily_token_budget is not None and not self.client.stream_reports_usage: resp = await self.chat(messages, tools, ...); if resp.content: yield {\"event\": \"token\", \"data\": resp.content}; yield {\"event\": \"done\", \"data\": {\"finish_reason\": resp.finish_reason}}; return`. If the model responds with tool calls (e.g. `resp.tool_calls` populated, finish_reason=\"tool_calls\"), no tool_call events are yielded, dropping the model output.",
+      "reproduce": "Configure a budgeted tenant using OpenAICompatibleClient or a client with stream_reports_usage=False. Call `chat_stream` with tools where the model invokes a tool. The generator emits only `done` and drops all tool calls."
+    },
+    {
+      "id": "F7",
+      "severity": "LOW",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 673,
+      "requirement": "H1",
+      "finding": "Gemini and OpenAI providers do not join multiple system messages as stated in decision H1, instead passing multiple separate system parts or messages.",
+      "evidence": "Decision H1 in docs/superpowers/specs/2026-10-29-piece-h-cost-evals-design.md states: 'Other providers keep joining system text (no behaviour change).'. In hrms_plugin/ai/llm.py:673, GeminiClient appends multiple parts into `system_instruction[\"parts\"]` without joining. In line 426, OpenAICompatibleClient passes multiple messages with `role: \"system\"` without joining.",
+      "reproduce": "Inspect hrms_plugin/ai/llm.py lines 672-674 and line 426: messages with role 'system' are not concatenated into a single string."
+    },
+    {
+      "id": "F8",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/agents/orchestrator.py",
+      "line": 54,
+      "requirement": "H5",
+      "finding": "tool_result_content replaces oversized tool error outputs with TOOL_OUTPUT_TOO_LARGE, masking the underlying error code from LLM reasoning.",
+      "evidence": "In hrms_plugin/agents/orchestrator.py:53-56: `text = json.dumps(output, default=str, separators=(\",\", \":\")); if len(text) > MAX_TOOL_RESULT_CHARS: return json.dumps({\"error\": \"TOOL_OUTPUT_TOO_LARGE\", \"chars\": len(text)}, ...)`. If a tool execution produces an error response with extensive details exceeding 20,000 characters (e.g., error: COMPLIANCE_VIOLATIONS or SCHEMA_DRIFT), the specific error is replaced by TOOL_OUTPUT_TOO_LARGE for the LLM.",
+      "reproduce": "Pass an output dict `{\"error\": \"CUSTOM_ERROR\", \"details\": \"x\" * 20000}` to `tool_result_content()`. It returns `{\"error\":\"TOOL_OUTPUT_TOO_LARGE\",\"chars\":20033}`, discarding the original error key."
+    }
+  ]
+}

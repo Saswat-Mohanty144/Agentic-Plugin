@@ -2,7 +2,8 @@
 
 Offline (CI): the caller supplies the LLM gateway (a scripted double) — proves the harness and scorer.
 Live: `python -m hrms_plugin.evals.runner --live` uses the configured provider and SPENDS MONEY; it refuses to run
-unless HRMS_EVAL_LIVE_APPROVED=1 is set by the person who approved the budget.
+unless HRMS_EVAL_LIVE_APPROVED=1 is set by the person who approved the budget, and HRMS_EVAL_TENANT names a registered
+tenant whose llm_policy allows the provider (the gateway fails closed for any other tenant).
 """
 
 from __future__ import annotations
@@ -94,10 +95,10 @@ class _RecordingRegistry(AgenticToolRegistry):
         return {"eval_stub": True, "tool": tool_name}
 
 
-async def run_case(case: EvalCase, gateway: LLMGateway) -> EvalResult:
+async def run_case(case: EvalCase, gateway: LLMGateway, tenant_id: str = EVAL_TENANT) -> EvalResult:
     registry = _RecordingRegistry()
     orchestrator = AgenticOrchestrator(llm_gateway=gateway, tool_registry=registry, max_iterations=2)
-    auth = AuthContext(user_id="eval", tenant_id=EVAL_TENANT, roles=frozenset({case.role}))
+    auth = AuthContext(user_id="eval", tenant_id=tenant_id, roles=frozenset({case.role}))
     response = await orchestrator.run(case.prompt, jurisdiction=case.jurisdiction, auth=auth)
     names = [tc["name"] for tc in response.tool_calls]  # includes calls refused by RBAC
     return score(case, names)
@@ -110,8 +111,10 @@ def prefix_chars(role: UserRole) -> int:
     return len(json.dumps([t.to_anthropic_schema() for t in tools], sort_keys=True)) + len(SUPER_AGENT_SYSTEM_PROMPT)
 
 
-async def run_all(gateway: LLMGateway, cases: Optional[List[EvalCase]] = None) -> List[EvalResult]:
-    return [await run_case(c, gateway) for c in (cases or load_cases())]
+async def run_all(
+    gateway: LLMGateway, cases: Optional[List[EvalCase]] = None, tenant_id: str = EVAL_TENANT
+) -> List[EvalResult]:
+    return [await run_case(c, gateway, tenant_id) for c in (cases or load_cases())]
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -124,7 +127,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if os.environ.get("HRMS_EVAL_LIVE_APPROVED") != "1":
         print("refusing: live evals spend money; set HRMS_EVAL_LIVE_APPROVED=1 once the budget is approved")
         return 2
-    results = asyncio.run(run_all(LLMGateway()))
+    tenant_id = os.environ.get("HRMS_EVAL_TENANT", "")
+    if not tenant_id:
+        print("refusing: set HRMS_EVAL_TENANT to a registered tenant whose llm_policy allows the provider")
+        return 2
+    results = asyncio.run(run_all(LLMGateway(), tenant_id=tenant_id))
     for r in results:
         print(json.dumps(r.__dict__))
     passed = sum(r.passed for r in results)

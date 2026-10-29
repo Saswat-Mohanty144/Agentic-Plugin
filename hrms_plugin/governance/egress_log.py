@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import secrets
+import threading
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 from hrms_plugin.storage.base import BaseKeyValueStore
 
 NAMESPACE = "llm_egress"
+DAILY_NAMESPACE = "llm_egress_daily"  # running token total per tenant and UTC day (agy H-F4: no full scans)
 MAX_LISTED = 200
 DAY_SECONDS = 86400
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
@@ -18,6 +20,15 @@ class EgressLog:
     def __init__(self, store: BaseKeyValueStore, clock: Callable[[], float] = time.time):
         self._store = store
         self._clock = clock
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _day_key(tenant_id: str, at: float) -> str:
+        return f"{tenant_id}:{int(at // DAY_SECONDS)}"
+
+    @staticmethod
+    def _tokens(row: Dict[str, Any]) -> int:
+        return sum(row.get(f) or 0 for f in TOKEN_FIELDS)
 
     def record(self, *, tenant_id: str, provider: str, model: str, payload_sha256: str,
                redacted_kinds: Dict[str, int], input_tokens: Optional[int] = None,
@@ -31,21 +42,24 @@ class EgressLog:
         return key
 
     def update(self, key: str, **fields: Any) -> None:
-        row = self._store.get(NAMESPACE, key)
-        if row is not None:
+        with self._lock:
+            row = self._store.get(NAMESPACE, key)
+            if row is None:
+                return
+            before = self._tokens(row)
             row.update(fields)
             self._store.set(NAMESPACE, key, row)
+            delta = self._tokens(row) - before
+            if delta:
+                day_key = self._day_key(row["tenant_id"], row["at"])
+                total = (self._store.get(DAILY_NAMESPACE, day_key) or {}).get("tokens", 0)
+                self._store.set(DAILY_NAMESPACE, day_key, {"tokens": total + delta})
 
     def list(self, tenant_id: str) -> List[Dict[str, Any]]:
         rows = [r for k, r in self._store.get_all(NAMESPACE).items() if k.startswith(f"{tenant_id}:")]
         return sorted(rows, key=lambda r: r["at"], reverse=True)[:MAX_LISTED]
 
     def tokens_today(self, tenant_id: str) -> int:
-        """Every token this tenant used in the current UTC day, over all rows (not the capped listing)."""
-        day_start = self._clock() // DAY_SECONDS * DAY_SECONDS
-        return sum(
-            r.get(f) or 0
-            for k, r in self._store.get_all(NAMESPACE).items()
-            if k.startswith(f"{tenant_id}:") and r["at"] >= day_start
-            for f in TOKEN_FIELDS
-        )
+        """Every token this tenant used in the current UTC day (one counter read, not a scan)."""
+        row = self._store.get(DAILY_NAMESPACE, self._day_key(tenant_id, self._clock()))
+        return int((row or {}).get("tokens", 0))
