@@ -7,6 +7,7 @@ enabling voice-driven attendance punches, leave inquiries, and conversational HR
 from __future__ import annotations
 
 import base64
+import contextlib
 import logging
 from typing import Any, Dict, Optional
 
@@ -15,6 +16,24 @@ import httpx
 logger = logging.getLogger(__name__)
 
 SARVAM_API_URL = "https://api.sarvam.ai"
+
+
+class VoiceUpstreamError(Exception):
+    """Sarvam failed or timed out; the API answers 502/504 instead of a 500 (GAPS-IO-1)."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+@contextlib.asynccontextmanager
+async def _upstream_errors():
+    try:
+        yield
+    except httpx.TimeoutException:
+        raise VoiceUpstreamError("VOICE_UPSTREAM_TIMEOUT") from None
+    except (httpx.HTTPError, ValueError):  # status errors, transport errors, non-JSON bodies
+        raise VoiceUpstreamError("VOICE_UPSTREAM_ERROR") from None
 
 
 class VoiceAgent:
@@ -61,7 +80,7 @@ class VoiceAgent:
             "with_diarization": "false",
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with _upstream_errors(), httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 f"{SARVAM_API_URL}/speech-to-text",
                 headers=headers,
@@ -111,7 +130,7 @@ class VoiceAgent:
             "model": model,
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with _upstream_errors(), httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 f"{SARVAM_API_URL}/text-to-speech",
                 headers=headers,

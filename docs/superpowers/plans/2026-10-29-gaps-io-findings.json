@@ -1,0 +1,62 @@
+{
+  "area": "GAPS-IO",
+  "tests_written": 90,
+  "pytest_summary": "89 passed, 1 xfailed in 1.38s",
+  "coverage": [
+    {
+      "behaviour": "Voice AI multimodal integration (Sarvam STT / TTS HTTP paths, mock fallback, audio boundaries, upstream errors)",
+      "positive": 4,
+      "boundary": 6,
+      "negative": 9
+    },
+    {
+      "behaviour": "LLM Provider Client adapters, streaming SSE framing, retry delays, and gateway preflight/egress",
+      "positive": 18,
+      "boundary": 5,
+      "negative": 10
+    },
+    {
+      "behaviour": "FrappeClient host interaction, document retrieval/patching, and submitted salary slip contract",
+      "positive": 3,
+      "boundary": 1,
+      "negative": 9
+    },
+    {
+      "behaviour": "WritebackService two-phase lifecycle, host error/unconfigured propagation, and rollback invariants",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 4
+    },
+    {
+      "behaviour": "Statutory PF payroll calculation, slip fingerprinting, and rule validation contracts",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 5
+    },
+    {
+      "behaviour": "Key-Value storage backends (SqliteKeyValueStore, InMemoryKeyValueStore, MappingStore) TTL expiration, purging, corruption resilience",
+      "positive": 4,
+      "boundary": 3,
+      "negative": 3
+    }
+  ],
+  "findings": [
+    {
+      "id": "E2E-GAPS-IO-1",
+      "severity": "major",
+      "file": "hrms_plugin/server/app.py:285",
+      "test": "test_e2e_voice_transcribe_upstream_error_defect",
+      "summary": "/v1/voice/transcribe (and synthesize/turn) raises unhandled httpx.HTTPStatusError (HTTP 500) on upstream Sarvam failures instead of returning gateway error 502/504",
+      "expected": "Safe invariant: no 500 on upstream host errors; upstream Sarvam STT/TTS HTTP failures must fail closed with HTTP 502 Bad Gateway or 504 Gateway Timeout (piece stabilise-and-auth \u00a76.9, \u00a72.2)",
+      "actual": "HTTP 500 Internal Server Error due to unhandled httpx.HTTPStatusError: Server error '500 Internal Server Error' for url 'https://api.sarvam.ai/speech-to-text'",
+      "repro": "app_module.voice_agent.api_key = 'k'; client.post('/v1/voice/transcribe', json={'audio_base64': '...'}, headers=bearer(roles=['staff'])) when Sarvam returns 500",
+      "resolution": "Fixed: VoiceAgent maps Sarvam timeouts to VOICE_UPSTREAM_TIMEOUT (504) and status/transport/non-JSON errors to VOICE_UPSTREAM_ERROR (502) on transcribe, synthesize and turn; tests/unit/test_gaps_fixes.py."
+    }
+  ],
+  "unreachable": [
+    {
+      "file:line": "hrms_plugin/ai/llm.py:37",
+      "why": "python-dotenv is an optional dependency not installed in this environment; ImportError jumps directly to except ImportError: pass at line 39."
+    }
+  ]
+}

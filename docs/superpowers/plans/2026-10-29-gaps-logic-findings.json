@@ -1,0 +1,116 @@
+{
+  "area": "GAPS-LOGIC",
+  "tests_written": 106,
+  "pytest_summary": "105 passed, 1 xfailed in 1.12s",
+  "coverage": [
+    {
+      "behaviour": "Declarative field mapping, path traversal, date/list transforms, and writeback projection",
+      "positive": 10,
+      "boundary": 6,
+      "negative": 4
+    },
+    {
+      "behaviour": "Canonical domain models and schema drift detection",
+      "positive": 4,
+      "boundary": 2,
+      "negative": 2
+    },
+    {
+      "behaviour": "OpenAPI & JSON schema introspection, heuristics and type discovery",
+      "positive": 5,
+      "boundary": 3,
+      "negative": 2
+    },
+    {
+      "behaviour": "Schema synthesizer mapping generation, token equivalence, and agentic synthesis",
+      "positive": 3,
+      "boundary": 2,
+      "negative": 1
+    },
+    {
+      "behaviour": "Shadow prober validation, warnings and canonical verification",
+      "positive": 1,
+      "boundary": 2,
+      "negative": 1
+    },
+    {
+      "behaviour": "Statutory payroll gross-to-net salary structuring, ceilings, and gratuity/EOSB calculations",
+      "positive": 6,
+      "boundary": 7,
+      "negative": 2
+    },
+    {
+      "behaviour": "Recruitment scoring, ATS bands, and candidate deduplication",
+      "positive": 3,
+      "boundary": 2,
+      "negative": 1
+    },
+    {
+      "behaviour": "Leave attendance evaluation, probation restrictions, and impossible travel detection",
+      "positive": 2,
+      "boundary": 3,
+      "negative": 2
+    },
+    {
+      "behaviour": "Onboarding offer band validation, statutory minimum wage, and KYC document checklists",
+      "positive": 4,
+      "boundary": 3,
+      "negative": 3
+    },
+    {
+      "behaviour": "Tool registry handler dispatch, parameter validation, and lifecycle execution",
+      "positive": 8,
+      "boundary": 2,
+      "negative": 3
+    },
+    {
+      "behaviour": "Supervisor routing heuristics, onboarding provisioning, and offboarding exit clearance",
+      "positive": 3,
+      "boundary": 2,
+      "negative": 1
+    },
+    {
+      "behaviour": "Agentic orchestrator output collection, citations, and SSE streaming with tool execution",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 1
+    },
+    {
+      "behaviour": "MCP server tool discovery and execution across HRMS tools",
+      "positive": 7,
+      "boundary": 2,
+      "negative": 1
+    },
+    {
+      "behaviour": "PII detection, masking, tokenization, and money grouping",
+      "positive": 3,
+      "boundary": 3,
+      "negative": 2
+    },
+    {
+      "behaviour": "HTTP routes authentication, tenancy enforcement, and ReAct streaming",
+      "positive": 4,
+      "boundary": 2,
+      "negative": 5
+    }
+  ],
+  "findings": [
+    {
+      "id": "E2E-GAPS-LOGIC-1",
+      "severity": "major",
+      "file": "hrms_plugin/security/pii.py:271",
+      "test": "test_pii_session_learn_decimal_compensation",
+      "summary": "PiiSession._learn_money omits Decimal in isinstance check, failing to learn or redact canonical compensation values",
+      "expected": "Per Decision G3 (docs/superpowers/specs/2026-10-29-piece-g-governance-design.md:12) and Decision C2 (docs/superpowers/specs/2026-10-29-piece-c-data-protection-design.md:26), when tokenize_compensation is enabled, compensation fields must be tokenised. Since canonical models store compensation as Decimal (e.g. CanonicalEmployee.salary), Decimal amounts must be learned and redacted.",
+      "actual": "_learn_money checks isinstance(value, (int, float, str)) which evaluates to False for Decimal values, silently ignoring them and allowing plaintext compensation numbers to reach LLM prompts without tokenisation.",
+      "repro": "s = PiiSession(tokenize_compensation=True); s.learn({'salary': Decimal('45000.00')}); assert s.find_pii('salary 45000.00') == ['COMPENSATION']",
+      "resolution": "Fixed: PiiSession._learn_money accepts Decimal; nested Decimal tool output is tokenised; tests/unit/test_gaps_fixes.py."
+    }
+  ],
+  "unreachable": [
+    {
+      "file:line": "hrms_plugin/schema/prober.py:98",
+      "why": "mapping.external_id raises MappingError whenever the resolved value is in (None, ''). Therefore ext_id can never be an empty string when external_id completes normally, making 'if not ext_id:' dead code."
+    }
+  ]
+}

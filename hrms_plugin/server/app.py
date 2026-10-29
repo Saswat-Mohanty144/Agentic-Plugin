@@ -28,7 +28,7 @@ from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
-from hrms_plugin.agents.voice import VoiceAgent
+from hrms_plugin.agents.voice import VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
@@ -826,6 +826,10 @@ async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=exc.body, headers=exc.headers)
 
 
+async def _voice_upstream_error_handler(request: Request, exc: VoiceUpstreamError) -> JSONResponse:
+    return JSONResponse(status_code=504 if exc.code == "VOICE_UPSTREAM_TIMEOUT" else 502, content={"error": exc.code})
+
+
 async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JSONResponse:
     status = WRITEBACK_STATUS.get(exc.code, 500)
     return JSONResponse(status_code=status, content={"error": exc.code, "detail": exc.detail})
@@ -886,6 +890,7 @@ def create_app(
     application.add_exception_handler(LlmNotAllowed, _llm_not_allowed_handler)
     application.add_exception_handler(LlmBudgetExceeded, _llm_budget_exceeded_handler)
     application.add_exception_handler(WritebackError, _writeback_error_handler)
+    application.add_exception_handler(VoiceUpstreamError, _voice_upstream_error_handler)
     application.include_router(router)
     return application
 

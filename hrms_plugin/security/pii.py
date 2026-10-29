@@ -268,7 +268,7 @@ class PiiSession:
     def _learn_money(self, value: Any) -> None:
         if isinstance(value, bool):
             return
-        if isinstance(value, (int, float, str)):
+        if isinstance(value, (int, float, str, Decimal)):  # tool outputs keep Decimal (GAPS-LOGIC-1)
             for variant in money_variants(value):
                 self._known[normalise(variant).casefold()] = "COMPENSATION"
         elif isinstance(value, dict):
