@@ -12,11 +12,6 @@ def client(make_client):
     return make_client()
 
 
-@pytest.fixture
-def mcp_server():
-    return HrmsMcpServer()
-
-
 def test_healthz_endpoint(client):
     """Test health check route."""
     res = client.get("/healthz")
@@ -73,23 +68,22 @@ def test_remediation_execute_endpoint(client, bearer):
     assert data["audit_tracing"]["X-Agent-Name"] == "StatutoryComplianceAuditor"
 
 
-def test_mcp_server_tool_listing_and_invocation(mcp_server):
-    """Test MCP server tools discovery and tool execution."""
-    tools = mcp_server.list_tools()
-    tool_names = [t.name for t in tools]
+def test_mcp_server_tool_listing_and_invocation():
+    """P11: over MCP, number-taking calculators are refused and lookups run through the validated registry."""
+    import asyncio
 
-    assert "hrms_query_labor_statutes" in tool_names
-    assert "hrms_calculate_payroll_ctc" in tool_names
-    assert "hrms_calculate_uae_eosb" in tool_names
-    assert "hrms_audit_compliance" in tool_names
+    from hrms_plugin.security.rbac import AuthContext, UserRole
 
-    # Test invoking hrms_calculate_uae_eosb
-    res = mcp_server.call_tool(
-        "hrms_calculate_uae_eosb",
-        {"basic_wage_monthly": 12000.0, "tenure_years": 5.0},
-    )
-    # 5 yrs * 21 days * 400 AED = 42,000 AED
-    assert res["total_eosb_gratuity"] == 42000.0
+    mcp = HrmsMcpServer(AuthContext(user_id="u", tenant_id="acme", roles=frozenset({UserRole.SUPER_ADMIN})),
+                        jurisdiction="AE")
+    names = {t.name for t in mcp.list_tools()}
+    assert "hrms_search_labor_regulations" in names and "hrms_audit_job_description_bias" in names
+    for refused in ("hrms_calculate_eosb_gratuity", "hrms_score_candidate_ats", "hrms_detect_travel_anomaly",
+                    "hrms_evaluate_leave_request"):
+        assert refused not in names
+        assert asyncio.run(mcp.call_tool(refused, {}))["error"] == "TOOL_NOT_AVAILABLE"
+    bias = asyncio.run(mcp.call_tool("hrms_audit_job_description_bias", {"jd_text": "Looking for rockstar ninja"}))
+    assert bias["has_bias"] is True
 
 
 def test_generate_requisition_archetypes_endpoint(client, bearer):

@@ -1,16 +1,24 @@
-"""Model Context Protocol (MCP) Server for the Agentic HRMS AI Plugin."""
+"""Model Context Protocol (MCP) adapter for the Agentic HRMS AI Plugin (P11).
+
+A thin adapter over AgenticToolRegistry, so MCP gets exactly the chat agent's guarantees: schema-validated
+arguments, permissions from the caller's AuthContext, and tenant and jurisdiction set by the server, never by tool
+arguments. Calculators that need user-stated numbers are not exposed: an MCP client is itself a model, and there is
+no user turn to ground its numbers against (No-LLM-Numbers gate).
+"""
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
-from hrms_plugin.agents.compliance import ComplianceAgent
-from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
-from hrms_plugin.agents.recruitment import RecruitmentAgent
-from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
-from hrms_plugin.rag.store import StatutoryKnowledgeBase
+from hrms_plugin.agents.tools import USER_STATED_PARAMS, AgenticToolRegistry
+from hrms_plugin.ai.llm import ToolDefinition
+from hrms_plugin.security.rbac import AuthContext
+
+PREFIX = "hrms_"
+SERVER_OWNED = ("tenant_id", "jurisdiction")
+JURISDICTIONS = ("IN", "AE", "SA", "US")
 
 
 class McpToolDefinition(BaseModel):
@@ -19,210 +27,39 @@ class McpToolDefinition(BaseModel):
     input_schema: Dict[str, Any]
 
 
-class HrmsMcpServer:
-    """Provides standard MCP tool definitions and handlers for AI assistants."""
+def _public_schema(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """The tool schema without the parameters only the server may set."""
+    properties = {k: v for k, v in parameters.get("properties", {}).items() if k not in SERVER_OWNED}
+    required = [r for r in parameters.get("required", []) if r not in SERVER_OWNED]
+    return {**parameters, "properties": properties, "required": required}
 
-    def __init__(self):
-        self.kb = StatutoryKnowledgeBase()
-        self.payroll = StatutoryPayrollAgent(kb=self.kb)
-        self.compliance = ComplianceAgent(kb=self.kb)
-        self.leave = LeaveAttendanceAgent()
-        self.recruitment = RecruitmentAgent()
+
+class HrmsMcpServer:
+    """MCP tools for one authenticated caller in one jurisdiction."""
+
+    def __init__(self, auth: AuthContext, jurisdiction: str = "IN", registry: Optional[AgenticToolRegistry] = None):
+        if jurisdiction not in JURISDICTIONS:
+            raise ValueError(f"jurisdiction must be one of {JURISDICTIONS}")
+        self.auth = auth
+        self.jurisdiction = jurisdiction
+        self.registry = registry or AgenticToolRegistry()
+
+    def _exposed(self) -> List[ToolDefinition]:
+        return [d for d in self.registry.definitions_for(self.auth) if d.name not in USER_STATED_PARAMS]
 
     def list_tools(self) -> List[McpToolDefinition]:
-        """Return registered MCP tools."""
-        return [
-            McpToolDefinition(
-                name="hrms_query_labor_statutes",
-                description=(
-                    "Search statutory labor laws and legal gazette citations across India, UAE, Saudi Arabia, and US."
-                ),
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "Legal topic, e.g. overtime, maternity, probation, gratuity",
-                        },
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"], "default": "IN"},
-                    },
-                    "required": ["query"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_calculate_payroll_ctc",
-                description="Calculate decimal-exact gross-to-net salary breakdown under India/UAE labor codes.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "annual_ctc": {"type": "number", "description": "Annual CTC in local currency"},
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE"], "default": "IN"},
-                        "basic_percent": {"type": "number", "default": 40.0},
-                    },
-                    "required": ["annual_ctc"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_calculate_uae_eosb",
-                description="Calculate End of Service Severance Gratuity (EOSB) under UAE Article 51.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "basic_wage_monthly": {"type": "number", "description": "Monthly basic wage in AED"},
-                        "tenure_years": {"type": "number", "description": "Completed years of service"},
-                    },
-                    "required": ["basic_wage_monthly", "tenure_years"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_audit_compliance",
-                description="Audit employee records or attendance logs for statutory labor violations.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "tenant_id": {"type": "string", "default": "TENANT-01"},
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"], "default": "AE"},
-                        "employees": {"type": "array", "items": {"type": "object"}},
-                    },
-                    "required": ["jurisdiction", "employees"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_score_candidate_ats",
-                description="Score candidate resume against job requisitions with explainable rubric.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "resume_text": {"type": "string"},
-                        "required_skills": {"type": "array", "items": {"type": "string"}},
-                        "required_experience_years": {"type": "number", "default": 3.0},
-                        "candidate_experience_years": {"type": "number", "default": 3.0},
-                    },
-                    "required": ["resume_text", "required_skills"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_audit_job_description",
-                description="Audit job descriptions for exclusionary/biased language and EEO compliance.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "jd_text": {"type": "string", "description": "Full job description text"},
-                    },
-                    "required": ["jd_text"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_evaluate_leave_request",
-                description="Evaluate employee leave requests against allocated balances and statutory rules.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "employee_id": {"type": "string"},
-                        "leave_type": {"type": "string", "default": "ANNUAL"},
-                        "requested_days": {"type": "number", "default": 2.0},
-                        "current_balance": {"type": "number", "default": 10.0},
-                    },
-                    "required": ["employee_id", "requested_days"],
-                },
-            ),
-            McpToolDefinition(
-                name="hrms_detect_impossible_travel",
-                description="Evaluate two consecutive GPS attendance punches for impossible travel velocity.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "punch1": {
-                            "type": "object",
-                            "properties": {
-                                "lat": {"type": "number"},
-                                "lng": {"type": "number"},
-                                "timestamp": {"type": "string"},
-                            },
-                        },
-                        "punch2": {
-                            "type": "object",
-                            "properties": {
-                                "lat": {"type": "number"},
-                                "lng": {"type": "number"},
-                                "timestamp": {"type": "string"},
-                            },
-                        },
-                    },
-                    "required": ["punch1", "punch2"],
-                },
-            ),
-        ]
+        return [McpToolDefinition(name=PREFIX + d.name, description=d.description,
+                                  input_schema=_public_schema(d.parameters)) for d in self._exposed()]
 
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute MCP tool invocation."""
-        if name == "hrms_query_labor_statutes":
-            query = arguments.get("query", "")
-            jur = arguments.get("jurisdiction", "IN")
-            citations = self.kb.search(query=query, jurisdiction=jur)
-            return {
-                "results": [
-                    {
-                        "act": c.act_name,
-                        "section": c.section_or_article,
-                        "title": c.title,
-                        "summary": c.summary,
-                        "citation": self.kb.format_citation(c),
-                    }
-                    for c in citations
-                ]
-            }
-
-        elif name == "hrms_calculate_payroll_ctc":
-            ctc = float(arguments.get("annual_ctc", 0.0))
-            jur = arguments.get("jurisdiction", "IN")
-            if jur == "AE":
-                res = self.payroll.structure_uae_salary(monthly_gross=ctc / 12.0)
-            else:
-                res = self.payroll.structure_india_salary(annual_ctc=ctc)
-            return res.model_dump()
-
-        elif name == "hrms_calculate_uae_eosb":
-            basic = float(arguments.get("basic_wage_monthly", 0.0))
-            tenure = float(arguments.get("tenure_years", 0.0))
-            res = self.payroll.calculate_uae_eosb(basic_wage_monthly=basic, tenure_years=tenure)
-            return res.model_dump()
-
-        elif name == "hrms_audit_compliance":
-            tenant_id = arguments.get("tenant_id", "TENANT-01")
-            jur = arguments.get("jurisdiction", "AE")
-            emps = arguments.get("employees", [])
-            report = self.compliance.audit_employees(tenant_id=tenant_id, jurisdiction=jur, employees=emps)
-            return report.model_dump()
-
-        elif name == "hrms_score_candidate_ats":
-            res = self.recruitment.score_candidate(
-                resume_text=arguments.get("resume_text", ""),
-                required_skills=arguments.get("required_skills", []),
-                required_experience_years=float(arguments.get("required_experience_years", 3.0)),
-                candidate_experience_years=float(arguments.get("candidate_experience_years", 3.0)),
-            )
-            return res.model_dump()
-
-        elif name == "hrms_audit_job_description":
-            res = self.recruitment.audit_job_description_bias(arguments.get("jd_text", ""))
-            return res.model_dump()
-
-        elif name == "hrms_evaluate_leave_request":
-            res = self.leave.evaluate_leave_request(
-                employee_id=arguments.get("employee_id", "EMP-001"),
-                leave_type=arguments.get("leave_type", "ANNUAL"),
-                requested_days=float(arguments.get("requested_days", 1.0)),
-                current_balance=float(arguments.get("current_balance", 10.0)),
-            )
-            return res.model_dump()
-
-        elif name == "hrms_detect_impossible_travel":
-            res = self.leave.detect_impossible_travel(
-                punch1=arguments.get("punch1", {}),
-                punch2=arguments.get("punch2", {}),
-            )
-            return res.model_dump()
-
-        else:
-            raise ValueError(f"Unknown MCP tool: {name}")
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        base = name[len(PREFIX):] if name.startswith(PREFIX) else None
+        definition = next((d for d in self._exposed() if d.name == base), None)
+        if definition is None:
+            return {"success": False, "error": "TOOL_NOT_AVAILABLE", "tool": name}
+        owned = sorted(set(arguments) & set(SERVER_OWNED))
+        if owned:
+            return {"success": False, "error": "SERVER_OWNED_ARGUMENT", "params": owned}
+        properties = definition.parameters.get("properties", {})
+        trusted = {"tenant_id": self.auth.tenant_id, "jurisdiction": self.jurisdiction}
+        args = {**arguments, **{k: v for k, v in trusted.items() if k in properties}}
+        return await self.registry.execute(definition.name, args)

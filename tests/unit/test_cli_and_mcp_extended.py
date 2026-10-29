@@ -29,29 +29,18 @@ def test_cli_check_bias(capsys):
 
 
 def test_mcp_extended_tools():
-    mcp = HrmsMcpServer()
-    tools = mcp.list_tools()
-    tool_names = [t.name for t in tools]
+    """P11: over MCP, number-taking calculators are refused and lookups run through the validated registry."""
+    import asyncio
 
-    assert "hrms_score_candidate_ats" in tool_names
-    assert "hrms_audit_job_description" in tool_names
-    assert "hrms_evaluate_leave_request" in tool_names
-    assert "hrms_detect_impossible_travel" in tool_names
+    from hrms_plugin.security.rbac import AuthContext, UserRole
 
-    # Test ATS scoring MCP tool
-    ats_res = mcp.call_tool(
-        "hrms_score_candidate_ats",
-        {
-            "resume_text": "Experienced Python developer with 4 years building FastAPI microservices.",
-            "required_skills": ["Python", "FastAPI"],
-            "required_experience_years": 3.0,
-            "candidate_experience_years": 4.0,
-        },
-    )
-    assert ats_res["composite_score"] >= 70
-
-    # Test Impossible travel MCP tool
-    punch1 = {"lat": 19.0760, "lng": 72.8777, "timestamp": "2026-09-24T09:00:00Z"}
-    punch2 = {"lat": 25.2048, "lng": 55.2708, "timestamp": "2026-09-24T10:00:00Z"}
-    travel_res = mcp.call_tool("hrms_detect_impossible_travel", {"punch1": punch1, "punch2": punch2})
-    assert travel_res["is_anomaly"] is True
+    mcp = HrmsMcpServer(AuthContext(user_id="u", tenant_id="acme", roles=frozenset({UserRole.SUPER_ADMIN})),
+                        jurisdiction="AE")
+    names = {t.name for t in mcp.list_tools()}
+    assert "hrms_search_labor_regulations" in names and "hrms_audit_job_description_bias" in names
+    for refused in ("hrms_calculate_eosb_gratuity", "hrms_score_candidate_ats", "hrms_detect_travel_anomaly",
+                    "hrms_evaluate_leave_request"):
+        assert refused not in names
+        assert asyncio.run(mcp.call_tool(refused, {}))["error"] == "TOOL_NOT_AVAILABLE"
+    bias = asyncio.run(mcp.call_tool("hrms_audit_job_description_bias", {"jd_text": "Looking for rockstar ninja"}))
+    assert bias["has_bias"] is True

@@ -1129,61 +1129,21 @@ async def test_orchestrator_run_stream_with_tool_calls(scripted):
 
 
 def test_mcp_server_all_tools_execution():
-    mcp = HrmsMcpServer()
+    """P11: over MCP, number-taking calculators are refused and lookups run through the validated registry."""
+    import asyncio
 
-    # hrms_query_labor_statutes
-    stat = mcp.call_tool("hrms_query_labor_statutes", {"query": "gratuity", "jurisdiction": "IN"})
-    assert "results" in stat and len(stat["results"]) >= 1
+    from hrms_plugin.security.rbac import AuthContext, UserRole
 
-    # hrms_calculate_payroll_ctc (India & UAE)
-    ctc_in = mcp.call_tool("hrms_calculate_payroll_ctc", {"annual_ctc": 1200000.0, "jurisdiction": "IN"})
-    assert ctc_in["annual_ctc"] == 1200000.0
-
-    ctc_ae = mcp.call_tool("hrms_calculate_payroll_ctc", {"annual_ctc": 240000.0, "jurisdiction": "AE"})
-    assert ctc_ae["monthly_gross"] == 20000.0
-
-    # hrms_calculate_uae_eosb
-    eosb = mcp.call_tool("hrms_calculate_uae_eosb", {"basic_wage_monthly": 10000.0, "tenure_years": 3.0})
-    assert eosb["total_eosb_gratuity"] == 21000.0
-
-    # hrms_audit_compliance
-    comp = mcp.call_tool(
-        "hrms_audit_compliance",
-        {"tenant_id": "acme", "jurisdiction": "AE", "employees": [{"name": "User 1"}]},
-    )
-    assert "violations_count" in comp and "total_records_audited" in comp
-
-    # hrms_score_candidate_ats
-    ats = mcp.call_tool(
-        "hrms_score_candidate_ats",
-        {"resume_text": "Experienced Python Engineer", "required_skills": ["Python"]},
-    )
-    assert ats["composite_score"] > 0.0
-
-    # hrms_audit_job_description
-    bias = mcp.call_tool("hrms_audit_job_description", {"jd_text": "Looking for rockstar ninja"})
+    mcp = HrmsMcpServer(AuthContext(user_id="u", tenant_id="acme", roles=frozenset({UserRole.SUPER_ADMIN})),
+                        jurisdiction="AE")
+    names = {t.name for t in mcp.list_tools()}
+    assert "hrms_search_labor_regulations" in names and "hrms_audit_job_description_bias" in names
+    for refused in ("hrms_calculate_eosb_gratuity", "hrms_score_candidate_ats", "hrms_detect_travel_anomaly",
+                    "hrms_evaluate_leave_request"):
+        assert refused not in names
+        assert asyncio.run(mcp.call_tool(refused, {}))["error"] == "TOOL_NOT_AVAILABLE"
+    bias = asyncio.run(mcp.call_tool("hrms_audit_job_description_bias", {"jd_text": "Looking for rockstar ninja"}))
     assert bias["has_bias"] is True
-
-    # hrms_evaluate_leave_request
-    leave = mcp.call_tool(
-        "hrms_evaluate_leave_request",
-        {"employee_id": "E1", "leave_type": "ANNUAL", "requested_days": 3.0, "current_balance": 10.0},
-    )
-    assert leave["is_approved"] is True
-
-    # hrms_detect_impossible_travel
-    travel = mcp.call_tool(
-        "hrms_detect_impossible_travel",
-        {
-            "punch1": {"lat": 25.2, "lng": 55.27, "timestamp": "2026-10-29T08:00:00Z"},
-            "punch2": {"lat": 28.6, "lng": 77.2, "timestamp": "2026-10-29T09:00:00Z"},
-        },
-    )
-    assert travel["is_anomaly"] is True
-
-    # Unknown tool
-    with pytest.raises(ValueError, match="Unknown MCP tool"):
-        mcp.call_tool("non_existent_tool", {})
 
 
 # ==============================================================================
