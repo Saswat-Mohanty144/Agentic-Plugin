@@ -38,10 +38,15 @@ one code hook; the build-vs-buy decision is recorded as an ADR.
   to guess a user id (the old `extract_jwt_user_id` tries four claim names). The `{user_id}` path parameter comes from
   host-registry config `service_user_id` (UUID), the `user.id` returned by `POST /employee/login` for the service
   account (documented in the swagger). Path params may only come from host config; profiles name them, never values.
-- I3 Canonical requisition status vocabulary: PENDING, OPEN, REJECTED, FILLED, ON_HOLD, CANCELLED, DRAFT, CLOSED.
-  HR-domain mapping: Frappe `Open & Approved`→OPEN; iCeipts `APPROVED`→OPEN, `JOB_CONVERTED`→OPEN (approved and
-  published as a job opening = still hiring), `PENDING_APPROVAL`→PENDING. An unmapped vendor value never passes
-  through: the record is rejected and reported (`UNMAPPED_VALUE`), the rest are returned.
+- I3 Canonical requisition status vocabulary: PENDING, APPROVED, OPEN, REJECTED, FILLED, ON_HOLD, CANCELLED, DRAFT,
+  CLOSED. APPROVED = approved internally, not yet published; OPEN = published / actively hiring (amended after agy
+  I-F7). Mapping: Frappe `Open & Approved`→OPEN (Frappe has no separate published state); iCeipts `APPROVED`→APPROVED,
+  `JOB_CONVERTED`→OPEN, `PENDING_APPROVAL`→PENDING. An unmapped vendor value never passes through: the record is
+  rejected and reported (`UNMAPPED_VALUE`), the rest are returned.
+- I3a Field typing (agy I-F2): `headcount` must be declared `int`; every other canonical field `str`. Page sizes are
+  strict ints (I-F3); query parameter names may not collide, including `fields` (I-F11). iCeipts profile maps every
+  documented canonical field: `department.name`, `managerId` (I-F6). `service_user_id` accepts upper-case hex and is
+  normalised to lower case (I-F9). `credentials()` / `bearer_token()` refuse the wrong vendor (I-F4/F5).
 - I4 `headcount` must be a positive integer after conversion; otherwise the record is rejected (`INVALID_VALUE`).
 - I5 Safety bounds: max 50 pages, page size from the profile (≤100), https base URL only (host registry), timeouts
   from the host registry; non-2xx → `HOST_ERROR`; response shape mismatch → `INCONSISTENT_PAYLOAD`.

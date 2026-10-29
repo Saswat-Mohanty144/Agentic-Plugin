@@ -6,10 +6,15 @@
   (docs/superpowers/specs/2026-10-29-piece-i-second-vendor-design.md)
 
 ## Context
-The plugin must read (and, for Frappe, write back with two-person approval) records in each customer's HRMS. Two
-vendors now run through one engine with configuration only: Frappe (payroll PF, write-back, requisitions) and iCeipts
-(requisitions), with zero vendor-specific code hooks. Each further vendor costs: verifying its API from primary
-docs, a YAML profile, contract tests, and for payroll a verified payslip mapping plus schema-fingerprint approval.
+The plugin must read (and, for Frappe, write back with two-person approval) records in each customer's HRMS. Today
+there are two integration paths (corrected after agy I-F1):
+- **Declarative engine** (`hrms_plugin/integrations/declarative.py` + YAML profiles): requisition reads for Frappe and
+  iCeipts, configuration only, zero vendor-specific code hooks.
+- **Hand-written Frappe client** (`hrms_plugin/integrations/frappe.py`): payroll PF (submitted Salary Slip, schema
+  fingerprint) and write-back (optimistic concurrency, rollback). Both refuse any other vendor (`VENDOR_NOT_SUPPORTED`)
+  and are NOT yet expressed in the declarative engine.
+Each further vendor costs: verifying its API from primary docs, a YAML profile and contract tests for reads; for
+payroll or writes, today, new code plus a verified payslip mapping and fingerprint approval.
 
 Market options named in Q5: commercial unified HRIS APIs (Merge, Finch, Kombo, Knit, Apideck, Unified.to) and open
 source integration infrastructure (Nango; Airbyte/Singer are read-only sync).

@@ -11,10 +11,12 @@ entities:
     id_from: id
     fields:
       title: {from: title}
+      department: {from: department.name}
       location: {from: location}
       headcount: {from: position, type: int}
       status:
         from: status
-        map: {DRAFT: DRAFT, PENDING_APPROVAL: PENDING, APPROVED: OPEN, REJECTED: REJECTED, JOB_CONVERTED: OPEN,
+        map: {DRAFT: DRAFT, PENDING_APPROVAL: PENDING, APPROVED: APPROVED, REJECTED: REJECTED, JOB_CONVERTED: OPEN,
               CLOSED: CLOSED}
       description: {from: jobDescription}
+      hiring_manager_ref: {from: managerId}  # the requisition manager (requisitionmanager.id in the same schema)

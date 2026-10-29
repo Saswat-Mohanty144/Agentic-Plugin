@@ -1,0 +1,132 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed! (exit code 0)",
+    "pytest": "1178 passed (exit code 0)",
+    "node": "79 pass, 0 fail (exit code 0)"
+  },
+  "requirements_checked": 8,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "docs",
+      "file": "docs/adr/0001-build-vs-buy-hris-connectors.md",
+      "line": 9,
+      "requirement": "I8",
+      "finding": "ADR 0001 falsely claims that Frappe payroll PF and write-back run through the declarative engine with configuration only, when in fact they remain hardcoded to FrappeClient and reject other vendors.",
+      "evidence": "ADR lines 9-11 claim: \"Two vendors now run through one engine with configuration only: Frappe (payroll PF, write-back, requisitions) and iCeipts (requisitions)...\". In code: hrms_plugin/writeback/service.py:88 has \"if host.vendor != \\\"frappe\\\": raise WritebackError(\\\"VENDOR_NOT_SUPPORTED\\\")\"; hrms_plugin/payroll/service.py:69 has \"if host.vendor != \\\"frappe\\\": return _error(\\\"VENDOR_NOT_SUPPORTED\\\")\"; and hrms_plugin/integrations/profiles/frappe.yaml contains REQUISITION only.",
+      "reproduce": "Compare docs/adr/0001-build-vs-buy-hris-connectors.md lines 9-12 with hrms_plugin/writeback/service.py:88, hrms_plugin/payroll/service.py:69, and hrms_plugin/integrations/profiles/frappe.yaml."
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/integrations/declarative.py",
+      "line": 82,
+      "requirement": "I4",
+      "finding": "EntitySpec does not validate that the headcount field spec specifies type: int, permitting profiles to emit unvalidated string values or reject integer values.",
+      "evidence": "In hrms_plugin/integrations/declarative.py:82-100 (_consistent), status is checked for map, but headcount is unconstrained. FieldSpec.type defaults to \"str\". Running DeclarativeConnector._convert with headcount from: count without type: int yields record[\"headcount\"] = \"3\" as a string, violating requirement I4 requiring positive integer conversion.",
+      "reproduce": "Run in python: from hrms_plugin.integrations.declarative import parse_profile, DeclarativeConnector, ListResult; spec = parse_profile({\"vendor\":\"frappe\",\"auth\":\"frappe_token\",\"entities\":{\"REQUISITION\":{\"path\":\"/api\",\"items_at\":\"data\",\"pagination\":{\"kind\":\"offset\",\"start_param\":\"s\",\"size_param\":\"l\",\"size\":10},\"id_from\":\"name\",\"fields\":{\"headcount\":{\"from\":\"count\"}}}}}); res = ListResult(); DeclarativeConnector._convert({\"name\":\"r1\",\"count\":\"3\"}, spec.entities[\"REQUISITION\"], res); assert res.records[0][\"headcount\"] == \"3\"."
+    },
+    {
+      "id": "F3",
+      "severity": "MEDIUM",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/integrations/declarative.py",
+      "line": 59,
+      "requirement": "I1",
+      "finding": "OffsetPaging.size and PagePaging.size use non-strict int instead of StrictInt, allowing Pydantic to silently coerce boolean and string values into integers.",
+      "evidence": "In hrms_plugin/integrations/declarative.py:59 and :68, size: int = Field(ge=1, le=100) instead of StrictInt. OffsetPaging.model_validate({\"kind\":\"offset\",\"start_param\":\"s\",\"size_param\":\"l\",\"size\":True}).size returns integer 1, and size:\"50\" returns integer 50, violating requirement I1 for strict Pydantic parsing.",
+      "reproduce": "Run in python: from hrms_plugin.integrations.declarative import OffsetPaging; p = OffsetPaging.model_validate({\"kind\":\"offset\",\"start_param\":\"s\",\"size_param\":\"l\",\"size\":True}); assert p.size == 1."
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "test-quality",
+      "file": "tests/unit/test_declarative_connector.py",
+      "line": 155,
+      "requirement": "I6",
+      "finding": "test_iceipts_host_has_no_frappe_credentials passes vacuously because it only checks for any HostRegistryError without asserting the error reason, allowing the test to pass even if the credentials vendor guard is removed.",
+      "evidence": "In tests/unit/test_declarative_connector.py:155-157: `with pytest.raises(HostRegistryError): host(tmp_path, ICEIPTS_HOST).credentials(ENV)`. If lines 82-83 of hrms_plugin/integrations/host_registry.py (`if self.vendor != \\\"frappe\\\": raise HostRegistryError(...)`) are removed, `credentials()` still raises HostRegistryError(\"credentials for tenant 'globex' are not set in the environment\") because api_key_env is None, so the test still passes.",
+      "reproduce": "Remove lines 82-83 of hrms_plugin/integrations/host_registry.py and run pytest tests/unit/test_declarative_connector.py -k test_iceipts_host_has_no_frappe_credentials; observe 1 passed."
+    },
+    {
+      "id": "F5",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/host_registry.py",
+      "line": 90,
+      "requirement": "I6",
+      "finding": "HostConfig.bearer_token() lacks a vendor guard check for iceipts, raising a missing environment variable error instead of a vendor mismatch error when invoked on Frappe hosts.",
+      "evidence": "In hrms_plugin/integrations/host_registry.py:82, credentials() enforces `if self.vendor != \\\"frappe\\\": raise HostRegistryError(...)`. In contrast, bearer_token() at lines 90-95 has no vendor guard. Calling bearer_token() on a Frappe host raises `HostRegistryError: token for tenant 'acme' is not set in the environment` instead of reporting vendor incompatibility.",
+      "reproduce": "Call host.bearer_token() on a Frappe HostConfig; observe HostRegistryError states token is not set rather than verifying vendor is iceipts."
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "category": "domain",
+      "file": "hrms_plugin/integrations/profiles/iceipts.yaml",
+      "line": 12,
+      "requirement": "I1",
+      "finding": "The iCeipts profile omits department and hiring_manager_ref despite both being available in the vendor schema, resulting in data loss where the canonical model always returns None for both fields.",
+      "evidence": "In tests/fixtures/iceipts_swagger.yaml, JobRequisitionDetails contains department (lines 1113-1123) and requisitionmanager/managerId (lines 1046, 1144-1151). hrms_plugin/integrations/profiles/iceipts.yaml lines 12-20 omits both fields from entities.REQUISITION.fields, causing DeclarativeConnector._convert to emit None for both.",
+      "reproduce": "Inspect hrms_plugin/integrations/profiles/iceipts.yaml:12-20 and tests/fixtures/iceipts_swagger.yaml lines 1046, 1113, 1144; observe department and hiring_manager_ref are present in Swagger but absent from the profile."
+    },
+    {
+      "id": "F7",
+      "severity": "LOW",
+      "category": "domain",
+      "file": "hrms_plugin/integrations/profiles/iceipts.yaml",
+      "line": 18,
+      "requirement": "I3",
+      "finding": "Mapping both APPROVED and JOB_CONVERTED to OPEN collapses the domain lifecycle distinction between internally approved requisitions and published job openings.",
+      "evidence": "In hrms_plugin/integrations/profiles/iceipts.yaml:18-19, status.map defines `APPROVED: OPEN, JOB_CONVERTED: OPEN`. In iCeipts and standard ATS lifecycle, APPROVED signifies internal management approval, whereas JOB_CONVERTED signifies external job posting creation.",
+      "reproduce": "Fetch requisitions from iCeipts with statuses APPROVED and JOB_CONVERTED; observe both are mapped to canonical status OPEN with no field distinguishing publication state."
+    },
+    {
+      "id": "F8",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "tests/unit/test_declarative_connector.py",
+      "line": 366,
+      "requirement": "I7",
+      "finding": "GET /v1/hosts/requisitions endpoint integration tests only cover the iCeipts host configuration, leaving the Frappe host HTTP flow untested.",
+      "evidence": "In tests/unit/test_declarative_connector.py, test_endpoint_lists_canonical_requisitions (line 366), test_endpoint_requires_manage_recruitment (line 376), and test_endpoint_host_failure_is_502 (line 389) all rely on the fixture hosts_env (line 352) which sets tenant acme to ICEIPTS_HOST. No test invokes the endpoint with a Frappe host in the registry.",
+      "reproduce": "Grep for make_client in tests/unit/test_declarative_connector.py; observe every request fixture uses ICEIPTS_HOST."
+    },
+    {
+      "id": "F9",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/host_registry.py",
+      "line": 40,
+      "requirement": "I6",
+      "finding": "HostConfig.service_user_id pattern requires lowercase hex, rejecting valid uppercase RFC 4122 UUID strings.",
+      "evidence": "HostConfig field service_user_id pattern is `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`. Instantiating HostConfig with service_user_id='EB6DF26E-E0D3-4D10-8714-873FEF6E213C' raises ValidationError string_pattern_mismatch.",
+      "reproduce": "Run in python: from hrms_plugin.integrations.host_registry import HostConfig; HostConfig(tenant_id=\"t\", vendor=\"iceipts\", base_url=\"https://api.test\", token_env=\"TOK\", service_user_id=\"EB6DF26E-E0D3-4D10-8714-873FEF6E213C\", timeout_seconds=10)."
+    },
+    {
+      "id": "F10",
+      "severity": "LOW",
+      "category": "test-quality",
+      "file": "hrms_plugin/server/app.py",
+      "line": 511,
+      "requirement": "I7",
+      "finding": "ProfileError handling in GET /v1/hosts/requisitions (mapping to HTTP 500 PROFILE_INVALID) is completely untested.",
+      "evidence": "In hrms_plugin/server/app.py:511-512: `except ProfileError: raise ApiError(500, {\"error\": \"PROFILE_INVALID\"}) from None`. A search for PROFILE_INVALID across the tests directory returns zero matches.",
+      "reproduce": "Search for PROFILE_INVALID across tests/: grep -rn \"PROFILE_INVALID\" tests/ yields no results."
+    },
+    {
+      "id": "F11",
+      "severity": "LOW",
+      "category": "correctness",
+      "file": "hrms_plugin/integrations/declarative.py",
+      "line": 216,
+      "requirement": "I1",
+      "finding": "Paging parameter names are not checked for collisions with the fields query parameter, allowing a profile to silently overwrite the requested fields list.",
+      "evidence": "In hrms_plugin/integrations/declarative.py:216-223, when spec.request_fields is True, params[\"fields\"] is set to the JSON list of requested fields, but params[paging.start_param] is set afterward. If start_param is \"fields\", params[\"fields\"] is overwritten by str(page_index * paging.size).",
+      "reproduce": "Set start_param: \"fields\" in an offset paging profile with request_fields: True; inspect params[\"fields\"] during _fetch_page; observe it is integer offset string instead of JSON field list."
+    }
+  ]
+}

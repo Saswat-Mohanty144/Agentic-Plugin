@@ -260,13 +260,13 @@ async def test_iceipts_request_shape_and_mapping(tmp_path):
     assert "fields" not in req.url.params
     assert result.records == [{
         "id": "r-1", "title": "Backend Engineer", "department": None, "location": "Pune", "headcount": 3,
-        "status": "OPEN", "description": "Build APIs", "hiring_manager_ref": None,
+        "status": "APPROVED", "description": "Build APIs", "hiring_manager_ref": None,
     }]
 
 
 @pytest.mark.parametrize(
     "vendor_status,canonical",
-    [("DRAFT", "DRAFT"), ("PENDING_APPROVAL", "PENDING"), ("APPROVED", "OPEN"), ("REJECTED", "REJECTED"),
+    [("DRAFT", "DRAFT"), ("PENDING_APPROVAL", "PENDING"), ("APPROVED", "APPROVED"), ("REJECTED", "REJECTED"),
      ("JOB_CONVERTED", "OPEN"), ("CLOSED", "CLOSED")],
 )
 async def test_iceipts_status_vocabulary(tmp_path, vendor_status, canonical):

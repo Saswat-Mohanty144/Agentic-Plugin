@@ -37,8 +37,13 @@ class HostConfig(BaseModel):
     api_secret_env: Optional[StrictStr] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     token_env: Optional[StrictStr] = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     service_user_id: Optional[StrictStr] = Field(
-        default=None, pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        default=None, pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     )
+
+    @field_validator("service_user_id")
+    @classmethod
+    def _lower_uuid(cls, value: Optional[str]) -> Optional[str]:
+        return value.lower() if value else value  # RFC 4122: hex is case-insensitive (agy I-F9)
     timeout_seconds: StrictInt = Field(ge=1, le=60)
     # Per-tenant write-back allowlist (piece F2, W3): doctype -> field -> value type. Empty means no writes.
     writable_fields: Dict[StrictStr, Dict[StrictStr, Literal["int", "date", "string", "decimal"]]] = Field(
@@ -88,6 +93,9 @@ class HostConfig(BaseModel):
         return key, secret
 
     def bearer_token(self, env: Optional[Mapping[str, str]] = None) -> str:
+        """iCeipts service-account bearer token."""
+        if self.vendor != "iceipts":
+            raise HostRegistryError(f"tenant {self.tenant_id!r} is not an iceipts host")
         env = os.environ if env is None else env
         token = env.get(self.token_env) if self.token_env else None
         if not token:

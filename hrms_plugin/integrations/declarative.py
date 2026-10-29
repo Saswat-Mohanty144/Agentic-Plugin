@@ -16,14 +16,18 @@ from urllib.parse import quote
 
 import httpx
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, ValidationError, model_validator
 
 from hrms_plugin.integrations.host_registry import HostConfig, HostRegistryError
 
 PROFILE_DIR = Path(__file__).with_name("profiles")
 MAX_PAGES = 50
 REQUISITION_FIELDS = ("title", "department", "location", "headcount", "status", "description", "hiring_manager_ref")
-REQUISITION_STATUSES = ("PENDING", "OPEN", "REJECTED", "FILLED", "ON_HOLD", "CANCELLED", "DRAFT", "CLOSED")
+# APPROVED = approved internally, not yet published; OPEN = published / actively hiring (agy I-F7).
+REQUISITION_STATUSES = (
+    "PENDING", "APPROVED", "OPEN", "REJECTED", "FILLED", "ON_HOLD", "CANCELLED", "DRAFT", "CLOSED"
+)
+INT_FIELDS = ("headcount",)  # every other canonical requisition field is text (agy I-F2)
 # Path parameters a profile may name; values always come from the host registry (I2).
 PATH_PARAMS = ("service_user_id",)
 _PATH = r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$"
@@ -56,7 +60,10 @@ class OffsetPaging(BaseModel):
     kind: Literal["offset"]
     start_param: StrictStr
     size_param: StrictStr
-    size: int = Field(ge=1, le=100)
+    size: StrictInt = Field(ge=1, le=100)
+
+    def param_names(self) -> List[str]:
+        return [self.start_param, self.size_param]
 
 
 class PagePaging(BaseModel):
@@ -65,8 +72,11 @@ class PagePaging(BaseModel):
     kind: Literal["page"]
     page_param: StrictStr
     size_param: StrictStr
-    size: int = Field(ge=1, le=100)
+    size: StrictInt = Field(ge=1, le=100)
     total_pages_at: StrictStr = Field(pattern=_PATH)
+
+    def param_names(self) -> List[str]:
+        return [self.page_param, self.size_param]
 
 
 class EntitySpec(BaseModel):
@@ -84,6 +94,12 @@ class EntitySpec(BaseModel):
         for name in _TEMPLATE_PARAM.findall(self.path):
             if name not in PATH_PARAMS:
                 raise ValueError(f"path parameter {{{name}}} is not allowed")
+        for name, spec in self.fields.items():
+            if spec.type != ("int" if name in INT_FIELDS else "str"):
+                raise ValueError(f"{name} must be declared type {'int' if name in INT_FIELDS else 'str'}")
+        params = self.pagination.param_names() + (["fields"] if self.request_fields else [])
+        if len(params) != len(set(params)):
+            raise ValueError(f"query parameter names collide: {params}")  # agy I-F11
         status = self.fields.get("status")
         if status is not None:
             if not status.map:
