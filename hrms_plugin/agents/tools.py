@@ -671,58 +671,14 @@ class AgenticToolRegistry:
         return res.model_dump()
 
     def _tool_generate_archetypes(self, prompt: str, location: Optional[str] = None) -> Dict[str, Any]:
-        """Fetch or synthesize 4 dynamic job requisition archetypes."""
-        import json
-        import urllib.request
-        try:
-            req_data = json.dumps({"prompt": prompt, "location": location}).encode("utf-8")
-            req = urllib.request.Request(
-                "http://localhost:8001/api/requisitions/generate-archetypes",
-                data=req_data,
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                if data.get("success") and data.get("archetypes"):
-                    actions = [
-                        {
-                            "action_type": "APPLY_ARCHETYPE",
-                            "name": a.get("name"),
-                            "badge": a.get("badge"),
-                            "label": f"⚡ Auto-Fill Form with {a.get('badge', 'Archetype')}",
-                            "archetype": a,
-                        }
-                        for a in data["archetypes"][:3]
-                    ]
-                    return {
-                        "success": True,
-                        "prompt": prompt,
-                        "total_archetypes": len(data["archetypes"]),
-                        "archetypes": [
-                            {
-                                "id": a.get("id"),
-                                "name": a.get("name"),
-                                "badge": a.get("badge"),
-                                "tagline": a.get("tagline"),
-                                "experience": (
-                                    f"{a.get('jobData', {}).get('minExperience', 5)}-"
-                                    f"{a.get('jobData', {}).get('maxExperience', 10)} yrs"
-                                ),
-                                "salary_range": (
-                                    f"{a.get('jobData', {}).get('minSalary', 0):,} - "
-                                    f"{a.get('jobData', {}).get('maxSalary', 0):,} "
-                                    f"{a.get('jobData', {}).get('currency', 'INR')}"
-                                ),
-                                "must_have_skills": a.get("jobData", {}).get("skills", []),
-                                "key_responsibilities": a.get("jobData", {}).get("responsibilities", []),
-                            }
-                            for a in data["archetypes"]
-                        ],
-                        "suggested_actions": actions,
-                    }
-        except Exception:
-            pass
+        """Synthesize job requisition archetypes in-process.
 
+        The former localhost:8001 call was unauthenticated, blocked the event loop and could hand the prompt to any
+        local listener; in a deployment it always fell back to this path anyway (E2E review).
+        """
+        prompt = (prompt or "").strip()
+        if not prompt:
+            return {"success": False, "error": "EMPTY_PROMPT"}
         role_base = "Lead Data Engineer" if "data" in prompt.lower() else prompt.split()[0]
         fallback_archetypes = [
             {
