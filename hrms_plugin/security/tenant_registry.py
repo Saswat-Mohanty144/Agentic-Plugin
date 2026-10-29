@@ -49,6 +49,8 @@ class LlmPolicy(BaseModel):
     daily_token_budget: Optional[StrictInt] = Field(default=None, ge=1)  # absent → no cap (piece H4)
     # Speech providers that may receive this tenant's audio and text; empty → voice is off (VOICE-2, V1).
     voice_providers: Tuple[Literal["sarvam"], ...] = ()
+    # Requests per minute on LLM- and voice-backed routes (QE-3); absent -> no limit, like daily_token_budget.
+    requests_per_minute: Optional[StrictInt] = Field(default=None, ge=1)
 
 
 class TenantConfig(BaseModel):
