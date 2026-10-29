@@ -31,7 +31,7 @@ async def test_system_prompt_lists_context_keys_not_values(scripted):
     gateway, client = scripted(final("ok"))
     await orch(gateway).run("go", jurisdiction="AE", auth=ADMIN,
                             context={"employees": EMPLOYEES, "annual_ctc": 1800000, "record_id": "EMP-901"})
-    system = client.calls[0]["messages"][0].content
+    system = "\n".join(m.content for m in client.calls[0]["messages"] if m.role == "system")  # frozen + per-request
     assert "annual_ctc" in system and "employees" in system
     assert "1800000" not in system and "Tariq" not in system and "4000" not in system
     assert "record_id=EMP-901" in system  # allowlisted navigation key

@@ -142,7 +142,7 @@ async def test_stream_includes_history(scripted):
     [e async for e in orch.run_stream("now", jurisdiction="AE", auth=ADMIN,
                                       history=[{"role": "user", "content": "before"},
                                                {"role": "assistant", "content": "reply"}])]
-    assert [m.content for m in client.calls[0]["messages"][1:]] == ["before", "reply", "now"]
+    assert [m.content for m in client.calls[0]["messages"] if m.role != "system"] == ["before", "reply", "now"]
 
 
 def test_stream_returns_503_when_llm_not_configured(make_client, bearer, monkeypatch):

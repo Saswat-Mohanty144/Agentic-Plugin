@@ -21,10 +21,10 @@ async def test_parallel_tool_calls_become_one_assistant_message(scripted):
     )
     await orch(gateway).run("q", jurisdiction="AE", auth=ADMIN)
     roles = [m.role for m in client.calls[1]["messages"]]
-    assert roles == ["system", "user", "assistant", "tool", "tool"]
-    assistant = client.calls[1]["messages"][2]
+    assert roles == ["system", "system", "user", "assistant", "tool", "tool"]
+    assistant = client.calls[1]["messages"][3]
     assert len(assistant.tool_calls) == 2
-    assert [m.tool_call_id for m in client.calls[1]["messages"][3:]] == [tc.id for tc in assistant.tool_calls]
+    assert [m.tool_call_id for m in client.calls[1]["messages"][4:]] == [tc.id for tc in assistant.tool_calls]
 
 
 async def test_raw_provider_content_is_carried_into_the_next_turn(scripted):
@@ -32,7 +32,7 @@ async def test_raw_provider_content_is_carried_into_the_next_turn(scripted):
     first.raw_content = ["RAW-BLOCK"]
     gateway, client = scripted(first, final("ok"))
     await orch(gateway).run("q", jurisdiction="AE", auth=ADMIN)
-    assert client.calls[1]["messages"][2].raw_content == ["RAW-BLOCK"]
+    assert client.calls[1]["messages"][3].raw_content == ["RAW-BLOCK"]
 
 
 async def test_refusal_is_returned_and_no_tool_runs(scripted):
@@ -70,4 +70,4 @@ async def test_stream_parallel_tools_one_assistant_message(scripted):
         final("ok"),
     )
     [e async for e in orch(gateway).run_stream("q", jurisdiction="AE", auth=ADMIN)]
-    assert [m.role for m in client.calls[1]["messages"]] == ["system", "user", "assistant", "tool", "tool"]
+    assert [m.role for m in client.calls[1]["messages"]] == ["system", "system", "user", "assistant", "tool", "tool"]

@@ -24,6 +24,7 @@ EXPECTED = {
     ("GET", "/v1/schema/fingerprints/quarantine"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/governance/llm-egress"): P.VIEW_COMPLIANCE,
+    ("POST", "/v1/payroll/pf/calculate"): P.VIEW_SALARY,
     ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals/{proposal_id}/approve"): P.MUTATE_EMPLOYEE,
     ("POST", "/v1/writeback/proposals/{proposal_id}/rollback"): P.MUTATE_EMPLOYEE,
@@ -50,6 +51,7 @@ LACKING = {
     P.EXECUTE_REMEDIATION: "staff",
     P.VIEW_COMPLIANCE: "staff",
     P.MANAGE_RECRUITMENT: "staff",
+    P.VIEW_SALARY: "staff",
 }
 HOLDING = {
     P.MUTATE_EMPLOYEE: "hr_manager",
@@ -58,6 +60,7 @@ HOLDING = {
     P.EXECUTE_REMEDIATION: "hr_manager",
     P.VIEW_COMPLIANCE: "hr_manager",
     P.MANAGE_RECRUITMENT: "recruiter",
+    P.VIEW_SALARY: "payroll_officer",
 }
 
 
