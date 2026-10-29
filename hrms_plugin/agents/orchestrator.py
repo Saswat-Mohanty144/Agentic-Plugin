@@ -11,7 +11,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from decimal import Decimal, InvalidOperation
+from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
@@ -46,6 +47,56 @@ LLM_VISIBLE_CONTEXT_KEYS: Tuple[str, ...] = ("entity", "record_id", "route")
 SERVER_OWNED_PARAMS: Tuple[str, ...] = ("jurisdiction", "tenant_id")
 # Tool results above this size are not sent to the LLM; the UI still receives them (piece H5).
 MAX_TOOL_RESULT_CHARS = 20000
+
+
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def stated_numbers(texts: Iterable[str]) -> Set[Decimal]:
+    """Numbers as the user wrote them. Digit groupings (1,20,000 / 120,000.00) normalise; word forms do not."""
+    found: Set[Decimal] = set()
+    for text in texts:
+        for match in _NUMBER.finditer(text or ""):
+            try:
+                found.add(Decimal(match.group(0).replace(",", "")))
+            except InvalidOperation:
+                continue
+    return found
+
+
+def _context_numbers(value: Any) -> Set[Decimal]:
+    if isinstance(value, bool):
+        return set()
+    if isinstance(value, (int, float, Decimal)):
+        return {Decimal(str(value))}
+    if isinstance(value, str):
+        return stated_numbers([value])
+    if isinstance(value, dict):
+        return set().union(*(_context_numbers(v) for v in value.values())) if value else set()
+    if isinstance(value, (list, tuple)):
+        return set().union(*(_context_numbers(v) for v in value)) if value else set()
+    return set()
+
+
+def _grounded(value: Any, stated: Set[Decimal]) -> bool:
+    """Every number inside ``value`` (and every string that is wholly a number) must have been stated."""
+    if isinstance(value, bool):
+        return True
+    if isinstance(value, (int, float)):
+        return Decimal(str(value)) in stated
+    if isinstance(value, str):
+        return not _NUMBER.fullmatch(value.strip()) or Decimal(value.strip().replace(",", "")) in stated
+    if isinstance(value, dict):
+        return all(_grounded(v, stated) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return all(_grounded(v, stated) for v in value)
+    return True
+
+
+def _user_numbers(user_message: str, history: Optional[List[Dict[str, str]]], ctx: Dict[str, Any]) -> Set[Decimal]:
+    """What may ground a calculation: the user's own turns and host-supplied context, never assistant text."""
+    texts = [user_message] + [h.get("content", "") for h in history or [] if h.get("role") == "user"]
+    return stated_numbers(texts) | _context_numbers(ctx)
 
 
 def tool_result_content(output: Any) -> str:
@@ -93,6 +144,7 @@ class _RunState:
     actions: List[Dict[str, Any]] = field(default_factory=list)
     last_tool_data: Optional[Dict[str, Any]] = None
     pii: PiiSession = field(default_factory=PiiSession)
+    stated: Set[Decimal] = field(default_factory=set)
 
 
 def _collect_from_output(output: Any, state: _RunState) -> None:
@@ -182,6 +234,9 @@ class AgenticOrchestrator:
         auth: AuthContext,
     ) -> Dict[str, Any]:
         """Single dispatch path shared by run() and run_stream()."""
+        # Learn identifiers from the call itself: a refused or failed call produces no output to learn from, yet its
+        # arguments are echoed back to the LLM in the assistant turn (QA follow-up).
+        state.pii.learn(tc.arguments)
         definition = self.tool_registry.get_definition(tc.name)
         if definition is None:
             output: Dict[str, Any] = {"error": "UNKNOWN_TOOL", "tool": tc.name}
@@ -195,7 +250,14 @@ class AgenticOrchestrator:
             arguments, overrides = dict(tc.arguments), []
         else:
             arguments, overrides = build_trusted_arguments(definition, tc.arguments, trusted)
-            output = await self.tool_registry.execute(tc.name, arguments)
+            ungrounded = [p for p in self.tool_registry.user_stated_params(tc.name)
+                          if p in arguments and not _grounded(arguments[p], state.stated)]
+            if ungrounded:
+                logger.warning("tool call refused: ungrounded numbers",
+                               extra={"reason": "UNGROUNDED_AMOUNT", "tenant": auth.tenant_id, "tool": tc.name})
+                output = {"success": False, "error": "UNGROUNDED_AMOUNT", "params": ungrounded}
+            else:
+                output = await self.tool_registry.execute(tc.name, arguments)
             state.pii.learn(output)
             state.executed_tools.append(tc.name)
             state.last_tool_data = output
@@ -248,7 +310,8 @@ class AgenticOrchestrator:
         tenant_id = auth.tenant_id
         ctx = context or {}
         policy = self.llm_gateway.preflight(tenant_id)  # fail closed before any work (piece G2)
-        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation))
+        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
+                          stated=_user_numbers(user_message, history, ctx))
         state.pii.learn(ctx)
         messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
         for h in history or []:
@@ -298,7 +361,8 @@ class AgenticOrchestrator:
         tools = self.tool_registry.definitions_for(auth) or None
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
         policy = self.llm_gateway.preflight(tenant_id)
-        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation))
+        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
+                          stated=_user_numbers(user_message, history, ctx))
         state.pii.learn(ctx)
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 

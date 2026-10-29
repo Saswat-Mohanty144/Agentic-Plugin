@@ -32,7 +32,6 @@ what it actually calls, plus a scan of production code for canned data, silent f
 | P8 | `/v1/requisitions/generate-archetypes` and tool | Template, not generation: fixed salaries (120k–160k, no currency), fixed `validTill` 2026-12-31, fixed benefits | MEDIUM — labelled as AI output |
 | P9 | `POST /api/compliance/agent/chat` (legacy) | Jurisdiction guessed from keywords ("uae", "aed", "eosb" → AE, else IN); body is an untyped dict | LOW–MEDIUM |
 | P10b | `hrms_plugin/connectors/` (incl. `iceipts.py`, `bamboohr.py`) | Not imported by any production code; only tests use it. Kept by owner decision | LOW — coverage there tests unused code |
-
 | P10 | tool `audit_statutory_compliance` | Called without employees it audited a fictional "Tariq Al-Mansoor" | HIGH |
 | P11 | `hrms_plugin/server/mcp_server.py` (`HrmsMcpServer`) | Parallel tool path with the old invented defaults (balance 10, 3 years' experience, 40% basic), `tenant_id` taken from arguments, no auth, no schema validation. Not served by any transport today | MEDIUM (dormant) |
 

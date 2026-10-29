@@ -7,7 +7,7 @@ Agents invoke these tools during the ReAct reasoning loop.
 from __future__ import annotations
 
 import inspect
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
@@ -23,6 +23,21 @@ from hrms_plugin.security.rbac import AuthContext, Permission, RbacPolicyEnforce
 
 # The statutory agents implement India and UAE law only; SA/US have regulation search, never calculations (P3/P4).
 STATUTORY_JURISDICTIONS = ["AE", "IN"]
+# No-LLM-Numbers (QA): every number these tools calculate from must be one the user stated or the host context
+# supplied; the orchestrator refuses the call otherwise. Nested parameters are checked value by value.
+USER_STATED_PARAMS: Dict[str, Tuple[str, ...]] = {
+    "calculate_salary_structure": ("gross_or_ctc",),
+    "calculate_eosb_gratuity": ("basic_wage", "tenure_years"),
+    "audit_statutory_compliance": ("employees",),
+    "evaluate_leave_request": ("requested_days", "current_balance"),
+    "detect_travel_anomaly": ("punch1", "punch2"),
+    "score_candidate_ats": ("required_experience_years", "candidate_experience_years"),
+    "evaluate_onboarding_offer": ("annual_salary", "band_min", "band_max"),
+    "compute_final_settlement": ("basic_wage_monthly", "gross_wage_monthly", "tenure_years", "unused_leave_days",
+                                 "unpaid_work_days", "notice_days_to_pay", "notice_days_to_deduct"),
+    "audit_travel_expense_claim": ("expenses",),
+}
+HOST_RECORD_TOOLS: Tuple[str, ...] = ("calculate_pf_contribution",)  # inputs fetched from the host by ID
 _JSON_TYPES: Dict[str, tuple] = {"string": (str,), "number": (int, float), "integer": (int,), "boolean": (bool,),
                                  "object": (dict,), "array": (list,)}
 
@@ -105,6 +120,16 @@ class AgenticToolRegistry:
     def intent_for(self, name: str) -> UserIntent:
         return self._intents.get(name, UserIntent.GENERAL_HR)
 
+    @staticmethod
+    def user_stated_params(name: str) -> Tuple[str, ...]:
+        return USER_STATED_PARAMS.get(name, ())
+
+    @staticmethod
+    def input_source(name: str) -> Optional[str]:
+        if name in HOST_RECORD_TOOLS:
+            return "HOST_RECORD"
+        return "USER_STATED" if name in USER_STATED_PARAMS else None
+
     def get_definitions(self) -> List[ToolDefinition]:
         return list(self._tools.values())
 
@@ -127,8 +152,11 @@ class AgenticToolRegistry:
                 result = await result
             # Normalize Pydantic models or dataclasses
             if hasattr(result, "model_dump"):
-                return result.model_dump()
-            elif isinstance(result, (dict, list, str, int, float, bool)):
+                result = result.model_dump()
+            source = self.input_source(tool_name)
+            if source and isinstance(result, dict) and "error" not in result and result.get("success") is not False:
+                result = {**result, "input_source": source}  # where the figures came from (QA)
+            if isinstance(result, (dict, list, str, int, float, bool)):
                 return result
             else:
                 return {"result": str(result)}
