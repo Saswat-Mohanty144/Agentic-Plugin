@@ -7,6 +7,7 @@ reject that record (reported) instead of passing through.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -146,6 +147,44 @@ def load_profile(vendor: str) -> VendorProfileSpec:
 class ListResult:
     records: List[Dict[str, Any]] = field(default_factory=list)
     rejected: List[Dict[str, Any]] = field(default_factory=list)
+    rows: List[Dict[str, Any]] = field(default_factory=list)  # raw host rows, for the shape check only
+
+
+_JSON_TYPE = {bool: "bool", int: "int", float: "float", str: "str", list: "list", dict: "dict"}
+
+
+def _has_path(obj: Any, path: str) -> bool:
+    for part in path.split("."):
+        if not isinstance(obj, dict) or part not in obj:
+            return False
+        obj = obj[part]
+    return True
+
+
+def observed_shape(rows: List[Dict[str, Any]], spec: "EntitySpec") -> Dict[str, Dict[str, Any]]:
+    """For each path the profile reads: is the key present in any row, and which non-null JSON types it carries (QE)."""
+    paths = sorted({spec.id_from, *(f.source for f in spec.fields.values())})
+    shape: Dict[str, Dict[str, Any]] = {}
+    for path in paths:
+        values = [_get(r, path) for r in rows if _has_path(r, path)]
+        types = sorted({_JSON_TYPE.get(type(v), type(v).__name__) for v in values if v is not None})
+        shape[path] = {"present": bool(values) or any(_has_path(r, path) for r in rows), "types": types}
+    return shape
+
+
+def shape_fingerprint(shape: Dict[str, Dict[str, Any]]) -> str:
+    return "sha256:" + hashlib.sha256(json.dumps(shape, sort_keys=True).encode()).hexdigest()
+
+
+def shape_changes(approved: Dict[str, Dict[str, Any]], observed: Dict[str, Dict[str, Any]]) -> List[str]:
+    """Paths whose presence changed or that carry a type the approved shape never had. Nulls are never drift."""
+    changed = []
+    for path in sorted(set(approved) | set(observed)):
+        a = approved.get(path, {"present": False, "types": []})
+        o = observed.get(path, {"present": False, "types": []})
+        if a["present"] != o["present"] or not set(o["types"]) <= set(a["types"]):
+            changed.append(path)
+    return changed
 
 
 class _Rejected(Exception):
@@ -215,6 +254,7 @@ class DeclarativeConnector:
         try:
             for page_index in range(MAX_PAGES):
                 rows, more = await self._fetch_page(client, url, headers, spec, page_index)
+                result.rows.extend(rows)
                 for row in rows:
                     self._convert(row, spec, result)
                 if not more:

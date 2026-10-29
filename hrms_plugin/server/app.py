@@ -7,6 +7,7 @@ import binascii
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -81,6 +82,7 @@ def voice_agent_from_env(env: Mapping[str, str]) -> VoiceAgent:
 
 
 voice_agent = voice_agent_from_env(os.environ)
+logger = logging.getLogger(__name__)
 
 # Persistent storage singletons
 _storage = SqliteKeyValueStore(str(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db"))
@@ -630,7 +632,62 @@ async def list_host_requisitions(auth: AuthContext = Depends(require(Permission.
         result = await DeclarativeConnector(host, profile).list_entity("REQUISITION")
     except ConnectorError as exc:
         raise ApiError(_CONNECTOR_ERROR_STATUS.get(exc.code, 502), {"error": exc.code}) from None
-    return {"vendor": host.vendor, "requisitions": result.records, "rejected": result.rejected, "mapping": layer}
+    schema = _check_requisition_shape(auth.tenant_id, host.vendor, profile.entities["REQUISITION"], result.rows)
+    return {"vendor": host.vendor, "requisitions": result.records, "rejected": result.rejected, "mapping": layer,
+            "schema": schema}
+
+
+def _shape_key(tenant_id: str, vendor: str) -> str:
+    return f"{tenant_id}:{vendor}:REQUISITION"
+
+
+def _check_requisition_shape(tenant_id: str, vendor: str, spec: Any, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Q2 for host reads (QE): compare the payload shape with the approved one; drift is quarantined, not mapped."""
+    from hrms_plugin.integrations.declarative import observed_shape, shape_changes, shape_fingerprint
+
+    if not rows:
+        return {"status": "NO_ROWS"}
+    key = _shape_key(tenant_id, vendor)
+    shape = observed_shape(rows, spec)
+    fingerprint = shape_fingerprint(shape)
+    approved = _storage.get("approved_shapes", key)
+    if approved is None:
+        _storage.set("observed_shapes", key, {"fingerprint": fingerprint, "shape": shape})
+        return {"status": "UNAPPROVED", "fingerprint": fingerprint}
+    changed = shape_changes(approved["shape"], shape)
+    if changed:
+        _storage.set("quarantine", f"{key}:{fingerprint}", {"vendor": vendor, "entity": "REQUISITION",
+                                                            "observed_fingerprint": fingerprint, "changed": changed,
+                                                            "quarantined_at": time.time()})
+        logger.warning("requisition schema drift", extra={"reason": "SCHEMA_DRIFT", "tenant": tenant_id})
+        raise ApiError(409, {"error": "SCHEMA_DRIFT", "changed": changed, "observed_fingerprint": fingerprint})
+    return {"status": "APPROVED", "fingerprint": approved["fingerprint"]}
+
+
+class ShapeApproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+@router.post("/v1/hosts/requisitions/shape/approve")
+def approve_requisition_shape(req: ShapeApproveRequest, auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA))):
+    """Approve the requisition payload shape last observed for this tenant's host (QE)."""
+    from hrms_plugin.integrations.host_registry import HostRegistryError, load_host_registry_from_env
+
+    try:
+        host = load_host_registry_from_env().for_tenant(auth.tenant_id)
+    except HostRegistryError:
+        host = None
+    if host is None:
+        raise ApiError(409, {"error": "HOST_NOT_CONFIGURED"})
+    key = _shape_key(auth.tenant_id, host.vendor)
+    observed = _storage.get("observed_shapes", key)
+    if observed is None or observed["fingerprint"] != req.fingerprint:
+        raise ApiError(409, {"error": "FINGERPRINT_NOT_OBSERVED"})
+    record = {**observed, "approved_by": auth.user_id, "approved_at": time.time()}
+    _storage.set("approved_shapes", key, record)
+    return {"status": "APPROVED", "fingerprint": req.fingerprint}
 
 
 @router.get("/v1/governance/llm-egress")
