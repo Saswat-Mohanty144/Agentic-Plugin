@@ -25,6 +25,8 @@ tenants:
     allowed_providers:
     - fake
     tokenize_compensation: false
+    voice_providers:
+    - sarvam
 - tenant_id: globex
   issuer: https://idp.acme.test
   jwks_url: https://idp.acme.test/jwks.json

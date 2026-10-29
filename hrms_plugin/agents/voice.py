@@ -16,6 +16,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 SARVAM_API_URL = "https://api.sarvam.ai"
+STT_MODEL = "saaras:v2"
+TTS_MODEL = "bulbul:v1"
 
 
 class VoiceUpstreamError(Exception):
@@ -56,7 +58,7 @@ class VoiceAgent:
         self,
         audio_bytes: bytes,
         language_code: Optional[str] = None,
-        model: str = "saaras:v2",
+        model: str = STT_MODEL,
     ) -> Dict[str, Any]:
         """Transcribe speech audio bytes to text with timestamp alignments."""
         lang = language_code or self.default_language
@@ -106,7 +108,7 @@ class VoiceAgent:
         text: str,
         target_language: Optional[str] = None,
         speaker: Optional[str] = None,
-        model: str = "bulbul:v1",
+        model: str = TTS_MODEL,
     ) -> Dict[str, Any]:
         """Synthesize text into natural spoken audio via Sarvam bulbul model."""
         lang = target_language or self.default_language

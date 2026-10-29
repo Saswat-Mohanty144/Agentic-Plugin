@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import hashlib
 import json
 import os
 import time
@@ -28,7 +30,7 @@ from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
-from hrms_plugin.agents.voice import VoiceAgent, VoiceUpstreamError
+from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
@@ -40,7 +42,7 @@ from hrms_plugin.schema.synthesizer import MappingSynthesizer
 from hrms_plugin.security.audit import HostAuditGateway
 from hrms_plugin.security.http_auth import ApiError, require
 from hrms_plugin.security.jwks_cache import JwksCache, make_httpx_fetcher
-from hrms_plugin.security.pii import PiiEgressBlocked
+from hrms_plugin.security.pii import PiiEgressBlocked, PiiSession
 from hrms_plugin.security.rbac import AuthContext, Permission, PermissionDenied
 from hrms_plugin.security.tenant_registry import TenantRegistry, load_registry_from_env
 from hrms_plugin.security.token_verifier import TokenVerifier
@@ -68,7 +70,15 @@ supervisor = SupervisorAgent(
     leave_agent=leave_agent,
     recruitment_agent=recruitment_agent,
 )
-voice_agent = VoiceAgent()
+VOICE_PROVIDER = "sarvam"
+
+
+def voice_agent_from_env(env: Mapping[str, str]) -> VoiceAgent:
+    """Real Sarvam only with SARVAM_API_KEY; without it the voice routes are 503 (VOICE-1, V5)."""
+    return VoiceAgent(api_key=env.get("SARVAM_API_KEY") or None)
+
+
+voice_agent = voice_agent_from_env(os.environ)
 
 # Persistent storage singletons
 _storage = SqliteKeyValueStore(str(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db"))
@@ -278,23 +288,62 @@ def _entity_type(domain: str) -> EntityType:
         raise ApiError(422, {"error": "INVALID_DOMAIN"}) from None
 
 
+def _require_voice_opt_in(request: Request, tenant_id: str) -> None:
+    """V1: a tenant's audio and text reach the speech provider only when its policy lists it (fail closed)."""
+    tenant = next((t for t in request.app.state.registry.tenants if t.tenant_id == tenant_id), None)
+    policy = tenant.llm_policy if tenant else None
+    if policy is None or VOICE_PROVIDER not in policy.voice_providers:
+        raise ApiError(403, {"error": "VOICE_NOT_ALLOWED_FOR_TENANT"})
+
+
+@contextlib.asynccontextmanager
+async def _voice_egress(tenant_id: str, model: str, payload: bytes):
+    """V2: every real Sarvam call is logged before it leaves; nothing is logged when nothing is sent."""
+    if not voice_agent.api_key:
+        yield
+        return
+    key = egress_log.record(tenant_id=tenant_id, provider=VOICE_PROVIDER, model=model,
+                            payload_sha256="sha256:" + hashlib.sha256(payload).hexdigest(), redacted_kinds={})
+    try:
+        yield
+    except BaseException:
+        egress_log.update(key, status="FAILED")
+        raise
+    egress_log.update(key, status="COMPLETED")
+
+
+async def _transcribe(request: Request, auth: AuthContext, audio: bytes, language_code: Optional[str]) -> Dict:
+    """V4: audio cannot be redacted, so the tenant's opt-in is the gate; the transcript is redacted by the LLM layer."""
+    async with _voice_egress(auth.tenant_id, STT_MODEL, audio):
+        return await voice_agent.transcribe_audio(audio, language_code=language_code, model=STT_MODEL)
+
+
+async def _synthesize(auth: AuthContext, text: str, **kw: Any) -> Dict:
+    """V3: spoken text cannot carry tokens, so detectable PII is never sent (PiiEgressBlocked)."""
+    kinds = PiiSession().find_pii(text)
+    if kinds:
+        raise PiiEgressBlocked(kinds)
+    async with _voice_egress(auth.tenant_id, TTS_MODEL, text.encode()):
+        return await voice_agent.synthesize_speech(text=text, model=TTS_MODEL, **kw)
+
+
 @router.post("/v1/voice/transcribe")
-async def voice_transcribe(req: VoiceTranscribeRequest, auth: AuthContext = Depends(require(Permission.USE_COPILOT))):
+async def voice_transcribe(
+    req: VoiceTranscribeRequest, request: Request, auth: AuthContext = Depends(require(Permission.USE_COPILOT))
+):
     """Transcribe base64 audio bytes via Sarvam AI Saaras model."""
     audio_bytes = _decode_audio(req.audio_base64)
-    res = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
-    return res
+    _require_voice_opt_in(request, auth.tenant_id)
+    return await _transcribe(request, auth, audio_bytes, req.language_code)
 
 
 @router.post("/v1/voice/synthesize")
-async def voice_synthesize(req: VoiceSynthesizeRequest, auth: AuthContext = Depends(require(Permission.USE_COPILOT))):
+async def voice_synthesize(
+    req: VoiceSynthesizeRequest, request: Request, auth: AuthContext = Depends(require(Permission.USE_COPILOT))
+):
     """Synthesize text into natural voice audio via Sarvam AI Bulbul model."""
-    res = await voice_agent.synthesize_speech(
-        text=req.text,
-        target_language=req.target_language,
-        speaker=req.speaker,
-    )
-    return res
+    _require_voice_opt_in(request, auth.tenant_id)
+    return await _synthesize(auth, req.text, target_language=req.target_language, speaker=req.speaker)
 
 
 @router.post("/v1/voice/turn")
@@ -305,7 +354,8 @@ async def voice_turn(
 ):
     """Full-duplex multimodal turn: Audio In -> Transcribe -> ReAct Agent Brain -> Spoken Audio Out."""
     audio_bytes = _decode_audio(req.audio_base64)
-    stt = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
+    _require_voice_opt_in(request, auth.tenant_id)
+    stt = await _transcribe(request, auth, audio_bytes, req.language_code)
     transcript = stt.get("transcript", "")
 
     # Run agentic turn
@@ -315,16 +365,18 @@ async def voice_turn(
         auth=auth,
     )
 
-    # Synthesize spoken voice reply
-    tts = await voice_agent.synthesize_speech(
-        text=agent_res.reply_text,
-        target_language=stt.get("language_code", "en-IN"),
-    )
+    # Synthesize spoken voice reply; a reply carrying PII is shown but not spoken (V3)
+    audio_withheld = None
+    try:
+        tts = await _synthesize(auth, agent_res.reply_text, target_language=stt.get("language_code", "en-IN"))
+    except PiiEgressBlocked:
+        tts, audio_withheld = {}, "PII_EGRESS_BLOCKED"
 
     return {
         "transcript_in": transcript,
         "reply_text": agent_res.reply_text,
         "reply_audio_base64": tts.get("audio_base64"),
+        "audio_withheld": audio_withheld,
         "routed_agent": agent_res.routed_agent,
         "statutory_citations": agent_res.statutory_citations,
         "suggested_actions": agent_res.suggested_actions,
@@ -875,6 +927,7 @@ def create_app(
         openapi_url="/openapi.json" if docs else None,
     )
     application.state.token_verifier = TokenVerifier(registry, jwks_cache, clock=clock)
+    application.state.registry = registry
     application.state.clock = clock
     application.state.supervisor = supervisor_agent or supervisor
     application.add_middleware(

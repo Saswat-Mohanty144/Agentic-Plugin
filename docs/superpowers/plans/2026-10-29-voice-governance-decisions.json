@@ -1,0 +1,25 @@
+{
+  "piece": "VOICE (Sarvam speech) governance",
+  "owner_decision": "2026-10-29: voice goes under the tenant LLM policy, egress log and PII protection (owner answered 'yes, to 1')",
+  "findings": [
+    {"id": "VOICE-1", "severity": "high", "found_by": "Claude (missed by agy coverage-gap review)",
+     "issue": "Production VoiceAgent() had no key and silently returned a canned transcript ('Apply sick leave for tomorrow due to fever') that /v1/voice/turn ran through the real agent as the employee's request.",
+     "resolution": "Missing key -> 503 VOICE_NOT_CONFIGURED; canned mode is opt-in (offline_mock=True) for tests only. Commit 2a43c98."}
+  ],
+  "decisions_by_architect_under_delegation": [
+    {"id": "V1", "decision": "Per-tenant opt-in: llm_policy.voice_providers (closed set: sarvam), empty by default; otherwise 403 VOICE_NOT_ALLOWED_FOR_TENANT before anything is sent.",
+     "reason": "Speech providers are data processors like LLM providers; fail closed, same place a DPO already reviews."},
+    {"id": "V2", "decision": "Every real Sarvam call is written to the existing egress log before it leaves (provider sarvam, model, sha256 of the payload, COMPLETED/FAILED); nothing is logged when nothing is sent.",
+     "reason": "One audit trail for all outbound personal data, visible on /v1/governance/llm-egress."},
+    {"id": "V3", "decision": "Text-to-speech never sends detectable PII: /synthesize answers 422 PII_EGRESS_BLOCKED; /turn returns the text reply with reply_audio_base64=null and audio_withheld=PII_EGRESS_BLOCKED.",
+     "reason": "Spoken text cannot carry redaction tokens; the employee still gets the answer on screen."},
+    {"id": "V4", "decision": "Speech-to-text audio cannot be redacted, so tenant opt-in is the only gate; the transcript is redacted by the LLM layer as usual.",
+     "reason": "Known residual risk; recorded so the DPA review covers raw audio."},
+    {"id": "V5", "decision": "Key from SARVAM_API_KEY; empty or absent -> voice stays 503.",
+     "reason": "No key means no silent fallback (VOICE-1)."}
+  ],
+  "residual": [
+    "NEEDS_HUMAN: owner/legal - DPA with Sarvam before any real tenant lists voice_providers: [sarvam] (raw audio leaves under V4).",
+    "PII detection on spoken replies is pattern-based (email, phone, PAN, Aadhaar, ...); names are not detected without NER (already parked: NER/Presidio)."
+  ]
+}
