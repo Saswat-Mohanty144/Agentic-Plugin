@@ -120,7 +120,7 @@ def test_holding_permission_passes_auth(make_client, bearer, method, path):
 @pytest.mark.parametrize("path", ["/v1/compliance/diagnose", "/api/compliance/agent/diagnose"])
 def test_diagnose_endpoint_returns_mapped_action_items(make_client, bearer, path):
     """Fixed pre-existing crash. Mapping approved by user 2026-10-29: title=summary, description=detailed_findings."""
-    res = make_client().get(path, headers=bearer(), params={"jurisdiction": "AE"})
+    res = make_client(env={"HRMS_DEMO_ENDPOINTS": "true"}).get(path, headers=bearer(), params={"jurisdiction": "AE"})
     assert res.status_code == 200
     items = res.json()["action_items"]
     assert items, "the built-in UAE sample batch must produce violations"

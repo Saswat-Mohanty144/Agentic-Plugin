@@ -63,7 +63,7 @@ def test_http_non_agentic_and_legacy_paths_return_403(make_client, bearer):
     h = bearer(roles=["staff"])
     res = client.post("/v1/chat", headers=h, json={"message": SETTLEMENT_MSG, "jurisdiction": "AE", "agentic": False})
     assert res.status_code == 403 and res.json() == {"error": "FORBIDDEN", "permission": "VIEW_SALARY"}
-    res = client.post("/api/compliance/agent/chat", headers=h, json={"message": SETTLEMENT_MSG})
+    res = client.post("/api/compliance/agent/chat", headers=h, json={"message": SETTLEMENT_MSG, "jurisdiction": "AE"})
     assert res.status_code == 403 and res.json() == {"error": "FORBIDDEN", "permission": "VIEW_SALARY"}
 
 

@@ -11,10 +11,10 @@
      "jobMode": "Hybrid",
      "location": "Bangalore",
      "maxExperience": 10,
-     "maxSalary": 4000000,
+     "maxSalary": null,
      "minExperience": 6,
-     "minSalary": 3500000,
-     "salary": "INR",
+     "minSalary": null,
+     "salary": null,
      "skills": [
       "Apache Spark",
       "Airflow",
@@ -26,7 +26,7 @@
      "type": "Full-time"
     },
     "name": "Lead Data Engineer - Hands-on Delivery & Pipeline Execution",
-    "salary_range": "35,00,000 - 40,00,000 INR",
+    "salary_range": null,
     "skills": [
      "Apache Spark",
      "Airflow",
@@ -46,10 +46,10 @@
      "jobMode": "Hybrid",
      "location": "Bangalore",
      "maxExperience": 12,
-     "maxSalary": 4500000,
+     "maxSalary": null,
      "minExperience": 8,
-     "minSalary": 4000000,
-     "salary": "INR",
+     "minSalary": null,
+     "salary": null,
      "skills": [
       "Databricks",
       "Snowflake",
@@ -61,7 +61,7 @@
      "type": "Full-time"
     },
     "name": "Lead Data Engineer - Distributed Architecture & Cloud Lakehouse",
-    "salary_range": "40,00,000 - 45,00,000 INR",
+    "salary_range": null,
     "skills": [
      "Databricks",
      "Snowflake",
@@ -81,10 +81,10 @@
      "jobMode": "Hybrid",
      "location": "Bangalore",
      "maxExperience": 14,
-     "maxSalary": 4500000,
+     "maxSalary": null,
      "minExperience": 8,
-     "minSalary": 4200000,
-     "salary": "INR",
+     "minSalary": null,
+     "salary": null,
      "skills": [
       "Team Leadership",
       "Data Governance",
@@ -95,7 +95,7 @@
      "type": "Full-time"
     },
     "name": "Lead Data Engineer - Engineering Team Lead & Data Governance",
-    "salary_range": "42,00,000 - 45,00,000 INR",
+    "salary_range": null,
     "skills": [
      "Team Leadership",
      "Data Governance",
@@ -106,6 +106,8 @@
    }
   ],
   "prompt": "Lead Data Engineer",
+  "requires_review": true,
+  "source": "TEMPLATE",
   "success": true,
   "suggested_actions": [
    {
@@ -120,10 +122,10 @@
       "jobMode": "Hybrid",
       "location": "Bangalore",
       "maxExperience": 10,
-      "maxSalary": 4000000,
+      "maxSalary": null,
       "minExperience": 6,
-      "minSalary": 3500000,
-      "salary": "INR",
+      "minSalary": null,
+      "salary": null,
       "skills": [
        "Apache Spark",
        "Airflow",
@@ -135,7 +137,7 @@
       "type": "Full-time"
      },
      "name": "Lead Data Engineer - Hands-on Delivery & Pipeline Execution",
-     "salary_range": "35,00,000 - 40,00,000 INR",
+     "salary_range": null,
      "skills": [
       "Apache Spark",
       "Airflow",
@@ -161,10 +163,10 @@
       "jobMode": "Hybrid",
       "location": "Bangalore",
       "maxExperience": 12,
-      "maxSalary": 4500000,
+      "maxSalary": null,
       "minExperience": 8,
-      "minSalary": 4000000,
-      "salary": "INR",
+      "minSalary": null,
+      "salary": null,
       "skills": [
        "Databricks",
        "Snowflake",
@@ -176,7 +178,7 @@
       "type": "Full-time"
      },
      "name": "Lead Data Engineer - Distributed Architecture & Cloud Lakehouse",
-     "salary_range": "40,00,000 - 45,00,000 INR",
+     "salary_range": null,
      "skills": [
       "Databricks",
       "Snowflake",
@@ -202,10 +204,10 @@
       "jobMode": "Hybrid",
       "location": "Bangalore",
       "maxExperience": 14,
-      "maxSalary": 4500000,
+      "maxSalary": null,
       "minExperience": 8,
-      "minSalary": 4200000,
-      "salary": "INR",
+      "minSalary": null,
+      "salary": null,
       "skills": [
        "Team Leadership",
        "Data Governance",
@@ -216,7 +218,7 @@
       "type": "Full-time"
      },
      "name": "Lead Data Engineer - Engineering Team Lead & Data Governance",
-     "salary_range": "42,00,000 - 45,00,000 INR",
+     "salary_range": null,
      "skills": [
       "Team Leadership",
       "Data Governance",
@@ -244,10 +246,8 @@
      },
      "jurisdiction": {
       "enum": [
-       "IN",
        "AE",
-       "SA",
-       "US"
+       "IN"
       ],
       "type": "string"
      }
@@ -298,14 +298,13 @@
       "items": {
        "type": "object"
       },
+      "minItems": 1,
       "type": "array"
      },
      "jurisdiction": {
       "enum": [
-       "IN",
        "AE",
-       "SA",
-       "US"
+       "IN"
       ],
       "type": "string"
      },
@@ -314,7 +313,8 @@
      }
     },
     "required": [
-     "jurisdiction"
+     "jurisdiction",
+     "employees"
     ],
     "type": "object"
    }
@@ -355,7 +355,6 @@
    "parameters": {
     "properties": {
      "current_balance": {
-      "default": 15.0,
       "type": "number"
      },
      "employee_id": {
@@ -377,7 +376,8 @@
     },
     "required": [
      "employee_id",
-     "requested_days"
+     "requested_days",
+     "current_balance"
     ],
     "type": "object"
    }
@@ -409,17 +409,16 @@
    "parameters": {
     "properties": {
      "candidate_experience_years": {
-      "default": 3.0,
       "type": "number"
      },
      "required_experience_years": {
-      "default": 3.0,
       "type": "number"
      },
      "required_skills": {
       "items": {
        "type": "string"
       },
+      "minItems": 1,
       "type": "array"
      },
      "resume_text": {
@@ -427,7 +426,10 @@
      }
     },
     "required": [
-     "resume_text"
+     "resume_text",
+     "required_skills",
+     "required_experience_years",
+     "candidate_experience_years"
     ],
     "type": "object"
    }
@@ -474,10 +476,8 @@
      },
      "jurisdiction": {
       "enum": [
-       "IN",
        "AE",
-       "SA",
-       "US"
+       "IN"
       ],
       "type": "string"
      }
@@ -501,10 +501,8 @@
      },
      "jurisdiction": {
       "enum": [
-       "IN",
        "AE",
-       "SA",
-       "US"
+       "IN"
       ],
       "type": "string"
      },

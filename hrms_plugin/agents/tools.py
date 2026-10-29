@@ -21,6 +21,32 @@ from hrms_plugin.ai.llm import ToolDefinition
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
 from hrms_plugin.security.rbac import AuthContext, Permission, RbacPolicyEnforcer
 
+# The statutory agents implement India and UAE law only; SA/US have regulation search, never calculations (P3/P4).
+STATUTORY_JURISDICTIONS = ["AE", "IN"]
+_JSON_TYPES: Dict[str, tuple] = {"string": (str,), "number": (int, float), "integer": (int,), "boolean": (bool,),
+                                 "object": (dict,), "array": (list,)}
+
+
+def check_arguments(schema: Dict[str, Any], arguments: Dict[str, Any]) -> List[str]:
+    """P5: the LLM's arguments must match the tool's declared schema; nothing is coerced or assumed."""
+    properties = schema.get("properties", {})
+    problems = [f"missing:{name}" for name in schema.get("required", []) if name not in arguments]
+    for name, value in arguments.items():
+        spec = properties.get(name)
+        if spec is None:
+            problems.append(f"unknown:{name}")
+            continue
+        expected = spec.get("type")
+        if expected and (not isinstance(value, _JSON_TYPES[expected])
+                         or (isinstance(value, bool) and expected != "boolean")):
+            problems.append(f"type:{name}")
+            continue
+        if "enum" in spec and value not in spec["enum"]:
+            problems.append(f"enum:{name}")
+        if "minItems" in spec and len(value) < spec["minItems"]:
+            problems.append(f"min_items:{name}")
+    return problems
+
 
 class AgenticToolRegistry:
     """Registry managing available tools and their deterministic execution bindings."""
@@ -86,6 +112,14 @@ class AgenticToolRegistry:
         """Execute a tool by name with arguments and return JSON-serializable output."""
         if tool_name not in self._handlers:
             return {"error": f"Tool '{tool_name}' is not registered."}
+        schema = self._tools[tool_name].parameters
+        supported = schema.get("properties", {}).get("jurisdiction", {}).get("enum")
+        if supported and "jurisdiction" in arguments and arguments["jurisdiction"] not in supported:
+            return {"success": False, "error": "JURISDICTION_NOT_SUPPORTED",
+                    "jurisdiction": arguments["jurisdiction"], "supported": sorted(supported)}
+        problems = check_arguments(schema, arguments)
+        if problems:
+            return {"success": False, "error": "INVALID_ARGUMENTS", "problems": problems}
         try:
             handler = self._handlers[tool_name]
             result = handler(**arguments)
@@ -111,7 +145,7 @@ class AgenticToolRegistry:
                     "type": "object",
                     "properties": {
                         "gross_or_ctc": {"type": "number", "description": "Annual CTC or Monthly Gross salary"},
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"]},
+                        "jurisdiction": {"type": "string", "enum": STATUTORY_JURISDICTIONS},
                     },
                     "required": ["gross_or_ctc", "jurisdiction"],
                 },
@@ -134,7 +168,7 @@ class AgenticToolRegistry:
                     "properties": {
                         "basic_wage": {"type": "number", "description": "Monthly basic wage"},
                         "tenure_years": {"type": "number", "description": "Total completed years of service"},
-                        "jurisdiction": {"type": "string", "enum": ["AE", "IN"]},
+                        "jurisdiction": {"type": "string", "enum": STATUTORY_JURISDICTIONS},
                     },
                     "required": ["basic_wage", "tenure_years", "jurisdiction"],
                 },
@@ -155,15 +189,16 @@ class AgenticToolRegistry:
                 parameters={
                     "type": "object",
                     "properties": {
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"]},
+                        "jurisdiction": {"type": "string", "enum": STATUTORY_JURISDICTIONS},
                         "employees": {
                             "type": "array",
                             "items": {"type": "object"},
+                            "minItems": 1,
                             "description": "List of employee dictionary records to audit.",
                         },
                         "tenant_id": {"type": "string"},
                     },
-                    "required": ["jurisdiction"],
+                    "required": ["jurisdiction", "employees"],
                 },
             ),
             self._tool_audit_compliance,
@@ -206,9 +241,9 @@ class AgenticToolRegistry:
                             "default": "ANNUAL",
                         },
                         "requested_days": {"type": "number"},
-                        "current_balance": {"type": "number", "default": 15.0},
+                        "current_balance": {"type": "number"},
                     },
-                    "required": ["employee_id", "requested_days"],
+                    "required": ["employee_id", "requested_days", "current_balance"],
                 },
             ),
             self._tool_evaluate_leave,
@@ -244,11 +279,13 @@ class AgenticToolRegistry:
                     "type": "object",
                     "properties": {
                         "resume_text": {"type": "string"},
-                        "required_skills": {"type": "array", "items": {"type": "string"}},
-                        "required_experience_years": {"type": "number", "default": 3.0},
-                        "candidate_experience_years": {"type": "number", "default": 3.0},
+                        "required_skills": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                        "required_experience_years": {"type": "number"},
+                        "candidate_experience_years": {"type": "number"},
                     },
-                    "required": ["resume_text"],
+                    "required": [
+                        "resume_text", "required_skills", "required_experience_years", "candidate_experience_years"
+                    ],
                 },
             ),
             self._tool_score_ats,
@@ -288,7 +325,7 @@ class AgenticToolRegistry:
                         "currency": {"type": "string", "default": "INR"},
                         "band_min": {"type": "number"},
                         "band_max": {"type": "number"},
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"]},
+                        "jurisdiction": {"type": "string", "enum": STATUTORY_JURISDICTIONS},
                     },
                     "required": ["candidate_name", "job_title", "annual_salary", "jurisdiction"],
                 },
@@ -307,7 +344,7 @@ class AgenticToolRegistry:
                     "type": "object",
                     "properties": {
                         "candidate_name": {"type": "string"},
-                        "jurisdiction": {"type": "string", "enum": ["IN", "AE", "SA", "US"]},
+                        "jurisdiction": {"type": "string", "enum": STATUTORY_JURISDICTIONS},
                         "submitted_documents": {"type": "object", "description": "Dict of document key-values"},
                     },
                     "required": ["candidate_name", "jurisdiction", "submitted_documents"],
@@ -356,7 +393,7 @@ class AgenticToolRegistry:
                         "unpaid_work_days": {"type": "integer", "default": 0},
                         "notice_days_to_pay": {"type": "integer", "default": 0},
                         "notice_days_to_deduct": {"type": "integer", "default": 0},
-                        "jurisdiction": {"type": "string", "enum": ["AE", "IN"]},
+                        "jurisdiction": {"type": "string", "enum": STATUTORY_JURISDICTIONS},
                     },
                     "required": [
                         "employee_id",
@@ -455,7 +492,7 @@ class AgenticToolRegistry:
 
     # Handler wrappers
     def _tool_calculate_salary(self, gross_or_ctc: float, jurisdiction: str) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.INDIA
+        jur = Jurisdiction(jurisdiction)
         if jur == Jurisdiction.UAE:
             res = self.payroll_agent.structure_uae_salary(monthly_gross=float(gross_or_ctc))
             return res.model_dump()
@@ -464,7 +501,7 @@ class AgenticToolRegistry:
             return res.model_dump()
 
     def _tool_calculate_eosb(self, basic_wage: float, tenure_years: float, jurisdiction: str) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
+        jur = Jurisdiction(jurisdiction)
         if jur == Jurisdiction.UAE:
             res = self.payroll_agent.calculate_uae_eosb(
                 basic_wage_monthly=float(basic_wage), tenure_years=float(tenure_years)
@@ -497,26 +534,15 @@ class AgenticToolRegistry:
     def _tool_audit_compliance(
         self,
         jurisdiction: str,
-        employees: Optional[List[Dict[str, Any]]] = None,
+        employees: List[Dict[str, Any]],
         tenant_id: str = "DEFAULT",
     ) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
-        sample_emps = employees or [
-            {
-                "id": "EMP-101",
-                "name": "Tariq Al-Mansoor",
-                "basic_salary": 4500.0,
-                "gross_salary": 12000.0,
-                "probation_days": 210,
-                "weekly_hours": 54,
-                "uae_wps_registered": False,
-            }
-        ]
-        res = self.compliance_agent.audit_employees(tenant_id=tenant_id, jurisdiction=jur, employees=sample_emps)
+        jur = Jurisdiction(jurisdiction)
+        res = self.compliance_agent.audit_employees(tenant_id=tenant_id, jurisdiction=jur, employees=employees)
         return res.model_dump()
 
     def _tool_search_laws(self, query: str, jurisdiction: str, limit: int = 3) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
+        jur = Jurisdiction(jurisdiction)
         results = self.kb.search(query=query, jurisdiction=jur, limit=limit)
         return {
             "results_count": len(results),
@@ -535,8 +561,8 @@ class AgenticToolRegistry:
         self,
         employee_id: str,
         requested_days: float,
+        current_balance: float,
         leave_type: str = "ANNUAL",
-        current_balance: float = 15.0,
     ) -> Dict[str, Any]:
         res = self.leave_agent.evaluate_leave_request(
             employee_id=employee_id,
@@ -553,14 +579,13 @@ class AgenticToolRegistry:
     def _tool_score_ats(
         self,
         resume_text: str,
-        required_skills: Optional[List[str]] = None,
-        required_experience_years: float = 3.0,
-        candidate_experience_years: float = 3.0,
+        required_skills: List[str],
+        required_experience_years: float,
+        candidate_experience_years: float,
     ) -> Dict[str, Any]:
-        skills = required_skills or ["Python", "FastAPI", "PostgreSQL", "Docker"]
         res = self.recruitment_agent.score_candidate(
             resume_text=resume_text,
-            required_skills=skills,
+            required_skills=required_skills,
             required_experience_years=float(required_experience_years),
             candidate_experience_years=float(candidate_experience_years),
         )
@@ -581,7 +606,7 @@ class AgenticToolRegistry:
         *,
         jurisdiction: str,
     ) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.INDIA
+        jur = Jurisdiction(jurisdiction)
         res = self.onboarding_agent.evaluate_offer(
             candidate_name=candidate_name,
             job_title=job_title,
@@ -599,7 +624,7 @@ class AgenticToolRegistry:
         jurisdiction: str,
         submitted_documents: Dict[str, str],
     ) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
+        jur = Jurisdiction(jurisdiction)
         res = self.onboarding_agent.verify_onboarding_documents(
             candidate_name=candidate_name,
             jurisdiction=jur,
@@ -636,7 +661,7 @@ class AgenticToolRegistry:
         *,
         jurisdiction: str,
     ) -> Dict[str, Any]:
-        jur = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
+        jur = Jurisdiction(jurisdiction)
         res = self.offboarding_agent.compute_final_settlement(
             employee_id=employee_id,
             employee_name=employee_name,
@@ -689,12 +714,12 @@ class AgenticToolRegistry:
                     "Specialized in robust production pipelines, ETL/ELT architecture, and rapid sprint execution."
                 ),
                 "experience": "6-10 yrs",
-                "salary_range": "35,00,000 - 40,00,000 INR",
+                "salary_range": None,
                 "jobData": {
                     "title": f"{role_base} (Pipeline Delivery)",
-                    "minSalary": 3500000,
-                    "maxSalary": 4000000,
-                    "salary": "INR",
+                    "minSalary": None,
+                    "maxSalary": None,
+                    "salary": None,
                     "currency": "INR",
                     "minExperience": 6,
                     "maxExperience": 10,
@@ -718,12 +743,12 @@ class AgenticToolRegistry:
                     "and multi-cloud data platforms."
                 ),
                 "experience": "8-12 yrs",
-                "salary_range": "40,00,000 - 45,00,000 INR",
+                "salary_range": None,
                 "jobData": {
                     "title": f"{role_base} (Cloud Lakehouse Architect)",
-                    "minSalary": 4000000,
-                    "maxSalary": 4500000,
-                    "salary": "INR",
+                    "minSalary": None,
+                    "maxSalary": None,
+                    "salary": None,
                     "currency": "INR",
                     "minExperience": 8,
                     "maxExperience": 12,
@@ -746,12 +771,12 @@ class AgenticToolRegistry:
                     "Driving data engineering squads, governance, SLA compliance, and cross-functional alignment."
                 ),
                 "experience": "8-14 yrs",
-                "salary_range": "42,00,000 - 45,00,000 INR",
+                "salary_range": None,
                 "jobData": {
                     "title": f"{role_base} (Squad Lead & Governance)",
-                    "minSalary": 4200000,
-                    "maxSalary": 4500000,
-                    "salary": "INR",
+                    "minSalary": None,
+                    "maxSalary": None,
+                    "salary": None,
                     "currency": "INR",
                     "minExperience": 8,
                     "maxExperience": 14,
@@ -782,6 +807,8 @@ class AgenticToolRegistry:
         return {
             "success": True,
             "prompt": prompt,
+            "source": "TEMPLATE",  # not generated; pay, validity and benefits are left for the recruiter (P8)
+            "requires_review": True,
             "total_archetypes": len(fallback_archetypes),
             "archetypes": fallback_archetypes,
             "suggested_actions": actions,

@@ -99,7 +99,10 @@ async def test_agentic_orchestrator_react_loop(orchestrator):
     assert resp.reply_text
     assert resp.routed_agent == "AgenticBrain"
     assert resp.confidence_score >= 0.90
-    assert len(resp.statutory_citations) > 0 or len(resp.suggested_actions) > 0
+    # P10: called without employee records, the audit tool refuses instead of auditing a fictional employee
+    assert resp.tool_calls[0]["name"] == "audit_statutory_compliance"
+    assert resp.structured_data == {"success": False, "error": "INVALID_ARGUMENTS", "problems": ["missing:employees"]}
+    assert resp.statutory_citations == []
 
 
 @pytest.mark.asyncio
@@ -169,7 +172,8 @@ def test_api_agentic_chat_endpoint(client, admin):
     assert resp.status_code == 200
     data = resp.json()
     assert data["routed_agent"] == "AgenticBrain"
-    assert len(data.get("statutory_citations", [])) > 0 or len(data.get("suggested_actions", [])) > 0
+    assert data["structured_data"]["problems"] == ["missing:employees"]  # P10: no fictional employee audited
+    assert data["statutory_citations"] == []
 
 
 def test_api_chat_stream_endpoint(client, admin):

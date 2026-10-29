@@ -867,8 +867,8 @@ def test_e2e_schema_fingerprint_boundaries_and_negatives(make_client, bearer):
 
 
 def test_e2e_compliance_diagnose_and_dashboard_live(make_client, bearer):
-    """Positive: Both canonical and legacy compliance diagnose/dashboard endpoints return structured matrices."""
-    client = make_client()
+    """Positive (demo mode, P1/P2): canonical and legacy diagnose/dashboard return labelled sample matrices."""
+    client = make_client(env={"HRMS_DEMO_ENDPOINTS": "true"})
     hr_headers = bearer(roles=["hr_manager"])
 
     for path in ("/v1/compliance/diagnose", "/api/compliance/agent/diagnose"):
@@ -906,7 +906,7 @@ def test_e2e_legacy_chat_adapter_rbac_and_routing(make_client, bearer):
     # Legal QnA is permitted for staff (has USE_COPILOT)
     resp1 = client.post(
         "/api/compliance/agent/chat",
-        json={"message": "labor regulations for probation in UAE"},
+        json={"message": "labor regulations for probation in UAE", "jurisdiction": "AE"},
         headers=staff_token,
     )
     assert resp1.status_code == 200
@@ -915,7 +915,7 @@ def test_e2e_legacy_chat_adapter_rbac_and_routing(make_client, bearer):
     # EOSB gratuity calculation requires VIEW_SALARY which staff lacks -> 403
     resp2 = client.post(
         "/api/compliance/agent/chat",
-        json={"message": "calculate my eosb gratuity"},
+        json={"message": "calculate my eosb gratuity", "jurisdiction": "AE"},
         headers=staff_token,
     )
     assert resp2.status_code == 403

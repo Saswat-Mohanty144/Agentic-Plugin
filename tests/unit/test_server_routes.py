@@ -107,4 +107,4 @@ def test_generate_requisition_archetypes_endpoint(client, bearer):
     assert "jobData" in first
     assert "React" in first["jobData"]["requirements"] or "Python" in first["jobData"]["requirements"]
     assert first["jobData"]["location"] == "Bangalore / Remote"
-    assert first["jobData"]["minSalary"] > 0
+    assert first["jobData"]["minSalary"] is None  # P8: pay is left to the recruiter, never invented

@@ -30,6 +30,7 @@ from hrms_plugin.agents.leave_attendance import LeaveAttendanceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
 from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
+from hrms_plugin.agents.tools import STATUTORY_JURISDICTIONS
 from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.governance.egress_log import EgressLog
@@ -286,6 +287,12 @@ def _entity_type(domain: str) -> EntityType:
         return EntityType(domain.upper())
     except ValueError:
         raise ApiError(422, {"error": "INVALID_DOMAIN"}) from None
+
+
+def _require_demo(request: Request) -> None:
+    """Compliance views without a host data source never present sample data as the tenant's own (P1/P2)."""
+    if not request.app.state.demo_endpoints:
+        raise ApiError(503, {"error": "COMPLIANCE_SOURCE_NOT_CONNECTED"})
 
 
 def _require_voice_opt_in(request: Request, tenant_id: str) -> None:
@@ -628,11 +635,15 @@ def execute_remediation(
 @router.get("/v1/compliance/diagnose")
 @router.get("/api/compliance/agent/diagnose")
 def get_compliance_diagnosis(
+    request: Request,
     jurisdiction: str = "AE",
     auth: AuthContext = Depends(require(Permission.VIEW_COMPLIANCE)),
 ):
-    """Diagnose live employee and payroll records against statutory legal requirements."""
-    # Simulated sample employee batch to demonstrate live multi-agent audit
+    """Diagnose employee records against statutory requirements. No host employee feed is connected yet, so this
+    answers 503 unless HRMS_DEMO_ENDPOINTS=true, in which case it audits labelled sample records (P1)."""
+    _require_demo(request)
+    if jurisdiction not in STATUTORY_JURISDICTIONS:
+        raise ApiError(422, {"error": "JURISDICTION_NOT_SUPPORTED", "supported": STATUTORY_JURISDICTIONS})
     sample_employees = [
         {
             "id": "EMP-101",
@@ -655,7 +666,7 @@ def get_compliance_diagnosis(
 
     from hrms_plugin.rag.store import Jurisdiction
 
-    jur_enum = Jurisdiction(jurisdiction) if jurisdiction in [j.value for j in Jurisdiction] else Jurisdiction.UAE
+    jur_enum = Jurisdiction(jurisdiction)
     audit_res = compliance_agent.audit_employees(
         tenant_id=auth.tenant_id,
         jurisdiction=jur_enum,
@@ -702,15 +713,19 @@ def get_compliance_diagnosis(
         "total_actions": len(action_items),
         "action_items": action_items,
         "jurisdiction": jur_enum.value,
+        "data_source": "DEMO_SAMPLE",
     }
 
 
 @router.get("/v1/compliance/dashboard/live")
 @router.get("/api/compliance/dashboard/live")
-def get_compliance_dashboard_live(auth: AuthContext = Depends(require(Permission.VIEW_COMPLIANCE))):
-    """Live statutory setup matrix verification."""
+def get_compliance_dashboard_live(request: Request, auth: AuthContext = Depends(require(Permission.VIEW_COMPLIANCE))):
+    """Statutory setup matrix. Nothing here is verified against a host yet, so it answers 503 unless
+    HRMS_DEMO_ENDPOINTS=true, in which case the illustrative matrix is returned labelled (P2)."""
+    _require_demo(request)
     return {
         "success": True,
+        "data_source": "DEMO_SAMPLE",
         "setup_items": [
             {"label": "MOHRE Establishment Registered", "status": "compliant", "icon": "Building2"},
             {"label": "WPS Registered & Active", "status": "compliant", "icon": "Banknote"},
@@ -722,18 +737,23 @@ def get_compliance_dashboard_live(auth: AuthContext = Depends(require(Permission
     }
 
 
+class LegacyChatRequest(BaseModel):
+    message: StrictStr
+    jurisdiction: JurisdictionCode  # from the request, never guessed from keywords (P9)
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
 @router.post("/api/compliance/agent/chat")
 def legacy_chat_adapter(
-    req: Dict[str, Any],
+    req: LegacyChatRequest,
     request: Request,
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Legacy endpoint adapter for Next.js ComplianceCopilotSidecar."""
-    msg = str(req.get("message", ""))
     resp = request.app.state.supervisor.process_message(
-        message=msg,
-        jurisdiction="AE" if "uae" in msg.lower() or "aed" in msg.lower() or "eosb" in msg.lower() else "IN",
-        context=req.get("context", {}),
+        message=req.message,
+        jurisdiction=req.jurisdiction,
+        context=req.context,
         auth=auth,
     )
     return {
@@ -778,7 +798,7 @@ def generate_requisition_archetypes(
                 "Focuses on architectural integrity, clean execution, and technical excellence."
             ),
             "skills_display": skills[:4] + ["Architecture", "Problem Solving"],
-            "benefits_display": ["Health Insurance", "Remote Flexibility", "Learning Budget", "Performance Bonus"],
+            "benefits_display": [],
             "jobData": {
                 "title": main_title,
                 "department": "Engineering",
@@ -789,10 +809,10 @@ def generate_requisition_archetypes(
                 "description": f"Seeking a passionate {main_title} to build scalable, mission-critical systems.",
                 "experience": "4-7 Years",
                 "education": "Bachelor's or Master's in Computer Science or equivalent",
-                "salary": 140000,
-                "minSalary": 120000,
-                "maxSalary": 160000,
-                "validTill": "2026-12-31",
+                "salary": None,
+                "minSalary": None,
+                "maxSalary": None,
+                "validTill": None,
                 "position": 1,
                 "minthreshold": 70,
                 "matchthreshold": 85,
@@ -812,7 +832,7 @@ def generate_requisition_archetypes(
                 f"Combines technical depth in {main_title} with squad leadership and mentorship capabilities."
             ),
             "skills_display": skills[:3] + ["Team Leadership", "Code Review", "Sprint Planning"],
-            "benefits_display": ["Comprehensive Health", "Stock Options (ESOPs)", "Executive Coaching"],
+            "benefits_display": [],
             "jobData": {
                 "title": f"Lead {main_title}",
                 "department": "Engineering",
@@ -823,10 +843,10 @@ def generate_requisition_archetypes(
                 "description": f"Lead and inspire a high-performing squad delivering on {main_title} priorities.",
                 "experience": "7-10 Years",
                 "education": "Bachelor's Degree in relevant discipline",
-                "salary": 180000,
-                "minSalary": 160000,
-                "maxSalary": 210000,
-                "validTill": "2026-12-31",
+                "salary": None,
+                "minSalary": None,
+                "maxSalary": None,
+                "validTill": None,
                 "position": 1,
                 "minthreshold": 75,
                 "matchthreshold": 90,
@@ -842,7 +862,7 @@ def generate_requisition_archetypes(
             "tagline": "Pragmatic, high-velocity contributor who ships early and iterates fast.",
             "summary": "Tailored for early-stage feature discovery, MVP shipping, and customer feedback loops.",
             "skills_display": skills[:3] + ["Rapid Iteration", "Full Stack", "Git"],
-            "benefits_display": ["Wellness Stipend", "Flexible Hours", "Latest MacBook Pro"],
+            "benefits_display": [],
             "jobData": {
                 "title": main_title,
                 "department": "Product Engineering",
@@ -853,10 +873,10 @@ def generate_requisition_archetypes(
                 "description": f"Ship customer-facing features at high speed as a {main_title}.",
                 "experience": "2-5 Years",
                 "education": "Relevant degree or demonstrated open-source portfolio",
-                "salary": 110000,
-                "minSalary": 95000,
-                "maxSalary": 130000,
-                "validTill": "2026-12-31",
+                "salary": None,
+                "minSalary": None,
+                "maxSalary": None,
+                "validTill": None,
                 "position": 2,
                 "minthreshold": 60,
                 "matchthreshold": 75,
@@ -870,6 +890,8 @@ def generate_requisition_archetypes(
     return {
         "success": True,
         "prompt": p,
+        "source": "TEMPLATE",  # not generated; pay, validity and benefits are left for the recruiter (P8)
+        "requires_review": True,
         "archetypes": archetypes,
     }
 
@@ -928,6 +950,7 @@ def create_app(
     )
     application.state.token_verifier = TokenVerifier(registry, jwks_cache, clock=clock)
     application.state.registry = registry
+    application.state.demo_endpoints = env.get("HRMS_DEMO_ENDPOINTS") == "true"
     application.state.clock = clock
     application.state.supervisor = supervisor_agent or supervisor
     application.add_middleware(

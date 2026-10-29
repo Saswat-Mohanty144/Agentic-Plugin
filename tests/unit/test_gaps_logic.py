@@ -971,7 +971,8 @@ async def test_tool_registry_default_tools_execution():
     # score_candidate_ats
     ats_res = await registry.execute(
         "score_candidate_ats",
-        {"resume_text": "Experienced Python Engineer", "required_skills": ["Python"]},
+        {"resume_text": "Experienced Python Engineer", "required_skills": ["Python"],
+         "required_experience_years": 3.0, "candidate_experience_years": 3.0},
     )
     assert ats_res["composite_score"] > 0.0
 
