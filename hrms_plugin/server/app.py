@@ -590,6 +590,7 @@ async def list_host_requisitions(auth: AuthContext = Depends(require(Permission.
     """Requisitions from this tenant's host HRMS in canonical form, via its declarative profile (piece I7)."""
     from hrms_plugin.integrations.declarative import ConnectorError, DeclarativeConnector, ProfileError, load_profile
     from hrms_plugin.integrations.host_registry import HostRegistryError, load_host_registry_from_env
+    from hrms_plugin.integrations.mapping_overlay import OverlayError, overlay
 
     try:
         host = load_host_registry_from_env().for_tenant(auth.tenant_id)
@@ -598,12 +599,26 @@ async def list_host_requisitions(auth: AuthContext = Depends(require(Permission.
     if host is None:
         raise ApiError(409, {"error": "HOST_NOT_CONFIGURED"})
     try:
-        result = await DeclarativeConnector(host, load_profile(host.vendor)).list_entity("REQUISITION")
+        profile = load_profile(host.vendor)
     except ProfileError:
         raise ApiError(500, {"error": "PROFILE_INVALID"}) from None
+    # Q1 resolution order: the tenant's approved mapping overrides the vendor profile; proposals never apply (QC).
+    layer: Dict[str, Any] = {"layer": "VENDOR_PROFILE"}
+    active = mapping_store.active_version(auth.tenant_id, host.vendor, "REQUISITION")
+    if active is not None and "REQUISITION" in profile.entities:
+        version, approved = active
+        try:
+            spec, overridden = overlay(profile.entities["REQUISITION"], approved)
+        except OverlayError as exc:
+            raise ApiError(409, {"error": "MAPPING_NOT_APPLICABLE", "version": version, "field": exc.field,
+                                 "detail": exc.reason}) from None
+        profile = profile.model_copy(update={"entities": {**profile.entities, "REQUISITION": spec}})
+        layer = {"layer": "TENANT_OVERRIDE", "version": version, "fields": overridden}
+    try:
+        result = await DeclarativeConnector(host, profile).list_entity("REQUISITION")
     except ConnectorError as exc:
         raise ApiError(_CONNECTOR_ERROR_STATUS.get(exc.code, 502), {"error": exc.code}) from None
-    return {"vendor": host.vendor, "requisitions": result.records, "rejected": result.rejected}
+    return {"vendor": host.vendor, "requisitions": result.records, "rejected": result.rejected, "mapping": layer}
 
 
 @router.get("/v1/governance/llm-egress")

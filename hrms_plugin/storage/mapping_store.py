@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
@@ -190,6 +190,15 @@ class MappingStore:
         self._put_version(tenant_id, vendor, entity_type, row)
         self.backend.set(self.NAMESPACE, self._make_key(tenant_id, vendor, entity_type), row["mapping"])
         return row
+
+    def active_version(self, tenant_id: str, vendor: str,
+                       entity_type: str | EntityType) -> Optional[Tuple[int, EntityMapping]]:
+        """The approved mapping in force and its version; proposals never count (QC)."""
+        active = [r for r in self._versions(tenant_id, vendor, entity_type).values() if r["status"] == "ACTIVE"]
+        if not active:
+            return None
+        row = max(active, key=lambda r: r["version"])
+        return row["version"], entity_mapping_from_dict(row["mapping"])
 
     def list_versions(self, tenant_id: str) -> List[Dict]:
         prefix = f"{tenant_id}:"
