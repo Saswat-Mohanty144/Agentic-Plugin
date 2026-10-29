@@ -12,6 +12,8 @@ import argparse
 import asyncio
 import json
 import os
+import re
+import statistics
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +28,10 @@ from hrms_plugin.security.rbac import AuthContext, UserRole
 
 CASES_PATH = Path(__file__).with_name("cases.yaml")
 EVAL_TENANT = "eval"
+# Read-only tools that run for real in evals so their citations can ground the answer; the rest stay stubbed.
+REAL_TOOLS = ("search_labor_regulations",)
+_CITATION = re.compile(r"\b(?:Article|Section)\s+\d+[A-Za-z]?\b")
+USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
 
 
 @dataclass(frozen=True)
@@ -44,6 +50,9 @@ class EvalResult:
     passed: bool
     reason: str
     tools_called: List[str] = field(default_factory=list)
+    tokens: Optional[int] = None  # provider-reported usage summed over the case; None when none was reported
+    citations_ok: bool = True
+    ungrounded_citations: List[str] = field(default_factory=list)
 
 
 def load_cases(path: Path = CASES_PATH) -> List[EvalCase]:
@@ -89,19 +98,58 @@ class _RecordingRegistry(AgenticToolRegistry):
     def __init__(self) -> None:
         super().__init__()
         self.called: List[str] = []
+        self.outputs: List[Any] = []
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         self.called.append(tool_name)
+        if tool_name in REAL_TOOLS:
+            output = await super().execute(tool_name, arguments)
+            self.outputs.append(output)
+            return output
         return {"eval_stub": True, "tool": tool_name}
+
+
+def _citations(text: str) -> List[str]:
+    return sorted(set(_CITATION.findall(text or "")))
 
 
 async def run_case(case: EvalCase, gateway: LLMGateway, tenant_id: str = EVAL_TENANT) -> EvalResult:
     registry = _RecordingRegistry()
     orchestrator = AgenticOrchestrator(llm_gateway=gateway, tool_registry=registry, max_iterations=2)
     auth = AuthContext(user_id="eval", tenant_id=tenant_id, roles=frozenset({case.role}))
-    response = await orchestrator.run(case.prompt, jurisdiction=case.jurisdiction, auth=auth)
+    usages: List[Dict[str, Any]] = []
+    original = gateway.client.chat
+
+    async def counting(*args: Any, **kwargs: Any) -> Any:
+        resp = await original(*args, **kwargs)
+        if resp.usage:
+            usages.append(resp.usage)
+        return resp
+
+    gateway.client.chat = counting  # type: ignore[method-assign]
+    try:
+        response = await orchestrator.run(case.prompt, jurisdiction=case.jurisdiction, auth=auth)
+    finally:
+        gateway.client.chat = original  # type: ignore[method-assign]
     names = [tc["name"] for tc in response.tool_calls]  # includes calls refused by RBAC
-    return score(case, names)
+    result = score(case, names)
+    result.tokens = sum(u.get(f) or 0 for u in usages for f in USAGE_FIELDS) if usages else None
+    grounded = set(_citations(json.dumps(registry.outputs, default=str)))
+    result.ungrounded_citations = [c for c in _citations(response.reply_text) if c not in grounded]
+    if result.ungrounded_citations:
+        result.citations_ok = False
+        result.passed = False
+        result.reason = f"{result.reason}; ungrounded citations {result.ungrounded_citations}"
+    return result
+
+
+def summarise(results: Sequence[EvalResult]) -> Dict[str, Any]:
+    """Pass rate, median tokens per case (cases with reported usage) and citation grounding."""
+    tokens = [r.tokens for r in results if r.tokens is not None]
+    return {"cases": len(results), "passed": sum(r.passed for r in results),
+            "median_tokens": statistics.median(tokens) if tokens else None,
+            "cases_without_usage": len(results) - len(tokens),
+            "ungrounded_citation_cases": sum(not r.citations_ok for r in results)}
 
 
 def prefix_chars(role: UserRole) -> int:
@@ -135,6 +183,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for r in results:
         print(json.dumps(r.__dict__))
     passed = sum(r.passed for r in results)
+    print(json.dumps(summarise(results)))
     print(f"{passed}/{len(results)} passed")
     return 0 if passed == len(results) else 1
 
