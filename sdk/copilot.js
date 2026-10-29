@@ -7,12 +7,144 @@
 (function () {
   'use strict';
 
+  // ---------------------------------------------------------------------------------------------------------------
+  // Security core (piece D): pure functions, unit-tested under Node (sdk/test/copilot.test.js).
+  // ---------------------------------------------------------------------------------------------------------------
+  const ENTITY_RE = /^[A-Za-z][A-Za-z ]{0,63}$/;
+  const RECORD_ID_RE = /^[A-Za-z0-9._\/-]{1,140}$/;
+  const JURISDICTIONS = ['IN', 'AE', 'SA', 'US'];
+
+  function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // Everything is escaped FIRST; markdown is then applied to inert text, so model output can never become markup.
+  function formatMarkdown(text) {
+    if (!text) return '';
+    let str = escapeHtml(String(text).replace(/\r\n/g, '\n'));
+
+    const codeBlocks = [];
+    str = str.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function (_, lang, code) {
+      codeBlocks.push('<pre class="code-block"><code class="lang-' + (lang || 'text') + '">' + code.trim() + '</code></pre>');
+      return '⟦CB' + (codeBlocks.length - 1) + '⟧';
+    });
+    const inlineCodes = [];
+    str = str.replace(/`([^`\n]+)`/g, function (_, code) {
+      inlineCodes.push('<code class="inline-code">' + code + '</code>');
+      return '⟦IC' + (inlineCodes.length - 1) + '⟧';
+    });
+
+    str = str.replace(/^&gt;\s+(.*$)/gim, '<blockquote class="md-quote">$1</blockquote>');
+    str = str.replace(/^###\s+(.*$)/gim, '<h4 class="md-h4">$1</h4>');
+    str = str.replace(/^##\s+(.*$)/gim, '<h3 class="md-h3">$1</h3>');
+    str = str.replace(/^#\s+(.*$)/gim, '<h2 class="md-h2">$1</h2>');
+    // Links: https only; the URL may not contain '&' (so no escaped quote/angle entities) or whitespace.
+    str = str.replace(/\[([^\]]+)\]\((https:\/\/[^\s)&]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
+    str = str.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    str = str.replace(/__(.*?)__/g, '<strong>$1</strong>');
+    str = str.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+
+    const out = [];
+    let list = null;
+    for (const line of str.split('\n')) {
+      const bullet = line.match(/^[*\-+]\s+(.*)/);
+      const ordered = line.match(/^\d+\.\s+(.*)/);
+      const kind = bullet ? 'ul' : ordered ? 'ol' : null;
+      if (kind !== list) {
+        if (list) out.push('</' + list + '>');
+        if (kind) out.push('<' + kind + ' class="md-' + kind + '">');
+        list = kind;
+      }
+      out.push(kind ? '<li>' + (bullet || ordered)[1] + '</li>' : line);
+    }
+    if (list) out.push('</' + list + '>');
+    str = out.join('\n');
+
+    str = str.split(/\n\n+/).map(function (chunk) {
+      chunk = chunk.trim();
+      if (!chunk) return '';
+      if (/^(<h[234]|<ul|<ol|<blockquote|⟦CB)/.test(chunk)) return chunk;
+      return '<p class="md-p">' + chunk.replace(/\n/g, '<br/>') + '</p>';
+    }).filter(Boolean).join('\n');
+
+    str = str.replace(/⟦CB(\d+)⟧/g, function (_, i) { return codeBlocks[parseInt(i, 10)] || ''; });
+    str = str.replace(/⟦IC(\d+)⟧/g, function (_, i) { return inlineCodes[parseInt(i, 10)] || ''; });
+    return str;
+  }
+
+  function isTrustedMessage(event, hostOrigin) {
+    return Boolean(
+      typeof hostOrigin === 'string' && hostOrigin && hostOrigin !== '*' &&
+      event && event.origin === hostOrigin &&
+      event.data && typeof event.data === 'object' && event.data.type === 'HRMS_NAVIGATE'
+    );
+  }
+
+  function sanitizeContext(data) {
+    if (!data || typeof data !== 'object') return null;
+    const entity = data.entity;
+    const recordId = data.record_id;
+    if (typeof entity !== 'string' || !ENTITY_RE.test(entity)) return null;
+    if (typeof recordId !== 'string' || !RECORD_ID_RE.test(recordId)) return null;
+    return { entity: entity, record_id: recordId };  // roles are never taken from the page; they come from the token
+  }
+
+  function validateApiUrl(raw) {
+    let url;
+    try { url = new URL(String(raw || '')); } catch (e) { return null; }
+    if (url.username || url.password) return null;
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if (!(url.protocol === 'https:' || (url.protocol === 'http:' && local))) return null;
+    return (url.origin + url.pathname).replace(/\/+$/, '');
+  }
+
+  function buildHeaders(token) {
+    if (typeof token !== 'string' || !token || /\s/.test(token)) throw new Error('A valid access token is required');
+    return { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+  }
+
+  function buildRemediationBody(action) {
+    if (!action || typeof action.violation_id !== 'string' || typeof action.entity_id !== 'string') return null;
+    if (!action.patch || typeof action.patch !== 'object') return null;
+    return { violation_id: action.violation_id, target_entity: 'EMPLOYEE', entity_id: action.entity_id,
+      patch_payload: action.patch };
+  }
+
+  function describePatch(patch) {
+    return Object.keys(patch || {}).map(function (k) { return escapeHtml(k) + ' → ' + escapeHtml(patch[k]); });
+  }
+
+  function normalizeJurisdiction(value) {
+    return JURISDICTIONS.indexOf(value) >= 0 ? value : 'IN';
+  }
+
+  const core = { escapeHtml, formatMarkdown, isTrustedMessage, sanitizeContext, validateApiUrl, buildHeaders,
+    buildRemediationBody, describePatch, normalizeJurisdiction };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = core;
+  }
+  if (typeof HTMLElement === 'undefined') {
+    return;  // Node (tests): no DOM, only the core is exported
+  }
+
   class HrmsCopilotElement extends HTMLElement {
     constructor() {
       super();
       this.attachShadow({ mode: 'open' });
-      this.tenantId = this.getAttribute('data-tenant') || 'DEFAULT';
-      this.apiUrl = this.getAttribute('data-api-url') || 'http://localhost:8000';
+      // The host page sets `element.tokenProvider = async () => accessToken` (never an attribute).
+      this.tokenProvider = null;
+      this.apiUrl = validateApiUrl(this.getAttribute('data-api-url'));
+      this.hostOrigin = this.getAttribute('data-host-origin') || '';
+      this.jurisdiction = normalizeJurisdiction(this.getAttribute('data-jurisdiction'));
       this.isOpen = false;
       this.currentContext = {};
       this.mediaRecorder = null;
@@ -27,22 +159,18 @@
 
     initPostMessageListener() {
       window.addEventListener('message', (event) => {
-        if (!event.data || typeof event.data !== 'object') return;
-        if (event.data.type === 'HRMS_NAVIGATE') {
-          this.currentContext = {
-            entity: event.data.entity,
-            recordId: event.data.record_id,
-            userRole: event.data.user_role || 'EMPLOYEE',
-          };
-          this.updateContextBadge();
-        }
+        if (!isTrustedMessage(event, this.hostOrigin)) return;  // exact host origin only (fail closed)
+        const context = sanitizeContext(event.data);
+        if (!context) return;
+        this.currentContext = context;
+        this.updateContextBadge();
       });
     }
 
     updateContextBadge() {
       const badge = this.shadowRoot.querySelector('#context-badge');
       if (badge && this.currentContext.entity) {
-        badge.textContent = `Context: ${this.currentContext.entity} #${this.currentContext.recordId}`;
+        badge.textContent = `Context: ${this.currentContext.entity} #${this.currentContext.record_id}`;
         badge.style.display = 'inline-block';
       }
     }
@@ -91,20 +219,19 @@
       }
     }
 
+    async authHeaders() {
+      if (!this.apiUrl) throw new Error('data-api-url must be https:// (or http://localhost for development)');
+      if (typeof this.tokenProvider !== 'function') throw new Error('Not signed in: the host page must set tokenProvider');
+      return buildHeaders(await this.tokenProvider());
+    }
+
     async sendVoiceAudio(base64Audio) {
       this.appendMessage('user', '🎙️ [Spoken Audio Message]');
       try {
         const res = await fetch(`${this.apiUrl}/v1/voice/turn`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Tenant-Id': this.tenantId,
-          },
-          body: JSON.stringify({
-            audio_base64: base64Audio,
-            user_id: 'USR-COPILOT',
-            jurisdiction: 'IN',
-          }),
+          headers: await this.authHeaders(),
+          body: JSON.stringify({ audio_base64: base64Audio, jurisdiction: this.jurisdiction }),
         });
         const data = await res.json();
         this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations);
@@ -128,12 +255,10 @@
       try {
         const res = await fetch(`${this.apiUrl}/v1/chat`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Tenant-Id': this.tenantId,
-          },
+          headers: await this.authHeaders(),
           body: JSON.stringify({
             message: text,
+            jurisdiction: this.jurisdiction,
             context: this.currentContext,
             agentic: true,
           }),
@@ -147,209 +272,102 @@
     }
 
     formatMarkdown(text) {
-      if (!text) return '';
-      let str = String(text).replace(/\r\n/g, '\n');
-
-      // 1. Extract and preserve code blocks
-      const codeBlocks = [];
-      str = str.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function (_, lang, code) {
-        const idx = codeBlocks.length;
-        const safeCode = code
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-        codeBlocks.push('<pre class="code-block"><code class="lang-' + (lang || 'text') + '">' + safeCode.trim() + '</code></pre>');
-        return '⟦CB' + idx + '⟧';
-      });
-
-      // 2. Extract and preserve inline code
-      const inlineCodes = [];
-      str = str.replace(/`([^`\n]+)`/g, function (_, code) {
-        const idx = inlineCodes.length;
-        const safeCode = code
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
-        inlineCodes.push('<code class="inline-code">' + safeCode + '</code>');
-        return '⟦IC' + idx + '⟧';
-      });
-
-      // 3. Process Blockquotes before escaping >
-      str = str.replace(/^>\s+(.*$)/gim, '<blockquote class="md-quote">$1</blockquote>');
-
-      // 4. Escape general HTML (preserving deliberate blockquote tags)
-      str = str
-        .replace(/&(?!amp;|lt;|gt;|quot;|#39;)/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-      str = str.replace(/&lt;blockquote class="md-quote"&gt;(.*?)&lt;\/blockquote&gt;/gi, '<blockquote class="md-quote">$1</blockquote>');
-
-      // 5. Headers
-      str = str.replace(/^###\s+(.*$)/gim, '<h4 class="md-h4">$1</h4>');
-      str = str.replace(/^##\s+(.*$)/gim, '<h3 class="md-h3">$1</h3>');
-      str = str.replace(/^#\s+(.*$)/gim, '<h2 class="md-h2">$1</h2>');
-
-      // 6. Links [text](url)
-      str = str.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
-
-      // 7. Bold & Italics
-      str = str.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
-      str = str.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      str = str.replace(/__(.*?)__/g, '<strong>$1</strong>');
-      str = str.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
-      str = str.replace(/_([^_\n]+)_/g, '<em>$1</em>');
-
-      // 8. Lists (Bullet & Ordered)
-      const rawLines = str.split('\n');
-      const groupedLines = [];
-      let inUl = false;
-      let inOl = false;
-
-      for (let i = 0; i < rawLines.length; i++) {
-        const line = rawLines[i];
-        const bulletMatch = line.match(/^[\*\-\+]\s+(.*)/);
-        const orderedMatch = line.match(/^\d+\.\s+(.*)/);
-
-        if (bulletMatch) {
-          if (inOl) {
-            groupedLines.push('</ol>');
-            inOl = false;
-          }
-          if (!inUl) {
-            groupedLines.push('\n<ul class="md-ul">');
-            inUl = true;
-          }
-          groupedLines.push('<li>' + bulletMatch[1] + '</li>');
-        } else if (orderedMatch) {
-          if (inUl) {
-            groupedLines.push('</ul>');
-            inUl = false;
-          }
-          if (!inOl) {
-            groupedLines.push('\n<ol class="md-ol">');
-            inOl = true;
-          }
-          groupedLines.push('<li>' + orderedMatch[1] + '</li>');
-        } else {
-          if (inUl) {
-            groupedLines.push('</ul>\n');
-            inUl = false;
-          }
-          if (inOl) {
-            groupedLines.push('</ol>\n');
-            inOl = false;
-          }
-          groupedLines.push(line);
-        }
-      }
-      if (inUl) groupedLines.push('</ul>\n');
-      if (inOl) groupedLines.push('</ol>\n');
-
-      str = groupedLines.join('\n');
-
-      // 9. Paragraphs
-      const chunks = str.split(/\n\n+/);
-      const formattedChunks = chunks.map(function (chunk) {
-        chunk = chunk.trim();
-        if (!chunk) return '';
-        if (
-          chunk.startsWith('<h2') ||
-          chunk.startsWith('<h3') ||
-          chunk.startsWith('<h4') ||
-          chunk.startsWith('<ul') ||
-          chunk.startsWith('<ol') ||
-          chunk.startsWith('<blockquote') ||
-          chunk.startsWith('⟦CB')
-        ) {
-          return chunk;
-        }
-        return '<p class="md-p">' + chunk.replace(/\n/g, '<br/>') + '</p>';
-      });
-
-      str = formattedChunks.filter(Boolean).join('\n');
-
-      // 10. Restore code blocks and inline code
-      str = str.replace(/⟦CB(\d+)⟧/g, function (_, idx) {
-        return codeBlocks[parseInt(idx, 10)] || '';
-      });
-      str = str.replace(/⟦IC(\d+)⟧/g, function (_, idx) {
-        return inlineCodes[parseInt(idx, 10)] || '';
-      });
-
-      return str;
+      return formatMarkdown(text);
     }
 
     appendMessage(sender, text, actions = [], citations = [], thoughts = []) {
       const chatLogs = this.shadowRoot.querySelector('#chat-logs');
       const msgDiv = document.createElement('div');
       msgDiv.className = `msg ${sender}`;
-      
-      let html = '';
+
       if (thoughts && thoughts.length > 0) {
-        html += `<div class="thought-box"><small>💭 ${this.formatMarkdown(thoughts[thoughts.length - 1])}</small></div>`;
+        const thought = document.createElement('div');
+        thought.className = 'thought-box';
+        thought.innerHTML = `<small>💭 ${formatMarkdown(thoughts[thoughts.length - 1])}</small>`;
+        msgDiv.appendChild(thought);
       }
-      html += `<div class="bubble">${this.formatMarkdown(text)}</div>`;
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.innerHTML = formatMarkdown(text);  // escaped before any markup is produced
+      msgDiv.appendChild(bubble);
 
       if (citations && citations.length > 0) {
-        html += `<div class="citations"><small>📚 Statutory Citations:</small><ul>`;
+        const box = document.createElement('div');
+        box.className = 'citations';
+        box.innerHTML = '<small>📚 Statutory Citations:</small><ul></ul>';
+        const list = box.querySelector('ul');
         citations.forEach((c) => {
-          html += `<li><small>${c}</small></li>`;
+          const li = document.createElement('li');
+          const small = document.createElement('small');
+          small.textContent = String(c);
+          li.appendChild(small);
+          list.appendChild(li);
         });
-        html += `</ul></div>`;
+        msgDiv.appendChild(box);
       }
 
       if (actions && actions.length > 0) {
-        html += `<div class="actions">`;
-        actions.forEach((a) => {
-          const btnLabel = a.label || `⚡ Action (${a.violation_id || a.name || 'Execute'})`;
-          html += `<button class="action-btn" data-action='${JSON.stringify(a).replace(/'/g, "&apos;")}'>${btnLabel}</button>`;
+        const bar = document.createElement('div');
+        bar.className = 'actions';
+        actions.forEach((action) => {
+          const btn = document.createElement('button');
+          btn.className = 'action-btn';
+          btn.textContent = action.label || `⚡ Action (${action.violation_id || action.name || 'Execute'})`;
+          btn.addEventListener('click', () => this.handleAction(action));  // closure, not data in markup
+          bar.appendChild(btn);
         });
-        html += `</div>`;
+        msgDiv.appendChild(bar);
       }
 
-      msgDiv.innerHTML = html;
       chatLogs.appendChild(msgDiv);
       chatLogs.scrollTop = chatLogs.scrollHeight;
-
-      // Bind action buttons
-      msgDiv.querySelectorAll('.action-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          const actionData = JSON.parse(e.currentTarget.getAttribute('data-action'));
-          if (actionData.action_type === 'APPLY_ARCHETYPE' || actionData.archetype) {
-            window.postMessage({
-              type: 'HRMS_APPLY_ARCHETYPE',
-              archetype: actionData.archetype || actionData
-            }, '*');
-            this.appendMessage('assistant', `⚡ **Autonomous Action Dispatched**: Auto-filling host form with **${actionData.name || actionData.badge || 'Archetype'}** and opening Requisition view...`);
-          } else {
-            this.executeRemediation(actionData);
-          }
-        });
-      });
     }
 
-    async executeRemediation(actionData) {
+    handleAction(action) {
+      if (action.action_type === 'APPLY_ARCHETYPE' || action.archetype) {
+        if (!this.hostOrigin) {
+          this.appendMessage('assistant', '⚠️ Cannot hand the archetype to the host: data-host-origin is not set.');
+          return;
+        }
+        window.postMessage({ type: 'HRMS_APPLY_ARCHETYPE', archetype: action.archetype || action }, this.hostOrigin);
+        this.appendMessage('assistant', `⚡ **Action dispatched**: auto-filling the requisition form with **${action.name || action.badge || 'archetype'}**.`);
+        return;
+      }
+      this.confirmRemediation(action);
+    }
+
+    confirmRemediation(action) {
+      const body = buildRemediationBody(action);
+      if (!body) {
+        this.appendMessage('assistant', '⚠️ This suggestion does not identify the record to change, so it cannot be applied.');
+        return;
+      }
+      const lines = describePatch(body.patch_payload).map((l) => `- ${l}`).join('\n');
+      this.appendMessage('assistant', `Review the change for **${escapeHtml(body.entity_id)}** before approving:\n\n${lines}`, [
+        { label: '✅ Approve this change', name: 'confirm', confirm: body },
+      ]);
+      const buttons = this.shadowRoot.querySelectorAll('.action-btn');
+      const confirmBtn = buttons[buttons.length - 1];
+      const fresh = confirmBtn.cloneNode(true);
+      confirmBtn.replaceWith(fresh);
+      fresh.addEventListener('click', () => this.executeRemediation(body), { once: true });
+    }
+
+    async executeRemediation(body) {
       try {
         const res = await fetch(`${this.apiUrl}/v1/remediate/execute`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Tenant-Id': this.tenantId,
-          },
-          body: JSON.stringify({
-            violation_id: actionData.violation_id,
-            target_entity: 'EMPLOYEE',
-            entity_id: 'EMP-AUTO',
-            patch_payload: actionData.patch || {},
-            approver_id: 'USR-ADMIN',
-            approver_role: 'HR_ADMIN',
-          }),
+          headers: await this.authHeaders(),  // fresh token: the server requires one issued in the last 5 minutes
+          body: JSON.stringify(body),
         });
         const result = await res.json();
-        this.appendMessage('assistant', `✅ Remediation approved & applied with audit trace: ${JSON.stringify(result.audit_tracing)}`);
+        if (!res.ok) {
+          this.appendMessage('assistant', `❌ Not applied: ${escapeHtml(result.error || res.status)}`);
+          return;
+        }
+        this.appendMessage('assistant', `✅ Change approved. Audit invocation: ${escapeHtml((result.audit_tracing || {})['X-Agent-Invocation-Id'] || '')}`);
       } catch (err) {
-        this.appendMessage('assistant', `❌ Remediation error: ${err.message}`);
+        this.appendMessage('assistant', `❌ Remediation error: ${escapeHtml(err.message)}`);
       }
     }
 

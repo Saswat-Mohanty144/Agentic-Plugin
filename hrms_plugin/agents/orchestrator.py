@@ -103,6 +103,7 @@ def _collect_from_output(output: Any, state: _RunState) -> None:
                     {
                         "action": "REMEDIATE_PATCH",
                         "violation_id": v.get("violation_id", "VIOLATION-01"),
+                        "entity_id": v.get("entity_id") or v.get("employee_id"),
                         "patch": v["remediation_patch"],
                     }
                 )

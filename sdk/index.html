@@ -61,7 +61,20 @@
   </div>
 
   <!-- EMBEDDABLE AGENTIC HRMS COPILOT -->
-  <hrms-copilot data-tenant="iceipts_demo" data-api-url="http://localhost:8000"></hrms-copilot>
+  <!-- Integration contract (piece D):
+       - data-api-url: https:// (http://localhost only for development)
+       - data-host-origin: the exact origin of this host page; postMessage from anywhere else is ignored
+       - tokenProvider: set by the host page as a function returning a fresh access token issued by the
+         host's identity provider (the plugin verifies it against the tenant registry). Never an attribute. -->
+  <hrms-copilot id="copilot" data-api-url="http://localhost:8000" data-host-origin="http://localhost:8080"
+                data-jurisdiction="IN"></hrms-copilot>
+  <script>
+    // Demo only: replace with a call to your HRMS backend that returns a short-lived token for the signed-in user.
+    document.getElementById('copilot').tokenProvider = async () => {
+      const res = await fetch('/session/plugin-token', { credentials: 'include' });
+      return (await res.json()).access_token;
+    };
+  </script>
   <script src="copilot.js"></script>
 
   <script>
@@ -70,9 +83,8 @@
         type: 'HRMS_NAVIGATE',
         entity: 'EMPLOYEE',
         record_id: 'EMP-401',
-        user_role: 'HR_ADMIN'
-      }, '*');
-      alert('Context synced to HR Copilot via postMessage!');
+      }, window.location.origin); // never '*'; role comes from the signed token, not the message
+      console.log('Context synced to HR Copilot via postMessage');
     }
   </script>
 
