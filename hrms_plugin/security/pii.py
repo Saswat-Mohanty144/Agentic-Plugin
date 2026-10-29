@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import secrets
 import unicodedata
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 Match = Tuple[str, int, int]  # (kind, start, end)
@@ -181,6 +182,52 @@ COMPENSATION_FIELDS = frozenset({
 })
 
 
+# Key words that make a numeric field money (word-level, so `payment_days` is NOT money) — agy G-F5.
+_MONEY_WORDS = frozenset({
+    "salary", "ctc", "pay", "wage", "wages", "gratuity", "basic", "allowance", "hra", "bonus", "deduction",
+    "deductions", "eosb", "settlement", "epf", "eps", "esi", "tds", "gross", "net", "compensation", "earning",
+    "earnings", "stipend", "incentive", "commission", "amount", "take",
+})
+
+
+def is_compensation_key(key: str) -> bool:
+    normalised = _normalise_key(key)
+    return normalised in COMPENSATION_FIELDS or bool(set(normalised.split("_")) & _MONEY_WORDS)
+
+
+def _indian_grouping(integer: int) -> str:
+    text = str(abs(integer))
+    if len(text) <= 3:
+        return text
+    head, tail = text[:-3], text[-3:]
+    groups = []
+    while len(head) > 2:
+        groups.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        groups.insert(0, head)
+    return ",".join(groups + [tail])
+
+
+def money_variants(value: object) -> List[str]:
+    """Textual forms the same amount takes in prose: 45000 / 45000.0 / 45000.00 / 45,000 / 4,50,000 (agy G-F3)."""
+    try:
+        number = Decimal(str(value).replace(",", ""))
+    except (InvalidOperation, ValueError):
+        return []
+    if not number.is_finite():
+        return []
+    variants = {str(value).strip(), f"{number:.2f}", f"{number:,.2f}"}
+    if number == number.to_integral_value():
+        whole = int(number)
+        variants |= {str(whole), f"{whole:,}", _indian_grouping(whole), f"{whole}.0",
+                     _indian_grouping(whole) + ".00"}
+    else:
+        whole, frac = divmod(number, 1)
+        variants.add(_indian_grouping(int(whole)) + f"{frac:.2f}"[1:])
+    return sorted(v for v in variants if len(v) >= 2)
+
+
 def _normalise_key(key: str) -> str:
     key = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", key)
     return re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
@@ -218,13 +265,27 @@ class PiiSession:
         self._counters: Dict[str, int] = {}
 
     # learning -------------------------------------------------------------------------------------
+    def _learn_money(self, value: Any) -> None:
+        if isinstance(value, bool):
+            return
+        if isinstance(value, (int, float, str)):
+            for variant in money_variants(value):
+                self._known[normalise(variant).casefold()] = "COMPENSATION"
+        elif isinstance(value, dict):
+            for nested in value.values():
+                self._learn_money(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                self._learn_money(nested)
+
     def learn(self, obj: Any) -> None:
         if isinstance(obj, dict):
             for key, value in obj.items():
                 kind = identifier_kind(str(key))
-                if kind is None and self._tokenize_compensation and _normalise_key(str(key)) in COMPENSATION_FIELDS:
-                    kind = "COMPENSATION"
-                if kind and isinstance(value, (str, int, float)) and not isinstance(value, bool):
+                if kind is None and self._tokenize_compensation and is_compensation_key(str(key)):
+                    self._learn_money(value)  # nested amounts included (agy G-F4)
+                    continue
+                if kind and isinstance(value, (str, int)) and not isinstance(value, bool):
                     text = normalise(str(value)).strip()
                     if len(text) >= 2:
                         self._known[text.casefold()] = kind

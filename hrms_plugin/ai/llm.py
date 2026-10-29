@@ -21,6 +21,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -771,28 +772,40 @@ class LLMGateway:
         from hrms_plugin.security.tenant_registry import LlmPolicy
 
         if self.policy_resolver is None:
-            return LlmPolicy(allowed_providers=(self.config.provider.value,))
+            # Fail closed (agy G-F8): without a resolver only the in-process fake provider may run (tests).
+            if self.config.provider is LLMProvider.FAKE:
+                return LlmPolicy(allowed_providers=("fake",))
+            from hrms_plugin.governance.llm_policy import LlmNotAllowed
+
+            raise LlmNotAllowed(f"no LLM policy resolver configured for provider {self.config.provider.value!r}")
         return self.policy_resolver(tenant_id, self.config.provider.value)
 
-    def _record_egress(self, tenant_id: str, protected: List[ChatMessage], before: Dict[str, int],
-                       pii: PiiSession, usage: Dict[str, Any]) -> None:
+    _TOKEN_KIND = re.compile(r"\[PII_([A-Z_]+?)_\d+_[0-9a-f]{8}\]")
+
+    def _record_egress(self, tenant_id: str, protected: List[ChatMessage]) -> Optional[str]:
+        """Log what is about to leave: hash of the redacted payload and the kinds redacted IN THIS CALL."""
         if self.egress_log is None:
-            return
+            return None
         payload = json.dumps(
             [[m.role, m.content, [[tc.name, tc.arguments] for tc in (m.tool_calls or [])]] for m in protected],
             default=str,
             sort_keys=True,
         )
-        after = pii.minted_counts()
-        self.egress_log.record(
+        distinct_tokens = {m.group(0): m.group(1) for m in self._TOKEN_KIND.finditer(payload)}
+        kinds: Dict[str, int] = {}
+        for kind in distinct_tokens.values():
+            kinds[kind] = kinds.get(kind, 0) + 1
+        return self.egress_log.record(
             tenant_id=tenant_id,
             provider=self.config.provider.value,
             model=self.config.model,
             payload_sha256="sha256:" + hashlib.sha256(payload.encode()).hexdigest(),
-            redacted_kinds={k: after[k] - before.get(k, 0) for k in after if after[k] - before.get(k, 0)},
-            input_tokens=(usage or {}).get("input_tokens", (usage or {}).get("prompt_tokens", 0)),
-            output_tokens=(usage or {}).get("output_tokens", (usage or {}).get("completion_tokens", 0)),
+            redacted_kinds=kinds,
         )
+
+    def _finish_egress(self, key: Optional[str], **fields: Any) -> None:
+        if key is not None and self.egress_log is not None:
+            self.egress_log.update(key, **fields)
 
     @staticmethod
     def _redact_obj(obj: Any, pii: PiiSession) -> Any:
@@ -918,16 +931,26 @@ class LLMGateway:
         """Execute a chat turn. PII is always redacted before sending and restored in the reply (piece C)."""
         policy = self.policy_for(tenant_id)  # raises LlmNotAllowed before anything is sent (piece G2)
         pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
-        before = pii.minted_counts()
         # Pin deterministic temperature for high-stakes tasks
         effective_temp = 0.0 if task_class in (TaskClass.SCORING, TaskClass.EVALUATION) else temperature
         protected = self._protect(messages, pii)
-        response = await self.client.chat(
-            messages=protected,
-            tools=tools,
-            temperature=effective_temp,
+        egress_key = self._record_egress(tenant_id, protected)
+        try:
+            response = await self.client.chat(
+                messages=protected,
+                tools=tools,
+                temperature=effective_temp,
+            )
+        except BaseException:
+            self._finish_egress(egress_key, status="FAILED")
+            raise
+        usage = response.usage or {}
+        self._finish_egress(
+            egress_key,
+            status="COMPLETED",
+            input_tokens=usage.get("input_tokens", usage.get("prompt_tokens")),
+            output_tokens=usage.get("output_tokens", usage.get("completion_tokens")),
         )
-        self._record_egress(tenant_id, protected, before, pii, response.usage)
         response.content = pii.restore(response.content)
         response.tool_calls = [
             ToolCall(id=tc.id, name=tc.name, arguments=pii.restore_obj(tc.arguments)) for tc in response.tool_calls
@@ -944,9 +967,8 @@ class LLMGateway:
         """Stream SSE events; PII is redacted before sending and tokens are restored in streamed text."""
         policy = self.policy_for(tenant_id)
         pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
-        before = pii.minted_counts()
         protected = self._protect(messages, pii)
-        self._record_egress(tenant_id, protected, before, pii, {})
+        egress_key = self._record_egress(tenant_id, protected)  # stream token usage is not reported → stays None
         restorer = StreamRestorer(pii)
         async for chunk in self.client.chat_stream(protected, tools):
             if chunk.get("event") == "token":
@@ -961,6 +983,7 @@ class LLMGateway:
         pending = restorer.flush()
         if pending:
             yield {"event": "token", "data": pending}
+        self._finish_egress(egress_key, status="COMPLETED")
 
     async def complete(
         self,

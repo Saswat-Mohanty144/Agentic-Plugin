@@ -125,7 +125,8 @@ async def test_synthesizer_closes_the_gateway_it_created(monkeypatch):
     closed = []
     monkeypatch.setattr(llm.LLMGateway, "aclose", lambda self: closed.append(self) or _done())
     discovered = DiscoveredEntity(name="E", fields={"zq_given": DiscoveredField(name="zq_given", path="zq_given")})
-    await MappingSynthesizer.synthesize_agentic(discovered, EntityType.EMPLOYEE)
+    # tenant with an LLM policy (piece G2: the DEFAULT tenant has none and is refused)
+    await MappingSynthesizer.synthesize_agentic(discovered, EntityType.EMPLOYEE, tenant_id="acme")
     assert len(closed) == 1
 
 

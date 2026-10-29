@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -79,13 +80,16 @@ class MappingStore:
 
     def __init__(self, backend: Optional[BaseKeyValueStore] = None) -> None:
         self.backend: BaseKeyValueStore = backend or SqliteKeyValueStore()
+        self._lock = threading.RLock()
 
     @staticmethod
     def _make_key(tenant_id: str, vendor: str, entity_type: str | EntityType) -> str:
         ent = entity_type.value if isinstance(entity_type, EntityType) else str(entity_type).upper()
+        if any(":" in part for part in (tenant_id, vendor, ent)):
+            raise MappingGovernanceError("INVALID_KEY", "tenant, vendor and entity type must not contain ':'")
         return f"{tenant_id}:{vendor.lower()}:{ent}"
 
-    def save_mapping(
+    def _activate(
         self,
         tenant_id: str,
         mapping: EntityMapping,
@@ -143,6 +147,10 @@ class MappingStore:
         self.backend.set(self.VERSIONS_NAMESPACE, key, row)
 
     def propose_mapping(self, tenant_id: str, mapping: EntityMapping, proposed_by: str) -> int:
+        with self._lock:  # version allocation must be atomic within the process (agy G-F7)
+            return self._propose_locked(tenant_id, mapping, proposed_by)
+
+    def _propose_locked(self, tenant_id: str, mapping: EntityMapping, proposed_by: str) -> int:
         existing = self._versions(tenant_id, mapping.vendor, mapping.entity_type)
         version = max(existing, default=0) + 1
         _tenant, vendor, entity = self._make_key(tenant_id, mapping.vendor, mapping.entity_type).split(":")
@@ -158,6 +166,11 @@ class MappingStore:
         return version
 
     def approve_version(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
+                        approver: str) -> Dict:
+        with self._lock:
+            return self._approve_locked(tenant_id, vendor, entity_type, version, approver)
+
+    def _approve_locked(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
                         approver: str) -> Dict:
         versions = self._versions(tenant_id, vendor, entity_type)
         row = versions.get(version)

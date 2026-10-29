@@ -807,6 +807,8 @@ class MappingSynthesizer:
     @classmethod
     async def _apply_llm_matches(cls, discovered, mapping, report, gateway, tenant_id="DEFAULT"):
         from hrms_plugin.ai.llm import ChatMessage, TaskClass
+        from hrms_plugin.governance.llm_policy import LlmNotAllowed
+        from hrms_plugin.security.pii import PiiEgressBlocked
 
         try:
             import json
@@ -873,6 +875,8 @@ class MappingSynthesizer:
             report.field_mappings = synthesized_fms
             report.average_confidence = sum(f.confidence for f in synthesized_fms) / max(1, len(synthesized_fms))
             return upgraded_mapping, report
+        except (LlmNotAllowed, PiiEgressBlocked):
+            raise  # governance refusals must surface (agy G-F1)
         except Exception as exc:  # noqa: BLE001 — keep the rule-based mapping, but never silently
             logger.warning(
                 "LLM schema mapping failed; returning rule-based mapping",

@@ -1,0 +1,142 @@
+{
+  "verdict": "FAIL",
+  "acceptance": {
+    "ruff": "All checks passed!",
+    "pytest": "984 passed in 30.83s"
+  },
+  "requirements_checked": 16,
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "HIGH",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/schema/synthesizer.py",
+      "line": 876,
+      "requirement": "G2",
+      "finding": "POST /v1/schema/synthesize/agentic swallows LlmNotAllowed and returns HTTP 200 instead of failing closed with HTTP 403.",
+      "evidence": "In hrms_plugin/schema/synthesizer.py:876, MappingSynthesizer._apply_llm_matches catches 'except Exception as exc:', logs a warning, and falls back to returning the rule-based mapping. When an unauthorized tenant or tenant without LLM policy calls /v1/schema/synthesize/agentic, LlmNotAllowed raised by gateway.chat is caught, and the endpoint returns HTTP 200 with mapping_status='PROPOSED' instead of HTTP 403 {'error': 'LLM_NOT_ALLOWED_FOR_TENANT'} as mandated by G2.",
+      "reproduce": ".venv/bin/python -c \"import asyncio; from hrms_plugin.schema.canonical import EntityType; from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField; from hrms_plugin.schema.synthesizer import MappingSynthesizer; from hrms_plugin.governance.llm_policy import LlmNotAllowed; async def fake_chat(**k): raise LlmNotAllowed('denied'); g = type('G', (), {'chat': lambda self, **k: fake_chat(**k), 'aclose': lambda self: asyncio.sleep(0)})(); d = DiscoveredEntity(name='t', fields={'f': DiscoveredField(name='f', path='f')}); m, r = asyncio.run(MappingSynthesizer.synthesize_agentic(d, EntityType.EMPLOYEE, llm_gateway=g, tenant_id='initech')); print('STATUS_FALLBACK_OK:', r.entity_type)\""
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "category": "privacy",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 792,
+      "requirement": "G1",
+      "finding": "Egress audit log records empty redacted_kinds ({}) on subsequent turns in multi-turn conversations because PiiSession does not increment minted counts for previously seen values.",
+      "evidence": "In hrms_plugin/ai/llm.py:792, redacted_kinds is computed as '{k: after[k] - before.get(k, 0) for k in after if after[k] - before.get(k, 0)}' where before and after come from pii.minted_counts(). In hrms_plugin/security/pii.py:243, self._minted is only incremented when token is None in _token(). When the same PiiSession is reused across turns (e.g. in AgenticOrchestrator or conversational history), previously tokenized PII re-sent in turn 2+ produces after[k] == before[k], resulting in redacted_kinds={}. The audit log falsely reports zero redacted PII for calls containing redacted PII.",
+      "reproduce": ".venv/bin/python -c \"import asyncio; from hrms_plugin.ai.llm import LLMGateway, LLMConfig, LLMProvider, ChatMessage; from hrms_plugin.governance.egress_log import EgressLog; from hrms_plugin.security.pii import PiiSession; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; log = EgressLog(MemoryKeyValueStore()); gw = LLMGateway(LLMConfig(LLMProvider.FAKE), egress_log=log, policy_resolver=lambda t,p: None); async def fake_chat(*a, **k): return type('R', (), {'content':'ok','tool_calls':[],'finish_reason':'stop','usage':{}})(); gw.client.chat = fake_chat; pii = PiiSession(); asyncio.run(gw.chat([ChatMessage('user', 'Aadhaar 234567890124')], tenant_id='acme', pii=pii)); asyncio.run(gw.chat([ChatMessage('user', 'Aadhaar 234567890124'), ChatMessage('assistant', 'ok'), ChatMessage('user', 'Aadhaar 234567890124 again')], tenant_id='acme', pii=pii)); recs = log.list('acme'); print('Turn 2 redacted_kinds:', recs[0]['redacted_kinds'])\""
+    },
+    {
+      "id": "F3",
+      "severity": "HIGH",
+      "category": "privacy",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 228,
+      "requirement": "G3",
+      "finding": "Numeric formatting divergence between records and text causes compensation values to leak in plaintext to the LLM.",
+      "evidence": "In hrms_plugin/security/pii.py:228-230, PiiSession.learn registers 'text = normalise(str(value)).strip()' in self._known. When salary is stored as a float (e.g. 45000.0 from payroll models or JSON), self._known only contains '45000.0'. In redact_text, the compiled pattern (?<!\\w)(45000\\.0)(?!\\w) fails to match '45000' without decimals or '45,000' with comma grouping. Consequently, user messages referencing the salary in standard integer or comma-formatted notation are not redacted and egress in plaintext.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import PiiSession; s = PiiSession(tokenize_compensation=True); s.learn({'salary': 45000.0}); print('Leaked in plaintext:', s.redact_text('Employee salary is 45000'))\""
+    },
+    {
+      "id": "F4",
+      "severity": "MEDIUM",
+      "category": "privacy",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 227,
+      "requirement": "G3",
+      "finding": "PiiSession.learn fails to tokenize compensation fields structured as nested dictionaries.",
+      "evidence": "In hrms_plugin/security/pii.py:227, the check 'if kind and isinstance(value, (str, int, float)) and not isinstance(value, bool):' evaluates to False if value is a dict (e.g. {'salary': {'amount': 50000, 'currency': 'INR'}}). The method branches to 'else: self.learn(value)', where the inner key 'amount' is not recognized as a compensation field, leaving the compensation amount completely unlearned and unredacted.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import PiiSession; s = PiiSession(tokenize_compensation=True); s.learn({'salary': {'amount': 50000, 'currency': 'INR'}}); print('Known:', s._known); print('Redacted:', s.redact_text('salary 50000'))\""
+    },
+    {
+      "id": "F5",
+      "severity": "MEDIUM",
+      "category": "privacy",
+      "file": "hrms_plugin/security/pii.py",
+      "line": 178,
+      "requirement": "G3",
+      "finding": "Key statutory payroll tool compensation outputs are omitted from COMPENSATION_FIELDS, causing take-home pay and gratuity amounts to egress unmasked to the LLM.",
+      "evidence": "In hrms_plugin/security/pii.py:178, COMPENSATION_FIELDS omits tool output keys returned by statutory tools such as 'monthly_ctc', 'net_take_home' (from calculate_salary_structure), and 'last_drawn_basic', 'gratuity_amount' (from calculate_india_gratuity). When state.pii.learn(output) runs in orchestrator.py:184, these fields are ignored and serialized in plaintext into subsequent tool ChatMessages sent to the LLM.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.security.pii import PiiSession; s = PiiSession(tokenize_compensation=True); s.learn({'monthly_ctc': 100000.0, 'net_take_home': 88276.92, 'gratuity_amount': 144230.77}); print('Known:', s._known); print('Output unredacted:', s.redact_text('Take home 88276.92 and gratuity 144230.77'))\""
+    },
+    {
+      "id": "F6",
+      "severity": "HIGH",
+      "category": "correctness",
+      "file": "hrms_plugin/storage/mapping_store.py",
+      "line": 148,
+      "requirement": "G4",
+      "finding": "propose_mapping crashes with ValueError when vendor contains a colon.",
+      "evidence": "In hrms_plugin/storage/mapping_store.py:148, propose_mapping executes '_tenant, vendor, entity = self._make_key(tenant_id, mapping.vendor, mapping.entity_type).split(\":\")'. If mapping.vendor contains a colon (e.g. 'zoho:v1' or 'oracle:hcm'), split(':') produces 4 or more elements, raising an unhandled 'ValueError: too many values to unpack (expected 3)'.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.storage.mapping_store import MappingStore; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; from tests.unit.test_mapping_governance import mapping; m = mapping(); m = type(m)(vendor='zoho:v1', entity_type=m.entity_type, id_path=m.id_path, version_path=None, fields=m.fields, collection_path=None, writeback={}); MappingStore(MemoryKeyValueStore()).propose_mapping('acme', m, proposed_by='a')\""
+    },
+    {
+      "id": "F7",
+      "severity": "MEDIUM",
+      "category": "correctness",
+      "file": "hrms_plugin/storage/mapping_store.py",
+      "line": 147,
+      "requirement": "G4",
+      "finding": "Version allocation in propose_mapping has a race condition that allows concurrent proposals to silently overwrite each other.",
+      "evidence": "In hrms_plugin/storage/mapping_store.py:146-150, propose_mapping queries existing versions with self._versions(), computes version = max(existing, default=0) + 1, and stores the proposal with self._put_version(). Without atomic increment, locking, or transaction isolation, two concurrent proposals for the same vendor/entity will both compute the same version number and overwrite each other, causing proposal loss without an audit trail.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.storage.mapping_store import MappingStore; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; s = MappingStore(MemoryKeyValueStore()); existing_A = s._versions('acme', 'zoho', 'EMPLOYEE'); existing_B = s._versions('acme', 'zoho', 'EMPLOYEE'); v_A = max(existing_A, default=0) + 1; v_B = max(existing_B, default=0) + 1; print('Conflicting version numbers allocated:', v_A, v_B)\""
+    },
+    {
+      "id": "F8",
+      "severity": "HIGH",
+      "category": "security",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 774,
+      "requirement": "G2",
+      "finding": "LLMGateway.policy_for fails open when constructed with config or without policy_resolver, allowing all tenants to access any provider.",
+      "evidence": "In hrms_plugin/ai/llm.py:773-775, policy_for contains 'if self.policy_resolver is None: return LlmPolicy(allowed_providers=(self.config.provider.value,))'. Whenever an LLMGateway is initialized with an explicit config without explicitly providing policy_resolver, any tenant (including 'DEFAULT' or unlisted tenants) is granted access to the configured provider, completely bypassing the tenant registry fail-closed policy.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.ai.llm import LLMGateway, LLMConfig, LLMProvider; gw = LLMGateway(LLMConfig(provider=LLMProvider.OPENAI)); policy = gw.policy_for('initech'); print('Fail-open policy for initech:', policy.allowed_providers)\""
+    },
+    {
+      "id": "F9",
+      "severity": "MEDIUM",
+      "category": "security",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 930,
+      "requirement": "G1",
+      "finding": "LLMGateway.chat records egress after the client call completes, leaving egress to external providers unlogged if the call fails or times out.",
+      "evidence": "In hrms_plugin/ai/llm.py:925-930, self._record_egress is placed after 'response = await self.client.chat(...)'. If the remote provider encounters a network timeout, socket disconnect, or HTTP 5xx error after receiving the request payload, an exception is raised and _record_egress is skipped entirely. Under data protection regulations, egress audit logs must record the transmission attempt.",
+      "reproduce": ".venv/bin/python -c \"import asyncio; from hrms_plugin.ai.llm import LLMGateway, LLMConfig, LLMProvider, ChatMessage; from hrms_plugin.governance.egress_log import EgressLog; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; log = EgressLog(MemoryKeyValueStore()); gw = LLMGateway(LLMConfig(LLMProvider.FAKE), egress_log=log, policy_resolver=lambda t,p: None); async def failing_chat(*a, **k): raise ConnectionError('timeout after sending prompt'); gw.client.chat = failing_chat; (lambda: [asyncio.run(gw.chat([ChatMessage('user', 'test')], tenant_id='acme')) for _ in [1]])() if False else None; try: asyncio.run(gw.chat([ChatMessage('user', 'test')], tenant_id='acme')); except Exception: pass; print('Logged records after transmission failure:', len(log.list('acme')))\""
+    },
+    {
+      "id": "F10",
+      "severity": "MEDIUM",
+      "category": "test-quality",
+      "file": "tests/unit/test_mapping_governance.py",
+      "line": 94,
+      "requirement": "G1, G2, G4",
+      "finding": "The test suite lacks coverage for /v1/schema/synthesize/agentic governance, multi-turn egress logging, and real-world number tokenization.",
+      "evidence": "In tests/unit/test_mapping_governance.py:94-114, HTTP testing is only performed for the deterministic /v1/schema/synthesize endpoint; the LLM-driven /v1/schema/synthesize/agentic endpoint is never tested with governance approvals or tenant policy rejection. Furthermore, test_each_call_is_logged_without_content only tests a single turn, missing multi-turn egress count bugs, and test_compensation_tokenised_when_enabled only tests identically-formatted float strings.",
+      "reproduce": ".venv/bin/python -c \"import inspect; from tests.unit import test_mapping_governance, test_governance_llm; src = inspect.getsource(test_mapping_governance) + inspect.getsource(test_governance_llm); assert 'synthesize/agentic' not in src; print('synthesize/agentic absent from governance tests: True')\""
+    },
+    {
+      "id": "F11",
+      "severity": "LOW",
+      "category": "security",
+      "file": "hrms_plugin/storage/mapping_store.py",
+      "line": 88,
+      "requirement": "G4",
+      "finding": "MappingStore.save_mapping remains publicly exposed, allowing callers to write active mappings directly and bypass approval governance.",
+      "evidence": "In hrms_plugin/storage/mapping_store.py:88-96, save_mapping remains an unprotected public method on MappingStore that directly updates the active mapping in NAMESPACE without creating a proposal, verifying approver separation, or logging version history.",
+      "reproduce": ".venv/bin/python -c \"from hrms_plugin.storage.mapping_store import MappingStore; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; from tests.unit.test_mapping_governance import mapping; s = MappingStore(MemoryKeyValueStore()); s.save_mapping('acme', mapping()); assert s.load_mapping('acme', 'zoho', 'EMPLOYEE') is not None; print('Direct save bypassed version proposals: True')\""
+    },
+    {
+      "id": "F12",
+      "severity": "LOW",
+      "category": "spec-deviation",
+      "file": "hrms_plugin/ai/llm.py",
+      "line": 949,
+      "requirement": "G1",
+      "finding": "chat_stream always records zero input and output tokens in the egress log.",
+      "evidence": "In hrms_plugin/ai/llm.py:949, chat_stream calls self._record_egress(tenant_id, protected, before, pii, {}) with an empty dictionary for usage. Consequently, input_tokens and output_tokens in the egress log are always recorded as 0, failing G1 requirement for recording token metrics on stream calls.",
+      "reproduce": ".venv/bin/python -c \"import asyncio; from hrms_plugin.ai.llm import LLMGateway, LLMConfig, LLMProvider, ChatMessage; from hrms_plugin.governance.egress_log import EgressLog; from hrms_plugin.storage.memory_store import MemoryKeyValueStore; log = EgressLog(MemoryKeyValueStore()); gw = LLMGateway(LLMConfig(LLMProvider.FAKE), egress_log=log); async def run():\n async for _ in gw.chat_stream([ChatMessage('user', 'hi')], tenant_id='acme'): break\nasyncio.run(run()); rec = log.list('acme')[0]; print('Stream tokens:', rec['input_tokens'], rec['output_tokens'])\""
+    }
+  ]
+}

@@ -20,3 +20,12 @@
 | G2 | allowed provider → call proceeds | missing policy → 403; provider not in list → 403; provider never called | empty `allowed_providers` rejected at registry load |
 | G3 | toggle on → salary value tokenised before the LLM | toggle off → salary stays (C2) | — |
 | G4 | propose → approve → GET returns active; a second approval supersedes | self-approval 403; stale token 401; unknown version 404 | approving an already-active version is idempotent |
+
+## Amendments after agy review (architect, under delegation)
+| # | Amendment |
+|---|---|
+| G2a | **Reverses an original design choice.** Explicit-config gateways without a policy resolver are now refused for every provider except the in-process `fake` (tests). The earlier "only env-built gateways enforce" was fail-open by construction. |
+| G1a | Egress rows are written **before** the provider is called (`status` SENT → COMPLETED or FAILED). `redacted_kinds` counts the distinct tokens present in *this call's* payload. Stream token usage is recorded as unknown (`null`), not 0. |
+| G3a | Compensation tokenisation covers money-like keys at word level (`net_take_home`, `gratuity_amount`, `employer_epf`; not `payment_days`), nested amounts, and the textual forms of an amount: `45000`, `45000.0`, `45000.00`, `45,000`, and Indian grouping `4,50,000` / `18,00,000`. |
+| G4a | The direct active write (`save_mapping`) is private (`_activate`). Version allocation and approval are serialised by a process lock. Keys containing `:` are rejected (`INVALID_KEY`). Multi-replica deployments need a shared store with atomic increments: recorded for production hardening. |
+| G1b | The agentic synthesiser re-raises `LlmNotAllowed` and `PiiEgressBlocked` instead of falling back silently. |
