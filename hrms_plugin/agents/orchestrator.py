@@ -16,7 +16,7 @@ from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Set, Tupl
 
 from pydantic import BaseModel
 
-from hrms_plugin.agents.supervisor import AgentResponse, UserIntent
+from hrms_plugin.agents.supervisor import AgentResponse, UserIntent, matching_intents
 from hrms_plugin.agents.tools import AgenticToolRegistry
 from hrms_plugin.ai.llm import ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
 from hrms_plugin.security.pii import PiiSession
@@ -272,6 +272,19 @@ class AgenticOrchestrator:
         )
         return output
 
+    def _offered_tools(self, auth: AuthContext, user_message: str,
+                       history: Optional[List[Dict[str, str]]]) -> Optional[List[ToolDefinition]]:
+        """QE-2: only the tools for the intents in the user's turns, plus the regulation search; anything unmatched,
+        or a match with no permitted tool, offers every permitted tool. Permissions are never widened."""
+        permitted = self.tool_registry.definitions_for(auth)
+        texts = [user_message] + [h.get("content", "") for h in history or [] if h.get("role") == "user"]
+        intents = set().union(*(matching_intents(t) for t in texts))
+        if intents:
+            chosen = [d for d in permitted if self.tool_registry.intent_for(d.name) in intents]
+            if chosen:
+                return [d for d in permitted if d in chosen or d.name == "search_labor_regulations"]
+        return permitted or None
+
     @staticmethod
     def _assistant_turn(llm_resp: Any) -> ChatMessage:
         return ChatMessage(
@@ -318,7 +331,7 @@ class AgenticOrchestrator:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
         messages.append(ChatMessage(role="user", content=user_message))
 
-        tools = self.tool_registry.definitions_for(auth) or None
+        tools = self._offered_tools(auth, user_message, history)
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
 
         for iteration in range(1, self.max_iterations + 1):
@@ -358,7 +371,7 @@ class AgenticOrchestrator:
         """Stream real-time SSE events for thoughts, tool dispatches, final tokens and the resolved intent."""
         tenant_id = auth.tenant_id
         ctx = context or {}
-        tools = self.tool_registry.definitions_for(auth) or None
+        tools = self._offered_tools(auth, user_message, history)
         trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
         policy = self.llm_gateway.preflight(tenant_id)
         state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),

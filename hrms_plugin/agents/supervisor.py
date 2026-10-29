@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -61,6 +61,35 @@ def required_permission(intent: UserIntent, message_lower: str) -> Permission:
     return INTENT_PERMISSIONS[intent]
 
 
+# Ordered: the first match wins in classify_intent; matching_intents returns every match (tool subsets, QE-2).
+INTENT_KEYWORDS: Tuple[Tuple[UserIntent, float, Tuple[str, ...]], ...] = (
+    (UserIntent.PAYROLL_EOSB, 0.95, ("eosb", "end of service", "gratuity calculation", "severance")),
+    (UserIntent.PAYROLL_STRUCTURE, 0.92, ("salary structure", "ctc breakdown", "calculate salary", "take home",
+                                          "gross to net", "pf deduction")),
+    (UserIntent.COMPLIANCE_AUDIT, 0.90, ("compliance", "labor law", "wps audit", "violation", "statutory audit",
+                                         "probation limit")),
+    (UserIntent.LEAVE_APPLY, 0.92, ("apply leave", "leave balance", "vacation request", "sick leave",
+                                    "casual leave")),
+    (UserIntent.ATTENDANCE_ANOMALY, 0.94, ("impossible travel", "punch anomaly", "check-in location", "ghost punch",
+                                           "attendance fraud")),
+    (UserIntent.RECRUITMENT_ATS, 0.91, ("score resume", "ats score", "match candidate", "screen applicant")),
+    (UserIntent.RECRUITMENT_BIAS, 0.93, ("bias", "inclusive jd", "gender neutral", "audit job description")),
+    (UserIntent.ONBOARDING, 0.92, ("onboard", "offer letter", "pre-hire", "verify kyc", "pan verification",
+                                   "aadhaar check", "emirates id", "it provisioning", "new hire")),
+    (UserIntent.OFFBOARDING_FNF, 0.93, ("offboard", "fnf", "final settlement", "settlement", "resignation",
+                                        "notice period buyout", "relieving letter", "exit clearance",
+                                        "last working day", "article 53")),
+    (UserIntent.TRAVEL_EXPENSE, 0.92, ("travel expense", "reimbursement claim", "per diem", "per-diem",
+                                       "expense audit", "hotel claim", "flight expense", "meal allowance")),
+    (UserIntent.LEGAL_QNA, 0.88, ("labor code", "section", "article", "gazette", "overtime rule", "maternity law")),
+)
+
+
+def matching_intents(message: str) -> Set[UserIntent]:
+    msg = (message or "").lower()
+    return {intent for intent, _, keywords in INTENT_KEYWORDS if any(w in msg for w in keywords)}
+
+
 class AgentResponse(BaseModel):
     intent: UserIntent
     routed_agent: str
@@ -105,107 +134,9 @@ class SupervisorAgent:
     def classify_intent(self, message: str) -> tuple[UserIntent, float]:
         """Classify user intent using deterministic keyword intent heuristic with confidence scoring."""
         msg = message.lower()
-
-        # EOSB / Gratuity
-        if any(w in msg for w in ["eosb", "end of service", "gratuity calculation", "severance"]):
-            return UserIntent.PAYROLL_EOSB, 0.95
-
-        # Salary & CTC structuring
-        payroll_keywords = [
-            "salary structure",
-            "ctc breakdown",
-            "calculate salary",
-            "take home",
-            "gross to net",
-            "pf deduction",
-        ]
-        if any(w in msg for w in payroll_keywords):
-            return UserIntent.PAYROLL_STRUCTURE, 0.92
-
-        # Compliance audits
-        compliance_keywords = [
-            "compliance",
-            "labor law",
-            "wps audit",
-            "violation",
-            "statutory audit",
-            "probation limit",
-        ]
-        if any(w in msg for w in compliance_keywords):
-            return UserIntent.COMPLIANCE_AUDIT, 0.90
-
-        # Leave application & balance
-        if any(w in msg for w in ["apply leave", "leave balance", "vacation request", "sick leave", "casual leave"]):
-            return UserIntent.LEAVE_APPLY, 0.92
-
-        # Attendance & travel anomaly
-        anomaly_keywords = [
-            "impossible travel",
-            "punch anomaly",
-            "check-in location",
-            "ghost punch",
-            "attendance fraud",
-        ]
-        if any(w in msg for w in anomaly_keywords):
-            return UserIntent.ATTENDANCE_ANOMALY, 0.94
-
-        # ATS candidate scoring
-        if any(w in msg for w in ["score resume", "ats score", "match candidate", "screen applicant"]):
-            return UserIntent.RECRUITMENT_ATS, 0.91
-
-        # JD Bias check
-        if any(w in msg for w in ["bias", "inclusive jd", "gender neutral", "audit job description"]):
-            return UserIntent.RECRUITMENT_BIAS, 0.93
-
-        # Onboarding & Pre-hire
-        onboarding_keywords = [
-            "onboard",
-            "offer letter",
-            "pre-hire",
-            "verify kyc",
-            "pan verification",
-            "aadhaar check",
-            "emirates id",
-            "it provisioning",
-            "new hire",
-        ]
-        if any(w in msg for w in onboarding_keywords):
-            return UserIntent.ONBOARDING, 0.92
-
-        # Offboarding & Final Settlement (FNF)
-        offboarding_keywords = [
-            "offboard",
-            "fnf",
-            "final settlement",
-            "settlement",
-            "resignation",
-            "notice period buyout",
-            "relieving letter",
-            "exit clearance",
-            "last working day",
-            "article 53",
-        ]
-        if any(w in msg for w in offboarding_keywords):
-            return UserIntent.OFFBOARDING_FNF, 0.93
-
-        # Travel & Expense Reimbursement
-        travel_keywords = [
-            "travel expense",
-            "reimbursement claim",
-            "per diem",
-            "per-diem",
-            "expense audit",
-            "hotel claim",
-            "flight expense",
-            "meal allowance",
-        ]
-        if any(w in msg for w in travel_keywords):
-            return UserIntent.TRAVEL_EXPENSE, 0.92
-
-        # Legal QnA
-        if any(w in msg for w in ["labor code", "section", "article", "gazette", "overtime rule", "maternity law"]):
-            return UserIntent.LEGAL_QNA, 0.88
-
+        for intent, confidence, keywords in INTENT_KEYWORDS:
+            if any(w in msg for w in keywords):
+                return intent, confidence
         return UserIntent.GENERAL_HR, 0.70
 
     def process_message(
