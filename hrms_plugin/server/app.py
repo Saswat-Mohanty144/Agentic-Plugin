@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import time
@@ -261,10 +262,26 @@ async def chat_stream_endpoint(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+def _decode_audio(audio_base64: str) -> bytes:
+    """Strict base64: malformed client audio is a 422, never a 500 (E2E-GOV-1)."""
+    try:
+        return base64.b64decode(audio_base64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ApiError(422, {"error": "INVALID_AUDIO_BASE64"}) from None
+
+
+def _entity_type(domain: str) -> EntityType:
+    """An unknown synthesis domain is a 422, never a 500 (E2E-GOV-2)."""
+    try:
+        return EntityType(domain.upper())
+    except ValueError:
+        raise ApiError(422, {"error": "INVALID_DOMAIN"}) from None
+
+
 @router.post("/v1/voice/transcribe")
 async def voice_transcribe(req: VoiceTranscribeRequest, auth: AuthContext = Depends(require(Permission.USE_COPILOT))):
     """Transcribe base64 audio bytes via Sarvam AI Saaras model."""
-    audio_bytes = base64.b64decode(req.audio_base64)
+    audio_bytes = _decode_audio(req.audio_base64)
     res = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
     return res
 
@@ -287,7 +304,7 @@ async def voice_turn(
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Full-duplex multimodal turn: Audio In -> Transcribe -> ReAct Agent Brain -> Spoken Audio Out."""
-    audio_bytes = base64.b64decode(req.audio_base64)
+    audio_bytes = _decode_audio(req.audio_base64)
     stt = await voice_agent.transcribe_audio(audio_bytes, language_code=req.language_code)
     transcript = stt.get("transcript", "")
 
@@ -344,7 +361,7 @@ def synthesize_mapping(
     auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
-    domain_enum = EntityType(req.domain.upper())
+    domain_enum = _entity_type(req.domain)
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
 
     discovered_fields_dict = {
@@ -365,7 +382,7 @@ async def synthesize_mapping_agentic(
     auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Synthesize FieldMap with LLM semantic reasoning over ambiguous/vendor host fields."""
-    domain_enum = EntityType(req.domain.upper())
+    domain_enum = _entity_type(req.domain)
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
 
     discovered_fields_dict = {
@@ -398,7 +415,10 @@ def get_schema_mapping(
     auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Retrieve the exact compiled FieldMap for a given vendor and entity type."""
-    mapping = mapping_store.load_mapping(auth.tenant_id, vendor, entity_type)
+    try:
+        mapping = mapping_store.load_mapping(auth.tenant_id, vendor, entity_type)
+    except MappingGovernanceError as exc:  # INVALID_KEY: a client error, never a 500 (E2E-GOV-3)
+        raise ApiError(400, {"error": exc.code}) from None
     if not mapping:
         raise HTTPException(status_code=404, detail=f"No mapping found for {vendor}/{entity_type}")
     from hrms_plugin.storage.mapping_store import entity_mapping_to_dict

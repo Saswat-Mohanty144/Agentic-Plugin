@@ -1,0 +1,97 @@
+{
+  "area": "GOV",
+  "tests_written": 34,
+  "pytest_summary": "31 passed, 3 xfailed in 2.68s",
+  "coverage": [
+    {
+      "behaviour": "PII vault + LLM data minimisation end to end (tokenisation, detokenisation, context isolation, egress log audit)",
+      "positive": 1,
+      "boundary": 2,
+      "negative": 3
+    },
+    {
+      "behaviour": "Tokenize compensation policy (tokenize_compensation true/false on basic_salary, gross_salary, CTC)",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 1
+    },
+    {
+      "behaviour": "Provider allow-list fails closed (allowed fake proceeds, disallowed anthropic 403, missing policy 403, stream preflight)",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 1
+    },
+    {
+      "behaviour": "Mapping governance (/v1/schema/introspect, /v1/schema/synthesize, /synthesize/agentic, list/get/approve versions, four-eyes, tenant isolation)",
+      "positive": 3,
+      "boundary": 2,
+      "negative": 4
+    },
+    {
+      "behaviour": "Schema fingerprint quarantine + approve, and drift lifecycle (drift 409, quarantine recording, approval, recovery)",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 2
+    },
+    {
+      "behaviour": "Compliance diagnose, live setup dashboard, and legacy adapter (/v1/compliance/diagnose, /dashboard/live, /api/compliance/agent/*)",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 2
+    },
+    {
+      "behaviour": "Requisitions archetype generation (/v1/requisitions/generate-archetypes and /api/requisitions/generate-archetypes)",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 1
+    },
+    {
+      "behaviour": "Voice endpoints (/v1/voice/transcribe, /v1/voice/synthesize, /v1/voice/turn size/type limits, auth)",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 2
+    },
+    {
+      "behaviour": "Prompt-injection defense-in-depth across user prompt, context payload, and tool outputs",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 3
+    }
+  ],
+  "findings": [
+    {
+      "id": "E2E-GOV-1",
+      "severity": "major",
+      "file": "hrms_plugin/server/app.py:267",
+      "test": "test_e2e_voice_invalid_base64_defect",
+      "summary": "/v1/voice endpoints raise unhandled binascii.Error (HTTP 500) on malformed base64 payload instead of 400/422",
+      "expected": "Safe invariant: no 500 on client input; malformed base64 audio must fail closed with HTTP 400 or 422 (piece stabilise-and-auth \u00a76.9, \u00a72.2)",
+      "actual": "HTTP 500 Internal Server Error due to unhandled binascii.Error in base64.b64decode",
+      "repro": "client.post('/v1/voice/transcribe', json={'audio_base64': 'abc'}, headers=bearer(roles=['staff']))",
+      "resolution": "Fixed: _decode_audio uses strict base64 (validate=True) on /v1/voice/transcribe and /v1/voice/turn -> 422 INVALID_AUDIO_BASE64. Decision: line-wrapped (MIME) base64 is rejected too; JSON clients send unwrapped base64."
+    },
+    {
+      "id": "E2E-GOV-2",
+      "severity": "minor",
+      "file": "hrms_plugin/server/app.py:347",
+      "test": "test_e2e_schema_synthesize_invalid_domain_defect",
+      "summary": "/v1/schema/synthesize raises unhandled ValueError (HTTP 500) on invalid domain enum value instead of 422/400",
+      "expected": "Safe invariant: no 500 on client input; invalid domain string must be validated and rejected with HTTP 422 or 400 (piece stabilise-and-auth \u00a76.9, \u00a72.2)",
+      "actual": "HTTP 500 Internal Server Error due to unhandled ValueError: 'INVALID_DOMAIN' is not a valid EntityType",
+      "repro": "client.post('/v1/schema/synthesize', json={'domain': 'INVALID_DOMAIN', 'discovered_fields': []}, headers=bearer(roles=['platform_admin']))",
+      "resolution": "Fixed: _entity_type on /v1/schema/synthesize and /synthesize/agentic -> 422 INVALID_DOMAIN; case-insensitive domain still accepted (boundary test)."
+    },
+    {
+      "id": "E2E-GOV-3",
+      "severity": "minor",
+      "file": "hrms_plugin/server/app.py:401",
+      "test": "test_e2e_schema_mapping_get_colon_key_defect",
+      "summary": "GET /v1/schema/mappings/{vendor}/{entity_type} raises unhandled MappingGovernanceError (HTTP 500) when vendor/entity contains ':' instead of 400/404",
+      "expected": "Safe invariant: no 500 on client input; keys with colon must return client error HTTP 400 or 404 (piece piece-g decision G4a, stabilise-and-auth \u00a76.9)",
+      "actual": "HTTP 500 Internal Server Error due to unhandled MappingGovernanceError: INVALID_KEY",
+      "repro": "client.get('/v1/schema/mappings/bad:vendor/EMPLOYEE', headers=bearer(roles=['platform_admin']))",
+      "resolution": "Fixed: GET /v1/schema/mappings/{vendor}/{entity_type} maps MappingGovernanceError INVALID_KEY -> 400 {error: INVALID_KEY}."
+    }
+  ],
+  "pytest_summary_after_fix": "full suite 1347 tests, 0 failures, 0 skipped; ruff clean; node 174/174"
+}

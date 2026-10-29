@@ -1,0 +1,56 @@
+{
+  "area": "API",
+  "tests_written": 102,
+  "pytest_summary": "102 passed in 11.50s",
+  "coverage": [
+    {
+      "behaviour": "/healthz public health check and method constraints",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 4
+    },
+    {
+      "behaviour": "Authentication, tenancy enforcement and RBAC route security matrix",
+      "positive": 10,
+      "boundary": 2,
+      "negative": 17
+    },
+    {
+      "behaviour": "/v1/chat and /v1/chat/stream ReAct tool loop, SSE wire framing and history bounds",
+      "positive": 4,
+      "boundary": 4,
+      "negative": 9
+    },
+    {
+      "behaviour": "Per-tenant LLM policy, daily token budget preflight and egress audit logging",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 2
+    },
+    {
+      "behaviour": "/v1/payroll/pf/calculate deterministic statutory PF calculation, ceilings and host validation",
+      "positive": 1,
+      "boundary": 3,
+      "negative": 13
+    },
+    {
+      "behaviour": "Write-back two-phase flow (propose -> approve -> rollback), separation of duties and concurrency",
+      "positive": 2,
+      "boundary": 2,
+      "negative": 14
+    },
+    {
+      "behaviour": "/v1/remediate/execute attribution-only headers, freshness bounds and extra field rejection",
+      "positive": 1,
+      "boundary": 1,
+      "negative": 4
+    },
+    {
+      "behaviour": "/v1/hosts/requisitions Frappe and iCeipts declarative profiles, paging and rejection handling",
+      "positive": 2,
+      "boundary": 2,
+      "negative": 2
+    }
+  ],
+  "findings": []
+}

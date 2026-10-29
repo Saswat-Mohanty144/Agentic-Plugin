@@ -1,0 +1,56 @@
+{
+  "area": "SDK",
+  "tests_written": 95,
+  "pytest_summary": "ℹ tests 95, ℹ pass 95, ℹ fail 0",
+  "coverage": [
+    {
+      "behaviour": "XSS through formatMarkdown (scripts, event handlers, javascript/data links, entity tricks, nested brackets, unicode)",
+      "positive": 7,
+      "boundary": 6,
+      "negative": 31
+    },
+    {
+      "behaviour": "postMessage origin trust (exact hostOrigin match, port variants, outbound archetype dispatch)",
+      "positive": 3,
+      "boundary": 1,
+      "negative": 4
+    },
+    {
+      "behaviour": "Context sanitisation (entity and record_id bounds, character allowlist, dropping unauthorized fields)",
+      "positive": 1,
+      "boundary": 3,
+      "negative": 2
+    },
+    {
+      "behaviour": "apiUrl validation (https enforcement, localhost dev exceptions, userinfo and protocol smuggling rejection)",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 3
+    },
+    {
+      "behaviour": "Token provider + headers (Bearer token attach, async provider, rejection of empty/whitespace tokens)",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 2
+    },
+    {
+      "behaviour": "Every fetch checks res.ok and renders describeHttpError (401/403/409/422/429/500/502/503 and network failure)",
+      "positive": 2,
+      "boundary": 1,
+      "negative": 9
+    },
+    {
+      "behaviour": "Remediation confirm -> POST /v1/writeback/proposals body shape (buildProposalBody boundaries: bad entity_type, dot segments, empty/nested patch)",
+      "positive": 1,
+      "boundary": 3,
+      "negative": 5
+    },
+    {
+      "behaviour": "Streaming rendering (progressive chunk formatting, unclosed markdown syntax safety, stream chunk XSS immunity)",
+      "positive": 1,
+      "boundary": 2,
+      "negative": 2
+    }
+  ],
+  "findings": []
+}
