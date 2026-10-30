@@ -598,3 +598,279 @@ def test_lookup_at_most_200_results_and_newest_first(make_client, bearer, monkey
     timestamps = [d["at"] for d in disclosures]
     assert timestamps == sorted(timestamps, reverse=True)
     assert timestamps[0] == 219.0
+
+
+# --- Follow-up Review Tests: Encapsulation, Concurrency, Key Caching ---------------------------------
+
+
+def test_egress_log_find_subject_and_record_lookup(disclosure_key):
+    """find_subject returns disclosure dicts newest-first up to limit for caller tenant only;
+    record_lookup stores audit row in disclosure_lookups with clock."""
+    store = MemoryKeyValueStore()
+    t = 1000.0
+    log = EgressLog(store, clock=lambda: t)
+
+    ref_pan = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+
+    # 1. Record 3 rows for acme with ref_pan at t=1000, 1010, 1020
+    t = 1000.0
+    log.record(
+        tenant_id="acme",
+        provider="openai",
+        model="gpt-4o",
+        payload_sha256="sha256:1",
+        redacted_kinds={"PAN": 1},
+        channel="llm",
+        subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+        status="COMPLETED",
+    )
+    t = 1010.0
+    log.record(
+        tenant_id="acme",
+        provider="anthropic",
+        model="claude-3-5-sonnet",
+        payload_sha256="sha256:2",
+        redacted_kinds={"PAN": 1},
+        channel="mcp",
+        subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "DISCLOSED"}],
+        status="COMPLETED",
+    )
+    t = 1020.0
+    log.record(
+        tenant_id="acme",
+        provider="openai",
+        model="gpt-4o",
+        payload_sha256="sha256:3",
+        redacted_kinds={"PAN": 1},
+        channel="voice",
+        subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+        status="FAILED",
+    )
+
+    # 2. Record 1 row for globex with the same ref_pan (should NOT be returned for acme)
+    t = 1030.0
+    log.record(
+        tenant_id="globex",
+        provider="openai",
+        model="gpt-4o",
+        payload_sha256="sha256:4",
+        redacted_kinds={"PAN": 1},
+        channel="llm",
+        subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+        status="COMPLETED",
+    )
+
+    # 3. Call find_subject with limit=200
+    res = log.find_subject("acme", ref_pan, limit=200)
+    assert len(res) == 3
+    # Check ordering: newest first
+    assert [r["at"] for r in res] == [1020.0, 1010.0, 1000.0]
+    # Check exact dictionary shape
+    assert res[0] == {
+        "at": 1020.0,
+        "channel": "voice",
+        "provider": "openai",
+        "model": "gpt-4o",
+        "outcome": "WITHHELD",
+        "status": "FAILED",
+    }
+    assert res[1]["outcome"] == "DISCLOSED"
+    assert res[1]["channel"] == "mcp"
+
+    # 4. Limit parameter respects ceiling
+    limited = log.find_subject("acme", ref_pan, limit=2)
+    assert len(limited) == 2
+    assert [r["at"] for r in limited] == [1020.0, 1010.0]
+
+    # 5. Non-existent ref returns empty list
+    empty = log.find_subject("acme", "hmac-sha256:nonexistent", limit=200)
+    assert empty == []
+
+    # 6. Test record_lookup
+    t = 2000.0
+    log.record_lookup("acme", "admin-1", "PAN", True)
+    t = 2005.0
+    log.record_lookup("acme", "admin-2", "EMAIL", False)
+
+    lookup_rows = store.get_all("disclosure_lookups")
+    assert len(lookup_rows) == 2
+    items = sorted(lookup_rows.values(), key=lambda x: x["at"])
+    assert items[0] == {
+        "tenant_id": "acme",
+        "user_id": "admin-1",
+        "at": 2000.0,
+        "kind": "PAN",
+        "found": True,
+    }
+    assert items[1] == {
+        "tenant_id": "acme",
+        "user_id": "admin-2",
+        "at": 2005.0,
+        "kind": "EMAIL",
+        "found": False,
+    }
+    # No value or ref stored
+    for row in items:
+        assert "value" not in row
+        assert "ref" not in row
+
+
+def test_app_does_not_import_egress_namespaces():
+    """Route must not touch egress_log._store or import SUBJECT_NAMESPACE/EGRESS_NAMESPACE directly."""
+    import hrms_plugin.server.app as app_mod
+
+    assert not hasattr(app_mod, "SUBJECT_NAMESPACE")
+    assert not hasattr(app_mod, "EGRESS_NAMESPACE")
+
+
+def test_concurrent_recording_same_ref_finds_all_entries(disclosure_key):
+    """50 threads each recording a row with the same ref concurrently -> find_subject returns 50 entries."""
+    import threading
+
+    store = MemoryKeyValueStore()
+    log = EgressLog(store)
+    ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+
+    def record_worker(worker_id: int):
+        log.record(
+            tenant_id="acme",
+            provider="test-prov",
+            model=f"model-{worker_id}",
+            payload_sha256=f"sha256:{worker_id:064x}",
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref, "kind": "PAN", "outcome": "WITHHELD"}],
+            status="COMPLETED",
+        )
+
+    threads = [threading.Thread(target=record_worker, args=(i,)) for i in range(50)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    entries = log.find_subject("acme", ref, limit=200)
+    assert len(entries) == 50
+
+
+def test_get_disclosure_key_caches_unchanged_file(tmp_path, monkeypatch):
+    """get_disclosure_key must not read the file on every call; cache keyed by (path, mtime_ns, size)."""
+    from pathlib import Path
+
+    key_file = tmp_path / "cache_test.key"
+    key_bytes = b"0" * 32
+    key_file.write_bytes(key_bytes)
+    monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(key_file))
+
+    read_calls = 0
+    orig_read_bytes = Path.read_bytes
+
+    def counting_read_bytes(self):
+        nonlocal read_calls
+        read_calls += 1
+        return orig_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
+
+    # First read
+    k1 = disclosure.get_disclosure_key()
+    assert k1 == key_bytes
+    assert read_calls == 1
+
+    # Second read: unchanged file -> cached, read_bytes NOT called again
+    k2 = disclosure.get_disclosure_key()
+    assert k2 == key_bytes
+    assert read_calls == 1
+
+    # compute_ref also uses cached key without extra read_bytes
+    ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    assert ref is not None
+    assert read_calls == 1
+
+
+def test_rotating_disclosure_key_file_changes_ref(tmp_path, monkeypatch):
+    """Replacing the key file with a different 32-byte key is picked up and changes ref."""
+    import time
+
+    key_file = tmp_path / "rotate_test.key"
+    key1 = b"1" * 32
+    key_file.write_bytes(key1)
+    monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(key_file))
+
+    ref1 = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    assert ref1 is not None
+
+    # Replace with a different 32-byte key; ensure mtime changes
+    key2 = b"2" * 32
+    time.sleep(0.01)
+    key_file.write_bytes(key2)
+
+    ref2 = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    assert ref2 is not None
+    assert ref1 != ref2
+
+
+def test_deleting_key_file_marks_not_configured(tmp_path, monkeypatch):
+    """Deleting the key file makes disclosure not configured immediately."""
+    key_file = tmp_path / "delete_test.key"
+    key_file.write_bytes(b"3" * 32)
+    monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(key_file))
+
+    assert disclosure.is_configured() is True
+    assert disclosure.get_disclosure_key() is not None
+
+    key_file.unlink()
+    assert disclosure.get_disclosure_key() is None
+    assert disclosure.is_configured() is False
+
+
+def test_missing_or_unreadable_file_catches_oserror_only(tmp_path, monkeypatch):
+    """get_disclosure_key catches OSError only, not general Exception."""
+    from pathlib import Path
+
+    key_file = tmp_path / "oserror_test.key"
+    key_file.write_bytes(b"4" * 32)
+    monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(key_file))
+
+    def raise_oserror(self):
+        raise OSError("Disk I/O error")
+
+    monkeypatch.setattr(Path, "stat", raise_oserror)
+    assert disclosure.get_disclosure_key() is None
+    assert disclosure.is_configured() is False
+
+    def raise_runtime_error(self):
+        raise RuntimeError("Unexpected boom")
+
+    monkeypatch.setattr(Path, "stat", raise_runtime_error)
+    with pytest.raises(RuntimeError):
+        disclosure.get_disclosure_key()
+
+
+def test_record_computes_is_configured_once(monkeypatch):
+    """record() should compute is_configured once per call."""
+    store = MemoryKeyValueStore()
+    log = EgressLog(store)
+
+    calls = 0
+    orig_is_configured = disclosure.is_configured
+
+    def counting_is_configured():
+        nonlocal calls
+        calls += 1
+        return orig_is_configured()
+
+    monkeypatch.setattr(disclosure, "is_configured", counting_is_configured)
+
+    log.record(
+        tenant_id="acme",
+        provider="fake",
+        model="m-1",
+        payload_sha256="sha256:abc",
+        redacted_kinds={"PAN": 1},
+        channel="llm",
+        subject_refs=[{"ref": "hmac-sha256:abc", "kind": "PAN", "outcome": "WITHHELD"}],
+        status="COMPLETED",
+    )
+    assert calls == 1
+

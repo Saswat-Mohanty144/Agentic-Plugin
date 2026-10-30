@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import re
-import secrets
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
@@ -37,13 +36,7 @@ from hrms_plugin.agents.tools import STATUTORY_JURISDICTIONS
 from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.governance import disclosure
-from hrms_plugin.governance.egress_log import (
-    NAMESPACE as EGRESS_NAMESPACE,
-)
-from hrms_plugin.governance.egress_log import (
-    SUBJECT_NAMESPACE,
-    EgressLog,
-)
+from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
 from hrms_plugin.governance.rate_limit import TenantRateLimiter, enforce_rate_limit
 from hrms_plugin.payroll.service import PayrollService
@@ -1070,45 +1063,10 @@ def lookup_disclosure(
         raise ApiError(503, {"error": "DISCLOSURE_INDEX_NOT_CONFIGURED"})
 
     current_log = getattr(request.app.state, "egress_log", None) or egress_log
-    store = current_log._store
-
     ref = disclosure.compute_ref(auth.tenant_id, req.kind, req.value)
-    index_entry = store.get(SUBJECT_NAMESPACE, f"{auth.tenant_id}:{ref}") or {}
-    row_keys = index_entry.get("keys", [])
-
-    disclosures = []
-    for rk in row_keys:
-        row = store.get(EGRESS_NAMESPACE, rk)
-        if row and row.get("tenant_id") == auth.tenant_id:
-            matching = next((s for s in row.get("subject_refs", []) if s.get("ref") == ref), None)
-            outcome = matching.get("outcome", "DISCLOSED") if matching else "DISCLOSED"
-            disclosures.append({
-                "at": row.get("at", 0.0),
-                "channel": row.get("channel", "llm"),
-                "provider": row.get("provider", ""),
-                "model": row.get("model", ""),
-                "outcome": outcome,
-                "status": row.get("status", ""),
-            })
-
-    disclosures.sort(key=lambda d: d["at"], reverse=True)
-    disclosures = disclosures[:200]
+    disclosures = current_log.find_subject(auth.tenant_id, ref, limit=200) if ref else []
     found = bool(disclosures)
-
-    clock_fn = getattr(request.app.state, "clock", time.time)
-    now = clock_fn()
-    lookup_key = f"{auth.tenant_id}:{now:017.6f}:{secrets.token_hex(4)}"
-    store.set(
-        "disclosure_lookups",
-        lookup_key,
-        {
-            "tenant_id": auth.tenant_id,
-            "user_id": auth.user_id,
-            "at": now,
-            "kind": req.kind,
-            "found": found,
-        },
-    )
+    current_log.record_lookup(auth.tenant_id, auth.user_id, req.kind, found)
 
     return {
         "kind": req.kind,

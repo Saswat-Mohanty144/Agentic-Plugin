@@ -20,18 +20,29 @@ _SPACE_HYPHEN_KINDS = frozenset({
     "AADHAAR", "PAN", "CARD", "IBAN", "SSN", "EMIRATES_ID", "PHONE",
 })
 
+_KEY_CACHE: Dict[Tuple[str, int, int], bytes] = {}
+
 
 def get_disclosure_key() -> Optional[bytes]:
-    """Read the disclosure secret key from the path in HRMS_DISCLOSURE_KEY_FILE lazily."""
+    """Read the disclosure secret key from the path in HRMS_DISCLOSURE_KEY_FILE lazily, cached by stat."""
     path_str = os.environ.get("HRMS_DISCLOSURE_KEY_FILE", "").strip()
     if not path_str:
         return None
     try:
-        data = Path(path_str).read_bytes()
+        p = Path(path_str)
+        st = p.stat()
+        if st.st_size < 32:
+            return None
+        cache_key = (path_str, st.st_mtime_ns, st.st_size)
+        cached = _KEY_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+        data = p.read_bytes()
         if len(data) < 32:
             return None
+        _KEY_CACHE[cache_key] = data
         return data
-    except Exception:
+    except OSError:
         return None
 
 
@@ -62,7 +73,8 @@ def compute_ref(tenant_id: str, kind: str, value: str, key: Optional[bytes] = No
 
 def extract_disclosed_refs(tenant_id: str, data: Any) -> List[Dict[str, str]]:
     """Walk JSON output to detect string leaves and identifier key scalars, returning DISCLOSED refs."""
-    if not is_configured():
+    key = get_disclosure_key()
+    if key is None:
         return []
 
     collected: List[Tuple[str, str]] = []
@@ -88,7 +100,7 @@ def extract_disclosed_refs(tenant_id: str, data: Any) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     seen_refs = set()
     for kind, val in collected:
-        ref = compute_ref(tenant_id, kind, val)
+        ref = compute_ref(tenant_id, kind, val, key=key)
         if ref and ref not in seen_refs:
             seen_refs.add(ref)
             out.append({"ref": ref, "kind": kind, "outcome": "DISCLOSED"})

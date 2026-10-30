@@ -493,3 +493,186 @@ FAILED tests/unit/test_gap_k2.py::test_response_and_stored_lookup_never_contain_
 FAILED tests/unit/test_gap_k2.py::test_invalid_kind_or_empty_or_overlong_value_returns_422
 FAILED tests/unit/test_gap_k2.py::test_lookup_at_most_200_results_and_newest_first
 19 failed in 1.08s
+
+## follow-up
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+________________ test_egress_log_find_subject_and_record_lookup ________________
+
+disclosure_key = b'\xaf\xccM0\xbf8\xb9^CJ\xd5(,\x1d\xda\xd5\x7f\x9e\xa4\xe6\x84\x7fY\xd17e\x04AF\xaa\x08\x83'
+
+    def test_egress_log_find_subject_and_record_lookup(disclosure_key):
+        """find_subject returns disclosure dicts newest-first up to limit for caller tenant only;
+        record_lookup stores audit row in disclosure_lookups with clock."""
+        store = MemoryKeyValueStore()
+        t = 1000.0
+        log = EgressLog(store, clock=lambda: t)
+    
+        ref_pan = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    
+        # 1. Record 3 rows for acme with ref_pan at t=1000, 1010, 1020
+        t = 1000.0
+        log.record(
+            tenant_id="acme",
+            provider="openai",
+            model="gpt-4o",
+            payload_sha256="sha256:1",
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+            status="COMPLETED",
+        )
+        t = 1010.0
+        log.record(
+            tenant_id="acme",
+            provider="anthropic",
+            model="claude-3-5-sonnet",
+            payload_sha256="sha256:2",
+            redacted_kinds={"PAN": 1},
+            channel="mcp",
+            subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "DISCLOSED"}],
+            status="COMPLETED",
+        )
+        t = 1020.0
+        log.record(
+            tenant_id="acme",
+            provider="openai",
+            model="gpt-4o",
+            payload_sha256="sha256:3",
+            redacted_kinds={"PAN": 1},
+            channel="voice",
+            subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+            status="FAILED",
+        )
+    
+        # 2. Record 1 row for globex with the same ref_pan (should NOT be returned for acme)
+        t = 1030.0
+        log.record(
+            tenant_id="globex",
+            provider="openai",
+            model="gpt-4o",
+            payload_sha256="sha256:4",
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+            status="COMPLETED",
+        )
+    
+        # 3. Call find_subject with limit=200
+>       res = log.find_subject("acme", ref_pan, limit=200)
+              ^^^^^^^^^^^^^^^^
+E       AttributeError: 'EgressLog' object has no attribute 'find_subject'
+
+tests/unit/test_gap_k2.py:664: AttributeError
+__________________ test_app_does_not_import_egress_namespaces __________________
+
+    def test_app_does_not_import_egress_namespaces():
+        """Route must not touch egress_log._store or import SUBJECT_NAMESPACE/EGRESS_NAMESPACE directly."""
+        import hrms_plugin.server.app as app_mod
+    
+>       assert not hasattr(app_mod, "SUBJECT_NAMESPACE")
+E       AssertionError: assert not True
+E        +  where True = hasattr(<module 'hrms_plugin.server.app' from '/Users/satosh/Agentic-Plugin-gap-k2/hrms_plugin/server/app.py'>, 'SUBJECT_NAMESPACE')
+
+tests/unit/test_gap_k2.py:722: AssertionError
+_____________ test_concurrent_recording_same_ref_finds_all_entries _____________
+
+disclosure_key = b'\xdd\xc6\'\xec>\x149:A\xdc%}\x9cK\xb6\x93!B\x0fDW\xb1y\xfd\xa6"\xb0\xfbxt)w'
+
+    def test_concurrent_recording_same_ref_finds_all_entries(disclosure_key):
+        """50 threads each recording a row with the same ref concurrently -> find_subject returns 50 entries."""
+        import threading
+    
+        store = MemoryKeyValueStore()
+        log = EgressLog(store)
+        ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    
+        def record_worker(worker_id: int):
+            log.record(
+                tenant_id="acme",
+                provider="test-prov",
+                model=f"model-{worker_id}",
+                payload_sha256=f"sha256:{worker_id:064x}",
+                redacted_kinds={"PAN": 1},
+                channel="llm",
+                subject_refs=[{"ref": ref, "kind": "PAN", "outcome": "WITHHELD"}],
+                status="COMPLETED",
+            )
+    
+        threads = [threading.Thread(target=record_worker, args=(i,)) for i in range(50)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+    
+>       entries = log.find_subject("acme", ref, limit=200)
+                  ^^^^^^^^^^^^^^^^
+E       AttributeError: 'EgressLog' object has no attribute 'find_subject'
+
+tests/unit/test_gap_k2.py:752: AttributeError
+________________ test_get_disclosure_key_caches_unchanged_file _________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-494/test_get_disclosure_key_caches0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1125eb910>
+
+    def test_get_disclosure_key_caches_unchanged_file(tmp_path, monkeypatch):
+        """get_disclosure_key must not read the file on every call; cache keyed by (path, mtime_ns, size)."""
+        from pathlib import Path
+    
+        key_file = tmp_path / "cache_test.key"
+        key_bytes = b"0" * 32
+        key_file.write_bytes(key_bytes)
+        monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(key_file))
+    
+        read_calls = 0
+        orig_read_bytes = Path.read_bytes
+    
+        def counting_read_bytes(self):
+            nonlocal read_calls
+            read_calls += 1
+            return orig_read_bytes(self)
+    
+        monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
+    
+        # First read
+        k1 = disclosure.get_disclosure_key()
+        assert k1 == key_bytes
+        assert read_calls == 1
+    
+        # Second read: unchanged file -> cached, read_bytes NOT called again
+        k2 = disclosure.get_disclosure_key()
+        assert k2 == key_bytes
+>       assert read_calls == 1
+E       assert 2 == 1
+
+tests/unit/test_gap_k2.py:783: AssertionError
+_____________ test_missing_or_unreadable_file_catches_oserror_only _____________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-494/test_missing_or_unreadable_fil0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112487a90>
+
+    def test_missing_or_unreadable_file_catches_oserror_only(tmp_path, monkeypatch):
+        """get_disclosure_key catches OSError only, not general Exception."""
+        from pathlib import Path
+    
+        key_file = tmp_path / "oserror_test.key"
+        key_file.write_bytes(b"4" * 32)
+        monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(key_file))
+    
+        def raise_oserror(self):
+            raise OSError("Disk I/O error")
+    
+        monkeypatch.setattr(Path, "stat", raise_oserror)
+>       assert disclosure.get_disclosure_key() is None
+E       AssertionError: assert b'44444444444444444444444444444444' is None
+E        +  where b'44444444444444444444444444444444' = <function get_disclosure_key at 0x111006480>()
+E        +    where <function get_disclosure_key at 0x111006480> = disclosure.get_disclosure_key
+
+/Users/satosh/Agentic-Plugin-gap-k2/tests/unit/test_gap_k2.py:839: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_k2.py::test_egress_log_find_subject_and_record_lookup
+FAILED tests/unit/test_gap_k2.py::test_app_does_not_import_egress_namespaces
+FAILED tests/unit/test_gap_k2.py::test_concurrent_recording_same_ref_finds_all_entries
+FAILED tests/unit/test_gap_k2.py::test_get_disclosure_key_caches_unchanged_file
+FAILED tests/unit/test_gap_k2.py::test_missing_or_unreadable_file_catches_oserror_only
+5 failed, 22 deselected in 0.86s
