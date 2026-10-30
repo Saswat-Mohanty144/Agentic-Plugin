@@ -56,3 +56,12 @@ Report: `docs/superpowers/plans/2026-10-30-audit-k-report.md` (see its "Orchestr
 | A8 | Q3: every MCP frame (including `ping` and notifications) is rate-limited | Keep (protects against floods); document it |
 | A9 | BUG-6 (widget drops `thinking`, `history_trimmed`) | Not a defect: the widget renders an allow-list; `thinking` carries raw model reasoning and stays out of the browser. The audit test is corrected to pin the allow-list |
 | A10 | Audit test `test_requisition_shape_approval_guards` leaves a malformed approved shape in the shared store, breaking 3 existing tests | Audit tests must restore every global they touch; full suite with audit tests first must show 0 failures |
+
+## K3: key generator
+
+| ID | Decision |
+|---|---|
+| K3.1 | New function in `hrms_plugin/governance/disclosure.py`: `generate_key_file(path) -> Path`. Writes 32 bytes from `secrets.token_bytes(32)`. Creates the file atomically with `os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)` so it is never readable by others, even briefly, and never overwrites. Raises FileExistsError if the path exists (rotating the key orphans every stored fingerprint, so replacing it must be a deliberate manual delete), FileNotFoundError if the parent directory is missing. After writing, `os.chmod(path, 0o600)` (umask safety). Never logs or returns the key bytes. |
+| K3.2 | New CLI subcommand `gen-disclosure-key <path>` in `hrms_plugin/cli.py`. Success: prints `Disclosure key written to <path> (32 bytes, mode 600). Set HRMS_DISCLOSURE_KEY_FILE=<absolute path>.` and returns 0. Existing file: prints to stderr `Error: '<path>' already exists; delete it first to rotate (old disclosure fingerprints stop matching).` and returns 1. Missing parent dir: stderr error, returns 1. Never prints key bytes. |
+| K3.3 | README: in the `HRMS_DISCLOSURE_KEY_FILE` config row and in section 6.2 mention `python -m hrms_plugin.cli gen-disclosure-key <path>` alongside the existing openssl command. Add it to the CLI commands table. |
+

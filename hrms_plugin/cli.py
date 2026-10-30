@@ -11,6 +11,7 @@ from typing import List, Optional
 from hrms_plugin.agents.compliance import ComplianceAgent
 from hrms_plugin.agents.recruitment import RecruitmentAgent
 from hrms_plugin.agents.statutory_payroll import StatutoryPayrollAgent
+from hrms_plugin.governance.disclosure import generate_key_file
 from hrms_plugin.rag.store import Jurisdiction, StatutoryKnowledgeBase
 from hrms_plugin.schema.introspector import SchemaIntrospector
 
@@ -44,6 +45,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 5. Check Bias
     bias_parser = subparsers.add_parser("check-bias", help="Audit job description for exclusionary wording")
     bias_parser.add_argument("--text", required=True, help="Job description text")
+
+    # 6. Generate Disclosure Key
+    gen_key_parser = subparsers.add_parser("gen-disclosure-key", help="Generate 32-byte disclosure key file")
+    gen_key_parser.add_argument("path", help="Path to secret key file to write")
 
     args = parser.parse_args(argv)
 
@@ -136,6 +141,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             print("No exclusionary terms detected. The job description is gender-neutral and EEO compliant.")
         return 0
+
+    elif args.command == "gen-disclosure-key":
+        try:
+            target = generate_key_file(args.path)
+            print(
+                f"Disclosure key written to {args.path} (32 bytes, mode 600). "
+                f"Set HRMS_DISCLOSURE_KEY_FILE={target.resolve()}."
+            )
+            return 0
+        except FileExistsError:
+            print(
+                f"Error: '{args.path}' already exists; delete it first to rotate "
+                "(old disclosure fingerprints stop matching).",
+                file=sys.stderr,
+            )
+            return 1
+        except (FileNotFoundError, OSError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
 
     return 0
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import secrets
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -105,3 +106,22 @@ def extract_disclosed_refs(tenant_id: str, data: Any) -> List[Dict[str, str]]:
             seen_refs.add(ref)
             out.append({"ref": ref, "kind": kind, "outcome": "DISCLOSED"})
     return out
+
+
+def generate_key_file(path: str | Path) -> Path:
+    """Generate and write a 32-byte disclosure secret key file atomically with mode 0o600."""
+    p = Path(path)
+    if not p.parent.exists():
+        raise FileNotFoundError(f"Parent directory does not exist: {p.parent}")
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        data = secrets.token_bytes(32)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        fd = -1
+    finally:
+        if fd != -1:
+            os.close(fd)
+    os.chmod(p, 0o600)
+    return p
+

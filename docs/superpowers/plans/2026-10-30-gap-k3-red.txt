@@ -1,0 +1,485 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+_______________ test_generate_key_file_creates_32_bytes_mode_600 _______________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_creates0')
+
+    def test_generate_key_file_creates_32_bytes_mode_600(tmp_path: Path):
+        """Positive test: generate_key_file creates a 32-byte file with 0o600 permissions."""
+        target = tmp_path / "secret.key"
+>       res = generate_key_file(target)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k3.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_creates0/secret.key')
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+___________________ test_generate_key_file_from_string_path ____________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_from_st0')
+
+    def test_generate_key_file_from_string_path(tmp_path: Path):
+        """Boundary test: generate_key_file accepts string path and returns Path."""
+        target_str = str(tmp_path / "str_path.key")
+>       res = generate_key_file(target_str)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k3.py:29: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = '/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_from_st0/str_path.key'
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+_____________ test_generate_key_file_two_calls_give_different_keys _____________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_two_cal0')
+
+    def test_generate_key_file_two_calls_give_different_keys(tmp_path: Path):
+        """Positive test: subsequent calls generate cryptographically independent random keys."""
+        key1 = tmp_path / "k1.key"
+        key2 = tmp_path / "k2.key"
+>       generate_key_file(key1)
+
+tests/unit/test_gap_k3.py:40: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_two_cal0/k1.key')
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+_____________ test_generate_key_file_accepted_by_disclosure_module _____________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_accepte0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1113902d0>
+
+    def test_generate_key_file_accepted_by_disclosure_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Integration test: generated key file is accepted by is_configured and get_disclosure_key."""
+        target = tmp_path / "active_disclosure.key"
+>       generate_key_file(target)
+
+tests/unit/test_gap_k3.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_accepte0/active_disclosure.key')
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+______ test_generate_key_file_existing_file_raises_and_contents_unchanged ______
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_existin0')
+
+    def test_generate_key_file_existing_file_raises_and_contents_unchanged(tmp_path: Path):
+        """Negative test: existing file raises FileExistsError and preserves original content."""
+        target = tmp_path / "existing.key"
+        original_data = b"preexisting-secret-data-unchanged"
+        target.write_bytes(original_data)
+    
+        with pytest.raises(FileExistsError):
+>           generate_key_file(target)
+
+tests/unit/test_gap_k3.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_existin0/existing.key')
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+_________ test_generate_key_file_missing_parent_raises_file_not_found __________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_missing0')
+
+    def test_generate_key_file_missing_parent_raises_file_not_found(tmp_path: Path):
+        """Negative test: missing parent directory raises FileNotFoundError without creating file."""
+        target = tmp_path / "missing_dir" / "secret.key"
+        with pytest.raises(FileNotFoundError):
+>           generate_key_file(target)
+
+tests/unit/test_gap_k3.py:70: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_missing0/missing_dir/secret.key')
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+_____________________ test_generate_key_file_umask_safety ______________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_umask_s0')
+
+    def test_generate_key_file_umask_safety(tmp_path: Path):
+        """Boundary test: 0o600 mode is guaranteed even when umask is permissive (0o000)."""
+        old_umask = os.umask(0o000)
+        try:
+            target = tmp_path / "umask_zero.key"
+>           generate_key_file(target)
+
+tests/unit/test_gap_k3.py:79: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_generate_key_file_umask_s0/umask_zero.key')
+
+    def generate_key_file(path: str | Path) -> Path:
+        """Generate and write a 32-byte disclosure secret key file with mode 0o600."""
+>       raise NotImplementedError
+E       NotImplementedError
+
+hrms_plugin/governance/disclosure.py:112: NotImplementedError
+_____________________ test_cli_gen_disclosure_key_success ______________________
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['gen-disclosure-key', '/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_cli_gen_disclosure_key_su0/cli_generated.key']
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1907: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2131: in _parse_known_args
+    stop_index = consume_positionals(start_index)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2087: in consume_positionals
+    take_action(action, args)
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1967: in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2516: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'intr...se.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=False, help='Available commands', metavar=None)
+value = 'gen-disclosure-key'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2563: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_cli_gen_disclosure_key_su0')
+capsys = <_pytest.capture.CaptureFixture object at 0x111378c90>
+
+    def test_cli_gen_disclosure_key_success(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """Positive test: CLI gen-disclosure-key creates file, prints expected message and exits 0."""
+        target = tmp_path / "cli_generated.key"
+>       code = main(["gen-disclosure-key", str(target)])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k3.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+hrms_plugin/cli.py:48: in main
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1874: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1909: in parse_known_args
+    self.error(str(err))
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2640: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "hrms-plugin: error: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2627: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: hrms-plugin [-h]
+                   {introspect,calculate-eosb,calculate-salary,audit-compliance,check-bias}
+                   ...
+hrms-plugin: error: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')
+_______________ test_cli_gen_disclosure_key_existing_file_error ________________
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['gen-disclosure-key', '/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_cli_gen_disclosure_key_ex0/cli_existing.key']
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1907: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2131: in _parse_known_args
+    stop_index = consume_positionals(start_index)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2087: in consume_positionals
+    take_action(action, args)
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1967: in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2516: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'intr...se.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=False, help='Available commands', metavar=None)
+value = 'gen-disclosure-key'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2563: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_cli_gen_disclosure_key_ex0')
+capsys = <_pytest.capture.CaptureFixture object at 0x110a00ad0>
+
+    def test_cli_gen_disclosure_key_existing_file_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """Negative test: CLI on existing file prints error to stderr and exits 1 without overwriting."""
+        target = tmp_path / "cli_existing.key"
+        original_data = b"do-not-overwrite-this-key-content"
+        target.write_bytes(original_data)
+    
+>       code = main(["gen-disclosure-key", str(target)])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k3.py:113: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+hrms_plugin/cli.py:48: in main
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1874: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1909: in parse_known_args
+    self.error(str(err))
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2640: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "hrms-plugin: error: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2627: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: hrms-plugin [-h]
+                   {introspect,calculate-eosb,calculate-salary,audit-compliance,check-bias}
+                   ...
+hrms-plugin: error: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')
+_______________ test_cli_gen_disclosure_key_missing_parent_error _______________
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['gen-disclosure-key', '/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_cli_gen_disclosure_key_mi0/no_such_folder/secret.key']
+namespace = Namespace(command=None)
+
+    def parse_known_args(self, args=None, namespace=None):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1907: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2131: in _parse_known_args
+    stop_index = consume_positionals(start_index)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2087: in consume_positionals
+    take_action(action, args)
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1967: in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2516: in _get_values
+    self._check_value(action, value[0])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _SubParsersAction(option_strings=[], dest='command', nargs='A...', const=None, default=None, type=None, choices={'intr...se.HelpFormatter'>, conflict_handler='error', add_help=True)}, required=False, help='Available commands', metavar=None)
+value = 'gen-disclosure-key'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        if action.choices is not None and value not in action.choices:
+            args = {'value': value,
+                    'choices': ', '.join(map(repr, action.choices))}
+            msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>           raise ArgumentError(action, msg % args)
+E           argparse.ArgumentError: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2563: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-578/test_cli_gen_disclosure_key_mi0')
+capsys = <_pytest.capture.CaptureFixture object at 0x1113b07d0>
+
+    def test_cli_gen_disclosure_key_missing_parent_error(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+        """Negative test: CLI with non-existent parent directory prints error to stderr and exits 1."""
+        target = tmp_path / "no_such_folder" / "secret.key"
+>       code = main(["gen-disclosure-key", str(target)])
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k3.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+hrms_plugin/cli.py:48: in main
+    args = parser.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1874: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:1909: in parse_known_args
+    self.error(str(err))
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2640: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='hrms-plugin', usage=None, description='Autonomous Agentic HRMS Intelligence Microservice & Setup CLI', formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "hrms-plugin: error: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/argparse.py:2627: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: hrms-plugin [-h]
+                   {introspect,calculate-eosb,calculate-salary,audit-compliance,check-bias}
+                   ...
+hrms-plugin: error: argument command: invalid choice: 'gen-disclosure-key' (choose from 'introspect', 'calculate-eosb', 'calculate-salary', 'audit-compliance', 'check-bias')
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_creates_32_bytes_mode_600
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_from_string_path - N...
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_two_calls_give_different_keys
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_accepted_by_disclosure_module
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_existing_file_raises_and_contents_unchanged
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_missing_parent_raises_file_not_found
+FAILED tests/unit/test_gap_k3.py::test_generate_key_file_umask_safety - NotIm...
+FAILED tests/unit/test_gap_k3.py::test_cli_gen_disclosure_key_success - Syste...
+FAILED tests/unit/test_gap_k3.py::test_cli_gen_disclosure_key_existing_file_error
+FAILED tests/unit/test_gap_k3.py::test_cli_gen_disclosure_key_missing_parent_error
