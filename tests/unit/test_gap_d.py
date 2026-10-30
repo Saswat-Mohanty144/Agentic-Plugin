@@ -358,3 +358,186 @@ def test_e2e_synthesize_frappe_requisition_and_apply_override(make_client, beare
     assert req_data["mapping"]["version"] == version
     assert len(req_data["requisitions"]) == 1
     assert req_data["requisitions"][0]["id"] == "HR-HIREQ-00001"
+
+
+# Q3 Privacy follow-up: probe result carries structure only, raw values never leave or get stored -------------
+
+def test_synthesize_probe_drops_raw_value_and_sanitizes_projection_exceptions(make_client, bearer, monkeypatch):
+    store = MappingStore(backend=MemoryKeyValueStore())
+    monkeypatch.setattr(app_module, "mapping_store", store)
+    client = make_client()
+    auth = bearer(roles=["platform_admin"], sub="alice")
+
+    secret_val = "ZZ-SECRET-VALUE-91"
+    from hrms_plugin.schema import mapping as mapping_module
+    orig_strip = mapping_module.TRANSFORMS["strip"]
+
+    def sensitive_strip(val):
+        if val == secret_val:
+            raise ValueError(f"rejected secret payload: {val}")
+        return orig_strip(val)
+
+    monkeypatch.setitem(mapping_module.TRANSFORMS, "strip", sensitive_strip)
+
+    payload = {
+        "domain": "REQUISITION",
+        "discovered_fields": [{"name": "id"}, {"name": "title"}],
+        "vendor": "frappe",
+        "sample_records": [{"id": "REQ-1", "title": secret_val}],
+    }
+    res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+    assert res.status_code == 200
+    assert secret_val not in res.text
+    data = res.json()
+    assert "probe" in data
+    probe = data["probe"]
+    assert probe["is_valid"] is False
+    assert len(probe["issues"]) > 0
+    for issue in probe["issues"]:
+        assert "raw_value" not in issue
+        assert secret_val not in issue["message"]
+        assert issue["message"] == "ValueError"
+        assert set(issue.keys()) == {"severity", "field", "sample_index", "message"}
+
+    # Assert secret value is not in stored version
+    versions = store.list_versions("acme")
+    assert secret_val not in json.dumps(versions)
+
+    # Assert secret value is not in GET /v1/schema/mappings
+    mappings_res = client.get("/v1/schema/mappings", headers=auth)
+    assert secret_val not in mappings_res.text
+
+
+def test_synthesize_probe_drops_raw_value_on_type_warning(make_client, bearer, monkeypatch):
+    store = MappingStore(backend=MemoryKeyValueStore())
+    monkeypatch.setattr(app_module, "mapping_store", store)
+    client = make_client()
+    auth = bearer(roles=["platform_admin"], sub="alice")
+
+    secret_val = "ZZ-SECRET-VALUE-91"
+    from hrms_plugin.schema.prober import IssueSeverity, ProbeIssue, ShadowProber
+    orig_probe = ShadowProber.probe
+
+    def probe_with_raw_val(mapping, sample_records, required_canonical_fields=None):
+        report = orig_probe(mapping, sample_records, required_canonical_fields)
+        report.issues.append(
+            ProbeIssue(
+                severity=IssueSeverity.WARNING,
+                field="experience",
+                message="Field 'experience' expected Decimal, got str",
+                sample_index=0,
+                raw_value=secret_val,
+            )
+        )
+        return report
+
+    monkeypatch.setattr(ShadowProber, "probe", staticmethod(probe_with_raw_val))
+
+    payload = {
+        "domain": "REQUISITION",
+        "discovered_fields": [{"name": "id"}, {"name": "title"}],
+        "vendor": "frappe",
+        "sample_records": [{"id": "REQ-1", "title": "Dev"}],
+    }
+    res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+    assert res.status_code == 200
+    assert secret_val not in res.text
+    issues = res.json()["probe"]["issues"]
+    assert len(issues) > 0
+    for issue in issues:
+        assert "raw_value" not in issue
+        assert set(issue.keys()) == {"severity", "field", "sample_index", "message"}
+    versions = store.list_versions("acme")
+    assert secret_val not in json.dumps(versions)
+
+
+def test_synthesize_probe_mapping_error_exception_sanitized_to_class_name(make_client, bearer, monkeypatch):
+    store = MappingStore(backend=MemoryKeyValueStore())
+    monkeypatch.setattr(app_module, "mapping_store", store)
+    client = make_client()
+    auth = bearer(roles=["platform_admin"], sub="alice")
+
+    secret_val = "ZZ-SECRET-VALUE-91"
+    from hrms_plugin.schema.mapping import EntityMapping, MappingError
+    orig_ext_id = EntityMapping.external_id
+
+    def bad_external_id(self, payload):
+        if payload.get("id") == secret_val:
+            raise MappingError(f"PK lookup failed with secret: {secret_val}")
+        return orig_ext_id(self, payload)
+
+    monkeypatch.setattr(EntityMapping, "external_id", bad_external_id)
+
+    payload = {
+        "domain": "REQUISITION",
+        "discovered_fields": [{"name": "id"}, {"name": "title"}],
+        "vendor": "frappe",
+        "sample_records": [{"id": secret_val, "title": "Dev"}],
+    }
+    res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+    assert res.status_code == 200
+    assert secret_val not in res.text
+    issues = res.json()["probe"]["issues"]
+    assert any(i["field"] == "id" and i["message"] == "MappingError" for i in issues)
+    for issue in issues:
+        assert "raw_value" not in issue
+        assert secret_val not in issue["message"]
+    versions = store.list_versions("acme")
+    assert secret_val not in json.dumps(versions)
+
+
+def test_synthesize_agentic_probe_structure_only(make_client, bearer, monkeypatch):
+    store = MappingStore(backend=MemoryKeyValueStore())
+    monkeypatch.setattr(app_module, "mapping_store", store)
+    client = make_client()
+    auth = bearer(roles=["platform_admin"], sub="alice")
+
+    secret_val = "ZZ-SECRET-VALUE-91"
+    from hrms_plugin.schema import mapping as mapping_module
+    orig_strip = mapping_module.TRANSFORMS["strip"]
+
+    def sensitive_strip(val):
+        if val == secret_val:
+            raise ValueError(f"rejected secret payload: {val}")
+        return orig_strip(val)
+
+    monkeypatch.setitem(mapping_module.TRANSFORMS, "strip", sensitive_strip)
+
+    payload = {
+        "domain": "REQUISITION",
+        "discovered_fields": [{"name": "id"}, {"name": "title"}],
+        "vendor": "frappe",
+        "sample_records": [{"id": "REQ-1", "title": secret_val}],
+    }
+    res = client.post("/v1/schema/synthesize/agentic", json=payload, headers=auth)
+    assert res.status_code == 200
+    assert secret_val not in res.text
+    for issue in res.json()["probe"]["issues"]:
+        assert "raw_value" not in issue
+        assert issue["message"] == "ValueError"
+    versions = store.list_versions("acme")
+    assert secret_val not in json.dumps(versions)
+
+
+def test_synthesize_probe_preserves_fixed_template_messages(make_client, bearer, monkeypatch):
+    store = MappingStore(backend=MemoryKeyValueStore())
+    monkeypatch.setattr(app_module, "mapping_store", store)
+    client = make_client()
+    auth = bearer(roles=["platform_admin"], sub="alice")
+
+    payload = {
+        "domain": "REQUISITION",
+        "discovered_fields": [{"name": "id"}, {"name": "title"}],
+        "vendor": "frappe",
+        "sample_records": [{"id": "", "title": ""}],
+    }
+    res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+    assert res.status_code == 200
+    issues = res.json()["probe"]["issues"]
+    assert len(issues) > 0
+    messages = [i["message"] for i in issues]
+    assert any("Primary key 'id' resolved to empty string" in m or m == "MappingError" for m in messages)
+    for issue in issues:
+        assert "raw_value" not in issue
+        assert set(issue.keys()) == {"severity", "field", "sample_index", "message"}
+

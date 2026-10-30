@@ -506,18 +506,11 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
         raise HTTPException(status_code=400, detail="Must provide swagger_dict or sample_records")
 
 
-@router.post("/v1/schema/synthesize")
-def synthesize_mapping(
-    req: SynthesizeRequest,
-    auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
-):
-    """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
-    domain_enum = _entity_type(req.domain)
+def _prepare_synthesis_discovered(domain_value: str, req: SynthesizeRequest):
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
-    from hrms_plugin.schema.prober import ShadowProber
 
     sample_ent = (
-        introspector.introspect_json_samples(domain_enum.value, req.sample_records)
+        introspector.introspect_json_samples(domain_value, req.sample_records)
         if req.sample_records
         else None
     )
@@ -532,26 +525,58 @@ def synthesize_mapping(
             path=f.get("path", name),
             enum_values=enums or [],
         )
-    discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
-    mapping, report = synthesizer.synthesize(
-        discovered=discovered,
-        canonical_type=domain_enum,
-        vendor=req.vendor,
-    )
+    return DiscoveredEntity(name=domain_value, fields=discovered_fields_dict)
+
+
+def _finalize_synthesis(
+    auth: AuthContext,
+    mapping: Any,
+    report: Any,
+    sample_records: Optional[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    from hrms_plugin.schema.prober import ShadowProber
+
     probe_data = None
-    if req.sample_records is not None:
-        report_probe = ShadowProber.probe(mapping, req.sample_records)
+    if sample_records is not None:
+        report_probe = ShadowProber.probe(mapping, sample_records)
+        issues = []
+        for i in report_probe.issues:
+            msg = i.message
+            if msg.startswith("Unexpected exception during projection:"):
+                msg = "Exception"
+            issues.append({
+                "severity": i.severity.value if hasattr(i.severity, "value") else str(i.severity),
+                "field": i.field,
+                "sample_index": i.sample_index,
+                "message": msg,
+            })
         probe_data = {
             "is_valid": report_probe.is_valid,
             "quality_score": report_probe.quality_score,
             "records_tested": report_probe.records_tested,
-            "issues": [i.model_dump() for i in report_probe.issues],
+            "issues": issues,
         }
     version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data)
     res = {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
     if probe_data is not None:
         res["probe"] = probe_data
     return res
+
+
+@router.post("/v1/schema/synthesize")
+def synthesize_mapping(
+    req: SynthesizeRequest,
+    auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
+):
+    """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
+    domain_enum = _entity_type(req.domain)
+    discovered = _prepare_synthesis_discovered(domain_enum.value, req)
+    mapping, report = synthesizer.synthesize(
+        discovered=discovered,
+        canonical_type=domain_enum,
+        vendor=req.vendor,
+    )
+    return _finalize_synthesis(auth, mapping, report, req.sample_records)
 
 
 @router.post("/v1/schema/synthesize/agentic")
@@ -563,26 +588,7 @@ async def synthesize_mapping_agentic(
     """Synthesize FieldMap with LLM semantic reasoning over ambiguous/vendor host fields."""
     _rate_limit(request, auth)
     domain_enum = _entity_type(req.domain)
-    from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
-    from hrms_plugin.schema.prober import ShadowProber
-
-    sample_ent = (
-        introspector.introspect_json_samples(domain_enum.value, req.sample_records)
-        if req.sample_records
-        else None
-    )
-    discovered_fields_dict = {}
-    for f in req.discovered_fields:
-        name = f["name"]
-        enums = f.get("enum_values")
-        if enums is None and sample_ent and name in sample_ent.fields:
-            enums = sample_ent.fields[name].enum_values
-        discovered_fields_dict[name] = DiscoveredField(
-            name=name,
-            path=f.get("path", name),
-            enum_values=enums or [],
-        )
-    discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
+    discovered = _prepare_synthesis_discovered(domain_enum.value, req)
     try:  # the app's one gateway: no client, egress store or SQLite connection built per request (#2)
         gateway = request.app.state.supervisor.get_orchestrator().llm_gateway
     except AttributeError:
@@ -594,20 +600,7 @@ async def synthesize_mapping_agentic(
         llm_gateway=gateway,
         vendor=req.vendor,
     )
-    probe_data = None
-    if req.sample_records is not None:
-        report_probe = ShadowProber.probe(mapping, req.sample_records)
-        probe_data = {
-            "is_valid": report_probe.is_valid,
-            "quality_score": report_probe.quality_score,
-            "records_tested": report_probe.records_tested,
-            "issues": [i.model_dump() for i in report_probe.issues],
-        }
-    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data)
-    res = {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
-    if probe_data is not None:
-        res["probe"] = probe_data
-    return res
+    return _finalize_synthesis(auth, mapping, report, req.sample_records)
 
 
 @router.get("/v1/schema/mappings")
