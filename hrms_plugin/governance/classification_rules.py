@@ -7,7 +7,7 @@ mappings against canonical rules and fallback identifier / money detectors.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import yaml
 
@@ -200,3 +200,70 @@ def suggest_classification(
     """Suggest data_class and llm_visible for a target canonical field based on governance rules."""
     active_rules = rules or load_rules()
     return active_rules.evaluate(target, entity_type)
+
+
+def apply_value_check(
+    field_maps: Any,
+    sample_records: Optional[Sequence[Dict[str, Any]]],
+    coverage_fields: Optional[Dict[str, Any]],
+) -> None:
+    """Mutate coverage_fields in place by detecting PII in sample records for mapped fields."""
+    if not coverage_fields or not isinstance(coverage_fields, dict) or not sample_records:
+        return
+
+    from hrms_plugin.schema.mapping import resolve_path
+
+    for fm in (field_maps or []):
+        target = getattr(fm, "target", None) if not isinstance(fm, dict) else fm.get("target")
+        if not target or not isinstance(target, str):
+            continue
+        field_cov = coverage_fields.get(target)
+        if not isinstance(field_cov, dict):
+            continue
+        cur_sug = field_cov.get("suggested_classification")
+        if isinstance(cur_sug, dict) and cur_sug.get("data_class") == "PII":
+            continue
+
+        raw_source = getattr(fm, "source", None) if not isinstance(fm, dict) else fm.get("source")
+        if isinstance(raw_source, str):
+            sources = [raw_source]
+        elif isinstance(raw_source, (list, tuple, set)):
+            sources = list(raw_source)
+        else:
+            sources = []
+
+        detected_kinds: Set[str] = set()
+        for rec in sample_records:
+            if not isinstance(rec, dict):
+                continue
+            for src_path in sources:
+                if not src_path or not isinstance(src_path, str):
+                    continue
+                val = resolve_path(rec, src_path)
+                if val is None:
+                    continue
+                scalars = []
+                if isinstance(val, (list, tuple, set)):
+                    for item in val:
+                        if isinstance(item, (str, int, float, bool)) and not isinstance(item, bool):
+                            scalars.append(item)
+                elif isinstance(val, (str, int, float, bool)) and not isinstance(val, bool):
+                    scalars.append(val)
+
+                for s in scalars:
+                    s_str = str(s).strip()
+                    if not s_str:
+                        continue
+                    for match in pii.detect(pii.normalise(s_str)):
+                        detected_kinds.add(match[0])
+
+        if detected_kinds:
+            kinds_str = ", ".join(sorted(detected_kinds))
+            field_cov["suggested_classification"] = {
+                "data_class": "PII",
+                "llm_visible": False,
+                "rule_id": "VALUE_CHECK",
+                "why": f"sample values look like {kinds_str}",
+            }
+
+

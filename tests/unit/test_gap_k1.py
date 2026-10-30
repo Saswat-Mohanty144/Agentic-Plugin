@@ -19,6 +19,7 @@ import pytest
 from hrms_plugin.governance.classification_rules import (
     ClassificationRules,
     ClassificationRulesError,
+    apply_value_check,
     load_rules,
     suggest_classification,
 )
@@ -399,16 +400,21 @@ def test_shipped_yaml_canonical_model_classifications():
     assert suggest_classification("total_deductions")["data_class"] == "COMPENSATION"
     assert suggest_classification("amount", entity_type="EXPENSE_CLAIM")["data_class"] == "COMPENSATION"
 
-    # Descriptive fields (llm_visible: true)
+    # Descriptive fields (PUBLIC for REQUISITION, INTERNAL visible for others)
+    for field in ("title", "location", "must_have_skills", "nice_to_have_skills"):
+        sug = suggest_classification(field, entity_type="REQUISITION")
+        assert sug is not None, f"Field {field} should have suggestion for REQUISITION"
+        assert sug["data_class"] == "PUBLIC"
+        assert sug["llm_visible"] is True
+
     for field in (
-        "title", "department", "designation", "location", "status", "stage",
-        "leave_type", "claim_type", "asset_type", "headcount", "must_have_skills",
-        "nice_to_have_skills", "skills", "currency", "month", "year", "fiscal_year",
+        "department", "designation", "status", "stage", "leave_type", "claim_type",
+        "asset_type", "headcount", "skills", "currency", "month", "year", "fiscal_year",
         "min_years_experience", "max_years_experience"
     ):
         sug = suggest_classification(field)
         assert sug is not None, f"Field {field} should have suggestion"
-        assert sug["data_class"] in ("PUBLIC", "INTERNAL")
+        assert sug["data_class"] == "INTERNAL"
         assert sug["llm_visible"] is True, f"Field {field} should have llm_visible=True"
 
     # Other canonical fields (INTERNAL, llm_visible: false)
@@ -933,3 +939,138 @@ def test_http_synthesize_review_approve_flow(make_client, bearer, monkeypatch):
     active_row = next(r for r in listing["versions"] if r["version"] == v2)
     assert active_row["status"] == "ACTIVE"
     assert active_row["classification_origin"]["department"] == "SUGGESTED:VALUE_CHECK"
+
+
+# --------------------------------------------------------------------------------------------------
+# Follow-up Review Findings Tests
+# --------------------------------------------------------------------------------------------------
+
+
+def test_followup_requisition_title_is_public():
+    sug = suggest_classification("title", entity_type="REQUISITION")
+    assert sug is not None
+    assert sug["data_class"] == "PUBLIC"
+    assert sug["llm_visible"] is True
+    assert sug["rule_id"] == "public_descriptive"
+
+
+def test_followup_candidate_skills_is_internal_visible():
+    sug = suggest_classification("skills", entity_type="CANDIDATE")
+    assert sug is not None
+    assert sug["data_class"] == "INTERNAL"
+    assert sug["llm_visible"] is True
+    assert sug["rule_id"] == "internal_visible_descriptive"
+
+
+def test_followup_title_on_non_requisition_entity_not_public():
+    sug_emp = suggest_classification("title", entity_type="EMPLOYEE")
+    assert sug_emp is None or sug_emp["data_class"] != "PUBLIC"
+
+    sug_cand = suggest_classification("title", entity_type="CANDIDATE")
+    assert sug_cand is None or sug_cand["data_class"] != "PUBLIC"
+
+
+def test_followup_rules_content_structure():
+    rules = load_rules()
+    rule_map = {r["id"]: r for r in rules.rules}
+
+    pub = rule_map["public_descriptive"]
+    assert pub["when"].get("entity_in") == ["REQUISITION"]
+    assert "skills" not in pub["when"].get("target_in", [])
+
+    internal_vis = rule_map["internal_visible_descriptive"]
+    assert "skills" in internal_vis["when"].get("target_in", [])
+
+
+def test_apply_value_check_pan_detected():
+    fm = FieldMap(target="tax_code", source="pan_num")
+    sample_records = [{"pan_num": SAMPLE_PAN}]
+    coverage_fields = {
+        "tax_code": {
+            "suggested_classification": {
+                "data_class": "INTERNAL",
+                "llm_visible": True,
+                "rule_id": "custom",
+                "why": "custom",
+            }
+        }
+    }
+    apply_value_check([fm], sample_records, coverage_fields)
+    assert coverage_fields["tax_code"]["suggested_classification"] == {
+        "data_class": "PII",
+        "llm_visible": False,
+        "rule_id": "VALUE_CHECK",
+        "why": "sample values look like PAN",
+    }
+
+
+def test_apply_value_check_email_inside_list():
+    fm = FieldMap(target="contact_info", source="emails")
+    sample_records = [{"emails": ["not-an-email", SAMPLE_EMAIL]}]
+    coverage_fields = {"contact_info": {"suggested_classification": None}}
+    apply_value_check([fm], sample_records, coverage_fields)
+    assert coverage_fields["contact_info"]["suggested_classification"] == {
+        "data_class": "PII",
+        "llm_visible": False,
+        "rule_id": "VALUE_CHECK",
+        "why": "sample values look like EMAIL",
+    }
+
+
+def test_apply_value_check_plain_text_unchanged():
+    fm = FieldMap(target="dept", source="raw_dept")
+    sample_records = [{"raw_dept": ORDINARY_TEXT}]
+    orig_sug = {"data_class": "INTERNAL", "llm_visible": True, "rule_id": "dept_rule", "why": "dept"}
+    coverage_fields = {"dept": {"suggested_classification": dict(orig_sug)}}
+    apply_value_check([fm], sample_records, coverage_fields)
+    assert coverage_fields["dept"]["suggested_classification"] == orig_sug
+
+
+def test_apply_value_check_bool_and_none_ignored():
+    fm_bool = FieldMap(target="active", source="is_active")
+    fm_none = FieldMap(target="remarks", source="notes")
+    sample_records = [
+        {"is_active": True, "notes": None},
+        {"is_active": False, "notes": None},
+    ]
+    coverage_fields = {
+        "active": {"suggested_classification": None},
+        "remarks": {"suggested_classification": None},
+    }
+    apply_value_check([fm_bool, fm_none], sample_records, coverage_fields)
+    assert coverage_fields["active"]["suggested_classification"] is None
+    assert coverage_fields["remarks"]["suggested_classification"] is None
+
+
+def test_apply_value_check_existing_pii_untouched():
+    fm = FieldMap(target="employee_email", source="email")
+    sample_records = [{"email": SAMPLE_EMAIL}]
+    existing_pii_sug = {
+        "data_class": "PII",
+        "llm_visible": False,
+        "rule_id": "pii_emails",
+        "why": "Email address directly identifies an individual",
+    }
+    coverage_fields = {"employee_email": {"suggested_classification": dict(existing_pii_sug)}}
+    apply_value_check([fm], sample_records, coverage_fields)
+    assert coverage_fields["employee_email"]["suggested_classification"] == existing_pii_sug
+
+
+def test_apply_value_check_uncovered_field_ignored():
+    fm = FieldMap(target="uncovered", source="pan")
+    sample_records = [{"pan": SAMPLE_PAN}]
+    coverage_fields = {"other": {"suggested_classification": None}}
+    apply_value_check([fm], sample_records, coverage_fields)
+    assert "uncovered" not in coverage_fields
+    assert coverage_fields["other"]["suggested_classification"] is None
+
+
+def test_followup_single_source_of_truth_data_classes():
+    import hrms_plugin.governance.classification_rules as rules_mod
+    import hrms_plugin.storage.mapping_store as store_mod
+
+    assert store_mod.DATA_CLASSES is rules_mod.DATA_CLASSES
+    assert store_mod.SENSITIVE_CLASSES is rules_mod.SENSITIVE_CLASSES
+    assert store_mod.DATA_CLASSES == ("PII", "COMPENSATION", "INTERNAL", "PUBLIC")
+    assert store_mod.SENSITIVE_CLASSES == ("PII", "COMPENSATION")
+

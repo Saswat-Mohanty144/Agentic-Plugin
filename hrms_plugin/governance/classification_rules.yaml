@@ -96,12 +96,13 @@ rules:
 
   - id: public_descriptive
     when:
+      entity_in:
+        - REQUISITION
       target_in:
         - title
         - location
         - must_have_skills
         - nice_to_have_skills
-        - skills
     then:
       data_class: PUBLIC
       llm_visible: true
@@ -118,6 +119,7 @@ rules:
         - claim_type
         - asset_type
         - headcount
+        - skills
         - currency
         - month
         - year

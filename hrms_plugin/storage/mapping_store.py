@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from hrms_plugin.governance.classification_rules import DATA_CLASSES, SENSITIVE_CLASSES
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
 from hrms_plugin.storage.base import BaseKeyValueStore
@@ -79,10 +80,6 @@ class MappingGovernanceError(Exception):
         self.detail = detail
         self.fields = fields or []
         self.problems = problems or []
-
-
-DATA_CLASSES = ("PII", "COMPENSATION", "INTERNAL", "PUBLIC")
-SENSITIVE_CLASSES = ("PII", "COMPENSATION")
 
 
 def classify_fields(

@@ -35,6 +35,7 @@ from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.tools import STATUTORY_JURISDICTIONS
 from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
+from hrms_plugin.governance.classification_rules import apply_value_check
 from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
 from hrms_plugin.governance.rate_limit import TenantRateLimiter, enforce_rate_limit
@@ -602,55 +603,7 @@ def _finalize_synthesis(
         }
 
         # K1.3: Value cross-check when sample_records are sent
-        cov = getattr(report, "coverage", None)
-        if cov and isinstance(cov.get("fields"), dict):
-            from hrms_plugin.schema.mapping import resolve_path
-            from hrms_plugin.security.pii import detect, normalise
-
-            cov_fields = cov["fields"]
-            for fm in getattr(mapping, "fields", []):
-                target = fm.target
-                field_cov = cov_fields.get(target)
-                if not isinstance(field_cov, dict):
-                    continue
-                cur_sug = field_cov.get("suggested_classification")
-                if isinstance(cur_sug, dict) and cur_sug.get("data_class") == "PII":
-                    continue
-
-                sources = [fm.source] if isinstance(fm.source, str) else list(fm.source or [])
-                detected_kinds = set()
-                for rec in sample_records:
-                    if not isinstance(rec, dict):
-                        continue
-                    for src_path in sources:
-                        if not src_path:
-                            continue
-                        val = resolve_path(rec, src_path)
-                        if val is None:
-                            continue
-                        scalars = []
-                        if isinstance(val, (list, tuple)):
-                            for item in val:
-                                if isinstance(item, (str, int, float, bool)) and not isinstance(item, bool):
-                                    scalars.append(item)
-                        elif isinstance(val, (str, int, float, bool)) and not isinstance(val, bool):
-                            scalars.append(val)
-
-                        for s in scalars:
-                            s_str = str(s).strip()
-                            if not s_str:
-                                continue
-                            for match in detect(normalise(s_str)):
-                                detected_kinds.add(match[0])
-
-                if detected_kinds:
-                    kinds_str = ", ".join(sorted(detected_kinds))
-                    field_cov["suggested_classification"] = {
-                        "data_class": "PII",
-                        "llm_visible": False,
-                        "rule_id": "VALUE_CHECK",
-                        "why": f"sample values look like {kinds_str}",
-                    }
+        apply_value_check(getattr(mapping, "fields", []), sample_records, report.coverage.get("fields"))
 
     coverage_data = getattr(report, "coverage", None)
     version = mapping_store.propose_mapping(

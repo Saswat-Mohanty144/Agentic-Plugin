@@ -1003,3 +1003,112 @@ FAILED tests/unit/test_gap_k1.py::test_approve_explicit_wins_over_suggestion
 FAILED tests/unit/test_gap_k1.py::test_approve_field_without_suggestion_defaults
 FAILED tests/unit/test_gap_k1.py::test_http_synthesize_review_approve_flow - ...
 30 failed in 1.41s
+
+
+## follow-up
+
+```
+...............................FFFFF....F                                [100%]
+=================================== FAILURES ===================================
+______________ test_followup_candidate_skills_is_internal_visible ______________
+
+    def test_followup_candidate_skills_is_internal_visible():
+        sug = suggest_classification("skills", entity_type="CANDIDATE")
+        assert sug is not None
+>       assert sug["data_class"] == "INTERNAL"
+E       AssertionError: assert 'PUBLIC' == 'INTERNAL'
+E         
+E         - INTERNAL
+E         + PUBLIC
+
+tests/unit/test_gap_k1.py:955: AssertionError
+___________ test_followup_title_on_non_requisition_entity_not_public ___________
+
+    def test_followup_title_on_non_requisition_entity_not_public():
+        sug_emp = suggest_classification("title", entity_type="EMPLOYEE")
+>       assert sug_emp is None or sug_emp["data_class"] != "PUBLIC"
+E       AssertionError: assert ({'data_class': 'PUBLIC', 'llm_visible': True, 'rule_id': 'public_descriptive', 'why': 'Job and role descriptions intended for public posting and search'} is None or 'PUBLIC' != 'PUBLIC')
+
+tests/unit/test_gap_k1.py:962: AssertionError
+____________________ test_followup_rules_content_structure _____________________
+
+    def test_followup_rules_content_structure():
+        rules = load_rules()
+        rule_map = {r["id"]: r for r in rules.rules}
+    
+        pub = rule_map["public_descriptive"]
+>       assert pub["when"].get("entity_in") == ["REQUISITION"]
+E       AssertionError: assert None == ['REQUISITION']
+E        +  where None = <built-in method get of dict object at 0x10bfd5080>('entity_in')
+E        +    where <built-in method get of dict object at 0x10bfd5080> = {'target_in': ['title', 'location', 'must_have_skills', 'nice_to_have_skills', 'skills']}.get
+
+tests/unit/test_gap_k1.py:973: AssertionError
+_____________________ test_apply_value_check_pan_detected ______________________
+
+    def test_apply_value_check_pan_detected():
+        fm = FieldMap(target="tax_code", source="pan_num")
+        sample_records = [{"pan_num": SAMPLE_PAN}]
+        coverage_fields = {
+            "tax_code": {
+                "suggested_classification": {
+                    "data_class": "INTERNAL",
+                    "llm_visible": True,
+                    "rule_id": "custom",
+                    "why": "custom",
+                }
+            }
+        }
+        apply_value_check([fm], sample_records, coverage_fields)
+>       assert coverage_fields["tax_code"]["suggested_classification"] == {
+            "data_class": "PII",
+            "llm_visible": False,
+            "rule_id": "VALUE_CHECK",
+            "why": "sample values look like PAN",
+        }
+E       AssertionError: assert {'data_class'...hy': 'custom'} == {'data_class'...ook like PAN'}
+E         
+E         Differing items:
+E         {'data_class': 'INTERNAL'} != {'data_class': 'PII'}
+E         {'llm_visible': True} != {'llm_visible': False}
+E         {'rule_id': 'custom'} != {'rule_id': 'VALUE_CHECK'}
+E         {'why': 'custom'} != {'why': 'sample values look like PAN'}
+E         Use -v to get more diff
+
+tests/unit/test_gap_k1.py:994: AssertionError
+___________________ test_apply_value_check_email_inside_list ___________________
+
+    def test_apply_value_check_email_inside_list():
+        fm = FieldMap(target="contact_info", source="emails")
+        sample_records = [{"emails": ["not-an-email", SAMPLE_EMAIL]}]
+        coverage_fields = {"contact_info": {"suggested_classification": None}}
+        apply_value_check([fm], sample_records, coverage_fields)
+>       assert coverage_fields["contact_info"]["suggested_classification"] == {
+            "data_class": "PII",
+            "llm_visible": False,
+            "rule_id": "VALUE_CHECK",
+            "why": "sample values look like EMAIL",
+        }
+E       AssertionError: assert None == {'data_class': 'PII', 'llm_visible': False, 'rule_id': 'VALUE_CHECK', 'why': 'sample values look like EMAIL'}
+
+tests/unit/test_gap_k1.py:1007: AssertionError
+______________ test_followup_single_source_of_truth_data_classes _______________
+
+    def test_followup_single_source_of_truth_data_classes():
+        import hrms_plugin.governance.classification_rules as rules_mod
+        import hrms_plugin.storage.mapping_store as store_mod
+    
+>       assert store_mod.DATA_CLASSES is rules_mod.DATA_CLASSES
+E       AssertionError: assert ('PII', 'COMPENSATION', 'INTERNAL', 'PUBLIC') is ('PII', 'COMPENSATION', 'INTERNAL', 'PUBLIC')
+E        +  where ('PII', 'COMPENSATION', 'INTERNAL', 'PUBLIC') = <module 'hrms_plugin.storage.mapping_store' from '/Users/satosh/Agentic-Plugin-gap-k1/hrms_plugin/storage/mapping_store.py'>.DATA_CLASSES
+E        +  and   ('PII', 'COMPENSATION', 'INTERNAL', 'PUBLIC') = <module 'hrms_plugin.governance.classification_rules' from '/Users/satosh/Agentic-Plugin-gap-k1/hrms_plugin/governance/classification_rules.py'>.DATA_CLASSES
+
+tests/unit/test_gap_k1.py:1067: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_k1.py::test_followup_candidate_skills_is_internal_visible
+FAILED tests/unit/test_gap_k1.py::test_followup_title_on_non_requisition_entity_not_public
+FAILED tests/unit/test_gap_k1.py::test_followup_rules_content_structure - Ass...
+FAILED tests/unit/test_gap_k1.py::test_apply_value_check_pan_detected - Asser...
+FAILED tests/unit/test_gap_k1.py::test_apply_value_check_email_inside_list - ...
+FAILED tests/unit/test_gap_k1.py::test_followup_single_source_of_truth_data_classes
+6 failed, 35 passed in 1.05s
+```
