@@ -6,6 +6,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from hrms_plugin.governance.classification_rules import DATA_CLASSES, SENSITIVE_CLASSES
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
 from hrms_plugin.storage.base import BaseKeyValueStore
@@ -81,27 +82,57 @@ class MappingGovernanceError(Exception):
         self.problems = problems or []
 
 
-DATA_CLASSES = ("PII", "COMPENSATION", "INTERNAL", "PUBLIC")
-SENSITIVE_CLASSES = ("PII", "COMPENSATION")
-
-
-def classify_fields(mapping: Dict[str, Any], given: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    """Q3: every mapped field gets a data class; anything a human did not classify counts as PII, not LLM-visible."""
+def classify_fields(
+    mapping: Dict[str, Any],
+    given: Optional[Dict[str, Any]],
+    coverage: Optional[Dict[str, Any]] = None,
+    accept_suggested_classification: bool = False,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+    """Q3/K1.5: every mapped field gets a data class; unclassified fields take suggestion when accepted, else PII."""
     targets = [f["target"] for f in mapping.get("fields", [])]
     given = given or {}
     unknown = sorted(set(given) - set(targets))
     if unknown:
         raise MappingGovernanceError("CLASSIFICATION_UNKNOWN_FIELD", ",".join(unknown))
+
+    cov_fields = (coverage or {}).get("fields", {}) if isinstance(coverage, dict) else {}
     result: Dict[str, Dict[str, Any]] = {}
+    origins: Dict[str, str] = {}
+
     for target in targets:
-        entry = given.get(target, {"data_class": "PII", "llm_visible": False})
-        if (not isinstance(entry, dict) or set(entry) != {"data_class", "llm_visible"}
-                or entry["data_class"] not in DATA_CLASSES or not isinstance(entry["llm_visible"], bool)):
-            raise MappingGovernanceError("INVALID_CLASSIFICATION", target)
-        if entry["llm_visible"] and entry["data_class"] in SENSITIVE_CLASSES:
-            raise MappingGovernanceError("SENSITIVE_FIELD_LLM_VISIBLE", target)
-        result[target] = {"data_class": entry["data_class"], "llm_visible": entry["llm_visible"]}
-    return result
+        if target in given:
+            entry = given[target]
+            if (not isinstance(entry, dict) or set(entry) != {"data_class", "llm_visible"}
+                    or entry["data_class"] not in DATA_CLASSES or not isinstance(entry["llm_visible"], bool)):
+                raise MappingGovernanceError("INVALID_CLASSIFICATION", target)
+            if entry["llm_visible"] and entry["data_class"] in SENSITIVE_CLASSES:
+                raise MappingGovernanceError("SENSITIVE_FIELD_LLM_VISIBLE", target)
+            result[target] = {"data_class": entry["data_class"], "llm_visible": entry["llm_visible"]}
+            origins[target] = "MANUAL"
+        elif accept_suggested_classification:
+            sug = (
+                cov_fields.get(target, {}).get("suggested_classification")
+                if isinstance(cov_fields.get(target), dict)
+                else None
+            )
+            if (
+                isinstance(sug, dict)
+                and sug.get("data_class") in DATA_CLASSES
+                and isinstance(sug.get("llm_visible"), bool)
+            ):
+                if sug["llm_visible"] and sug["data_class"] in SENSITIVE_CLASSES:
+                    raise MappingGovernanceError("SENSITIVE_FIELD_LLM_VISIBLE", target)
+                result[target] = {"data_class": sug["data_class"], "llm_visible": sug["llm_visible"]}
+                rule_id = sug.get("rule_id", "UNKNOWN")
+                origins[target] = f"SUGGESTED:{rule_id}"
+            else:
+                result[target] = {"data_class": "PII", "llm_visible": False}
+                origins[target] = "DEFAULT"
+        else:
+            result[target] = {"data_class": "PII", "llm_visible": False}
+            origins[target] = "DEFAULT"
+
+    return result, origins
 
 
 class MappingStore:
@@ -179,6 +210,7 @@ class MappingStore:
 
     @classmethod
     def _default_coverage(cls, mapping: EntityMapping) -> Dict[str, Any]:
+        from hrms_plugin.governance.classification_rules import suggest_classification
         from hrms_plugin.schema.synthesizer import CANONICAL_SPECIFICATIONS
 
         spec = CANONICAL_SPECIFICATIONS.get(mapping.entity_type, {})
@@ -191,6 +223,7 @@ class MappingStore:
 
         for target in all_targets:
             field_spec = spec.get(target, {})
+            sug = suggest_classification(target, mapping.entity_type)
             if target in mapped_targets:
                 fm = mapped_targets[target]
                 source_str = " + ".join(fm.source) if isinstance(fm.source, (list, tuple)) else (fm.source or "")
@@ -202,6 +235,7 @@ class MappingStore:
                     "rationale": "proposed without a synthesis report",
                     "required": bool(fm.required or field_spec.get("required", False)),
                     "accepted_by": None,
+                    "suggested_classification": sug,
                 }
             else:
                 fields_cov[target] = {
@@ -212,6 +246,7 @@ class MappingStore:
                     "rationale": "",
                     "required": bool(field_spec.get("required", False)),
                     "accepted_by": None,
+                    "suggested_classification": sug,
                 }
         counts = {
             "matched": sum(1 for f in fields_cov.values() if f["status"] == "MATCHED"),
@@ -254,12 +289,17 @@ class MappingStore:
         return version
 
     def approve_version(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
-                        approver: str, classification: Optional[Dict[str, Any]] = None) -> Dict:
+                        approver: str, classification: Optional[Dict[str, Any]] = None,
+                        accept_suggested_classification: bool = False) -> Dict:
         with self._lock:
-            return self._approve_locked(tenant_id, vendor, entity_type, version, approver, classification)
+            return self._approve_locked(
+                tenant_id, vendor, entity_type, version, approver, classification,
+                accept_suggested_classification=accept_suggested_classification,
+            )
 
     def _approve_locked(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
-                        approver: str, classification: Optional[Dict[str, Any]] = None) -> Dict:
+                        approver: str, classification: Optional[Dict[str, Any]] = None,
+                        accept_suggested_classification: bool = False) -> Dict:
         versions = self._versions(tenant_id, vendor, entity_type)
         row = versions.get(version)
         if row is None:
@@ -283,12 +323,23 @@ class MappingStore:
                 detail=f"needs review on fields: {','.join(needs_review)}",
                 fields=needs_review,
             )
-        classified = classify_fields(row["mapping"], classification)  # validated before anything changes
+        classified, origins = classify_fields(
+            row["mapping"],
+            classification,
+            coverage=row.get("coverage"),
+            accept_suggested_classification=accept_suggested_classification,
+        )
         for other in versions.values():
             if other["status"] == "ACTIVE":
                 other["status"] = "SUPERSEDED"
                 self._put_version(tenant_id, vendor, entity_type, other)
-        row.update(status="ACTIVE", approved_by=approver, approved_at=time.time(), classification=classified)
+        row.update(
+            status="ACTIVE",
+            approved_by=approver,
+            approved_at=time.time(),
+            classification=classified,
+            classification_origin=origins,
+        )
         self._put_version(tenant_id, vendor, entity_type, row)
         self.backend.set(self.NAMESPACE, self._make_key(tenant_id, vendor, entity_type), row["mapping"])
         return row
@@ -453,6 +504,8 @@ class MappingStore:
         new_cov_fields: Dict[str, Dict[str, Any]] = {}
         all_final_targets = sorted(known_targets | set(new_field_maps.keys()))
 
+        from hrms_plugin.governance.classification_rules import suggest_classification
+
         for t in all_final_targets:
             field_spec = spec.get(t, {})
             if t in reject_targets:
@@ -500,6 +553,20 @@ class MappingStore:
                     "required": field_spec.get("required", False),
                     "accepted_by": None,
                 }
+
+            old_f = old_cov_fields.get(t, {})
+            old_sug = old_f.get("suggested_classification")
+            old_src = old_f.get("source")
+            new_src = new_cov_fields[t].get("source")
+            if (
+                isinstance(old_sug, dict)
+                and old_sug.get("rule_id") == "VALUE_CHECK"
+                and new_src is not None
+                and new_src == old_src
+            ):
+                new_cov_fields[t]["suggested_classification"] = old_sug
+            else:
+                new_cov_fields[t]["suggested_classification"] = suggest_classification(t, ent_str)
 
         # Track unused host fields
         all_host_fields = set(old_cov.get("unused_host_fields", []))

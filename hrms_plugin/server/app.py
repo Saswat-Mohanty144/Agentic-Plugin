@@ -35,6 +35,7 @@ from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.tools import STATUTORY_JURISDICTIONS
 from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
+from hrms_plugin.governance.classification_rules import apply_value_check
 from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
 from hrms_plugin.governance.rate_limit import TenantRateLimiter, enforce_rate_limit
@@ -600,6 +601,10 @@ def _finalize_synthesis(
             "records_tested": report_probe.records_tested,
             "issues": issues,
         }
+
+        # K1.3: Value cross-check when sample_records are sent
+        apply_value_check(getattr(mapping, "fields", []), sample_records, report.coverage.get("fields"))
+
     coverage_data = getattr(report, "coverage", None)
     version = mapping_store.propose_mapping(
         auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data, coverage=coverage_data
@@ -730,6 +735,7 @@ class ApproveMappingRequest(BaseModel):
 
     # field -> {"data_class": PII|COMPENSATION|INTERNAL|PUBLIC, "llm_visible": bool}; omitted fields count as PII (QD)
     classification: Dict[str, Any] = Field(default_factory=dict)
+    accept_suggested_classification: bool = False
 
 
 class ManualFieldConfig(BaseModel):
@@ -766,8 +772,16 @@ def approve_mapping_version(
 ):
     """Activate a proposed mapping version; the approver must differ from the proposer (piece G4)."""
     try:
-        row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id,
-                                           classification=req.classification if req else None)
+        accept_suggested = req.accept_suggested_classification if req else False
+        row = mapping_store.approve_version(
+            auth.tenant_id,
+            vendor,
+            entity_type,
+            version,
+            approver=auth.user_id,
+            classification=req.classification if req else None,
+            accept_suggested_classification=accept_suggested,
+        )
     except MappingGovernanceError as exc:
         if exc.code == "REVIEW_REQUIRED":
             raise ApiError(409, {"error": "REVIEW_REQUIRED", "fields": exc.fields}) from None
