@@ -51,6 +51,7 @@ from hrms_plugin.security.pii import PiiEgressBlocked, PiiSession
 from hrms_plugin.security.rbac import AuthContext, Permission, PermissionDenied
 from hrms_plugin.security.tenant_registry import TenantRegistry, load_registry_from_env
 from hrms_plugin.security.token_verifier import TokenVerifier
+from hrms_plugin.server.mcp_http import router as mcp_router
 from hrms_plugin.storage.base import BaseKeyValueStore
 from hrms_plugin.storage.mapping_store import MappingGovernanceError, MappingStore
 from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
@@ -1134,6 +1135,7 @@ def create_app(
     application.add_exception_handler(WritebackError, _writeback_error_handler)
     application.add_exception_handler(VoiceUpstreamError, _voice_upstream_error_handler)
     application.include_router(router)
+    application.include_router(mcp_router)
     return application
 
 

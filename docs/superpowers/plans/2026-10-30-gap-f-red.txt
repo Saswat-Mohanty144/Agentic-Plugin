@@ -1,0 +1,1442 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF      [100%]
+=================================== FAILURES ===================================
+___________________ test_get_mcp_returns_405_with_allow_post ___________________
+
+make_client = <function make_client.<locals>._make at 0x10775c720>
+
+    def test_get_mcp_returns_405_with_allow_post(make_client):
+        """GET /v1/mcp is rejected with 405 Method Not Allowed and Allow: POST."""
+        client = make_client()
+        res = client.get("/v1/mcp")
+>       assert res.status_code == 405
+E       assert 404 == 405
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:47: AssertionError
+_________________ test_get_mcp_with_auth_and_headers_still_405 _________________
+
+make_client = <function make_client.<locals>._make at 0x107acbce0>
+bearer = <function bearer.<locals>._headers at 0x107d37ec0>
+
+    def test_get_mcp_with_auth_and_headers_still_405(make_client, bearer):
+        """GET /v1/mcp even with credentials returns 405 with Allow: POST."""
+        client = make_client()
+        res = client.get("/v1/mcp", headers=_headers(bearer(roles=["staff"])))
+>       assert res.status_code == 405
+E       assert 404 == 405
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:55: AssertionError
+___________________ test_post_mcp_without_token_returns_401 ____________________
+
+make_client = <function make_client.<locals>._make at 0x107daca40>
+
+    def test_post_mcp_without_token_returns_401(make_client):
+        """Calling POST /v1/mcp without Authorization token returns 401."""
+        client = make_client()
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers={"X-HRMS-Jurisdiction": "IN"})
+>       assert res.status_code == 401
+E       assert 404 == 401
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:67: AssertionError
+_________________ test_post_mcp_lacking_permission_returns_403 _________________
+
+make_client = <function make_client.<locals>._make at 0x107dac220>
+bearer = <function bearer.<locals>._headers at 0x107daf6a0>
+
+    def test_post_mcp_lacking_permission_returns_403(make_client, bearer):
+        """Calling POST /v1/mcp with role lacking USE_COPILOT returns 403."""
+        client = make_client()
+        # "janitor" role has no USE_COPILOT permission in the test fixture
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["janitor"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 403
+E       assert 404 == 403
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:80: AssertionError
+_________________ test_post_mcp_holding_permission_passes_auth _________________
+
+make_client = <function make_client.<locals>._make at 0x107dea020>
+bearer = <function bearer.<locals>._headers at 0x107dea660>
+
+    def test_post_mcp_holding_permission_passes_auth(make_client, bearer):
+        """Calling POST /v1/mcp with role holding USE_COPILOT passes auth."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:93: AssertionError
+____________ test_post_mcp_missing_jurisdiction_header_returns_400 _____________
+
+make_client = <function make_client.<locals>._make at 0x107daf880>
+bearer = <function bearer.<locals>._headers at 0x107dac400>
+
+    def test_post_mcp_missing_jurisdiction_header_returns_400(make_client, bearer):
+        """Missing X-HRMS-Jurisdiction header returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=bearer(roles=["staff"]))
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:104: AssertionError
+_______________ test_post_mcp_invalid_jurisdiction_returns_400[] _______________
+
+make_client = <function make_client.<locals>._make at 0x107db7b00>
+bearer = <function bearer.<locals>._headers at 0x107db53a0>, invalid_jur = ''
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+______________ test_post_mcp_invalid_jurisdiction_returns_400[XX] ______________
+
+make_client = <function make_client.<locals>._make at 0x107ec4040>
+bearer = <function bearer.<locals>._headers at 0x107ec6d40>, invalid_jur = 'XX'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+______________ test_post_mcp_invalid_jurisdiction_returns_400[in] ______________
+
+make_client = <function make_client.<locals>._make at 0x107ec40e0>
+bearer = <function bearer.<locals>._headers at 0x107db4ea0>, invalid_jur = 'in'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+______________ test_post_mcp_invalid_jurisdiction_returns_400[ae] ______________
+
+make_client = <function make_client.<locals>._make at 0x107ec6de0>
+bearer = <function bearer.<locals>._headers at 0x107ec4180>, invalid_jur = 'ae'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+______________ test_post_mcp_invalid_jurisdiction_returns_400[sa] ______________
+
+make_client = <function make_client.<locals>._make at 0x107ec7100>
+bearer = <function bearer.<locals>._headers at 0x107ec74c0>, invalid_jur = 'sa'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+______________ test_post_mcp_invalid_jurisdiction_returns_400[us] ______________
+
+make_client = <function make_client.<locals>._make at 0x107ec6fc0>
+bearer = <function bearer.<locals>._headers at 0x107ec7a60>, invalid_jur = 'us'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+_____________ test_post_mcp_invalid_jurisdiction_returns_400[IND] ______________
+
+make_client = <function make_client.<locals>._make at 0x107ec7c40>
+bearer = <function bearer.<locals>._headers at 0x107db7ec0>, invalid_jur = 'IND'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+_____________ test_post_mcp_invalid_jurisdiction_returns_400[UAE] ______________
+
+make_client = <function make_client.<locals>._make at 0x107db4540>
+bearer = <function bearer.<locals>._headers at 0x107db4e00>, invalid_jur = 'UAE'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+____________ test_post_mcp_invalid_jurisdiction_returns_400[global] ____________
+
+make_client = <function make_client.<locals>._make at 0x107db4a40>
+bearer = <function bearer.<locals>._headers at 0x107de9d00>
+invalid_jur = 'global'
+
+    @pytest.mark.parametrize("invalid_jur", ["", "XX", "in", "ae", "sa", "us", "IND", "UAE", "global"])
+    def test_post_mcp_invalid_jurisdiction_returns_400(make_client, bearer, invalid_jur):
+        """Jurisdiction not in (IN, AE, SA, US) returns 400 JURISDICTION_REQUIRED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers={"Authorization": bearer(roles=["staff"])["Authorization"], "X-HRMS-Jurisdiction": invalid_jur},
+        )
+>       assert res.status_code == 400
+E       assert 404 == 400
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:117: AssertionError
+________________ test_post_mcp_valid_jurisdictions_accepted[IN] ________________
+
+make_client = <function make_client.<locals>._make at 0x107de9760>
+bearer = <function bearer.<locals>._headers at 0x107deafc0>, valid_jur = 'IN'
+
+    @pytest.mark.parametrize("valid_jur", ["IN", "AE", "SA", "US"])
+    def test_post_mcp_valid_jurisdictions_accepted(make_client, bearer, valid_jur):
+        """Every supported statutory jurisdiction (IN, AE, SA, US) is accepted."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction=valid_jur),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:130: AssertionError
+________________ test_post_mcp_valid_jurisdictions_accepted[AE] ________________
+
+make_client = <function make_client.<locals>._make at 0x107deb060>
+bearer = <function bearer.<locals>._headers at 0x107dac400>, valid_jur = 'AE'
+
+    @pytest.mark.parametrize("valid_jur", ["IN", "AE", "SA", "US"])
+    def test_post_mcp_valid_jurisdictions_accepted(make_client, bearer, valid_jur):
+        """Every supported statutory jurisdiction (IN, AE, SA, US) is accepted."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction=valid_jur),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:130: AssertionError
+________________ test_post_mcp_valid_jurisdictions_accepted[SA] ________________
+
+make_client = <function make_client.<locals>._make at 0x107deb240>
+bearer = <function bearer.<locals>._headers at 0x107c862a0>, valid_jur = 'SA'
+
+    @pytest.mark.parametrize("valid_jur", ["IN", "AE", "SA", "US"])
+    def test_post_mcp_valid_jurisdictions_accepted(make_client, bearer, valid_jur):
+        """Every supported statutory jurisdiction (IN, AE, SA, US) is accepted."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction=valid_jur),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:130: AssertionError
+________________ test_post_mcp_valid_jurisdictions_accepted[US] ________________
+
+make_client = <function make_client.<locals>._make at 0x107f1b2e0>
+bearer = <function bearer.<locals>._headers at 0x107f1ae80>, valid_jur = 'US'
+
+    @pytest.mark.parametrize("valid_jur", ["IN", "AE", "SA", "US"])
+    def test_post_mcp_valid_jurisdictions_accepted(make_client, bearer, valid_jur):
+        """Every supported statutory jurisdiction (IN, AE, SA, US) is accepted."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction=valid_jur),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:130: AssertionError
+_________________ test_post_mcp_disallowed_origin_returns_403 __________________
+
+make_client = <function make_client.<locals>._make at 0x107f44720>
+bearer = <function bearer.<locals>._headers at 0x107f44d60>
+
+    def test_post_mcp_disallowed_origin_returns_403(make_client, bearer):
+        """Origin present but not in allowed origins returns 403 ORIGIN_NOT_ALLOWED."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN", origin="https://evil.test"),
+        )
+>       assert res.status_code == 403
+E       assert 404 == 403
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:146: AssertionError
+____________________ test_post_mcp_allowed_origin_succeeds _____________________
+
+make_client = <function make_client.<locals>._make at 0x107f474c0>
+bearer = <function bearer.<locals>._headers at 0x107d7ff60>
+
+    def test_post_mcp_allowed_origin_succeeds(make_client, bearer):
+        """Origin present and in allowed origins succeeds."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN", origin="https://hr.acme.test"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:158: AssertionError
+___________________ test_post_mcp_no_origin_header_succeeds ____________________
+
+make_client = <function make_client.<locals>._make at 0x107d7d3a0>
+bearer = <function bearer.<locals>._headers at 0x107fbab60>
+
+    def test_post_mcp_no_origin_header_succeeds(make_client, bearer):
+        """Origin header is optional (e.g. for non-browser desktop / CLI clients)."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:170: AssertionError
+_________________________ test_post_mcp_rate_limiting __________________________
+
+make_client = <function make_client.<locals>._make at 0x1080058a0>
+bearer = <function bearer.<locals>._headers at 0x108005da0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1081658d0>
+
+    def test_post_mcp_rate_limiting(make_client, bearer, monkeypatch):
+        """Rate limit exhaustion on POST /v1/mcp returns 429 RATE_LIMITED with Retry-After."""
+        client = make_client()
+        # Force the rate limiter to report retry after 5.2 seconds
+        monkeypatch.setattr(client.app.state.rate_limiter, "check", lambda tenant_id: 5.2)
+    
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 429
+E       assert 404 == 429
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:188: AssertionError
+_____________________ test_post_mcp_bad_json_returns_32700 _____________________
+
+make_client = <function make_client.<locals>._make at 0x107fbaac0>
+bearer = <function bearer.<locals>._headers at 0x107fb8400>
+
+    def test_post_mcp_bad_json_returns_32700(make_client, bearer):
+        """Malformed JSON payload returns JSON-RPC -32700 Parse error (HTTP 200)."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            content="{invalid json string",
+            headers={**_headers(bearer(roles=["staff"]), jurisdiction="IN"), "Content-Type": "application/json"},
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:205: AssertionError
+_________________ test_post_mcp_json_array_batch_returns_32600 _________________
+
+make_client = <function make_client.<locals>._make at 0x1080058a0>
+bearer = <function bearer.<locals>._headers at 0x108006160>
+
+    def test_post_mcp_json_array_batch_returns_32600(make_client, bearer):
+        """JSON-RPC array batch is rejected with -32600 Invalid Request."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=[_rpc_req("ping", req_id="1"), _rpc_req("ping", req_id="2")],
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:221: AssertionError
+_______________ test_post_mcp_non_object_body_returns_32600[123] _______________
+
+make_client = <function make_client.<locals>._make at 0x108005940>
+bearer = <function bearer.<locals>._headers at 0x108006ac0>, payload = 123
+
+    @pytest.mark.parametrize("payload", [123, "string", True])
+    def test_post_mcp_non_object_body_returns_32600(make_client, bearer, payload):
+        """Non-object JSON bodies return -32600 Invalid Request."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=payload,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:238: AssertionError
+_____________ test_post_mcp_non_object_body_returns_32600[string] ______________
+
+make_client = <function make_client.<locals>._make at 0x108005da0>
+bearer = <function bearer.<locals>._headers at 0x108006200>, payload = 'string'
+
+    @pytest.mark.parametrize("payload", [123, "string", True])
+    def test_post_mcp_non_object_body_returns_32600(make_client, bearer, payload):
+        """Non-object JSON bodies return -32600 Invalid Request."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=payload,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:238: AssertionError
+______________ test_post_mcp_non_object_body_returns_32600[True] _______________
+
+make_client = <function make_client.<locals>._make at 0x107c85e40>
+bearer = <function bearer.<locals>._headers at 0x108006a20>, payload = True
+
+    @pytest.mark.parametrize("payload", [123, "string", True])
+    def test_post_mcp_non_object_body_returns_32600(make_client, bearer, payload):
+        """Non-object JSON bodies return -32600 Invalid Request."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=payload,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:238: AssertionError
+__________ test_post_mcp_invalid_jsonrpc_version_returns_32600[None] ___________
+
+make_client = <function make_client.<locals>._make at 0x108006f20>
+bearer = <function bearer.<locals>._headers at 0x1080071a0>, bad_jsonrpc = None
+
+    @pytest.mark.parametrize("bad_jsonrpc", [None, "1.0", "2", 2.0, True])
+    def test_post_mcp_invalid_jsonrpc_version_returns_32600(make_client, bearer, bad_jsonrpc):
+        """Missing or non-'2.0' jsonrpc member returns -32600."""
+        client = make_client()
+        body = {"method": "ping", "id": 1}
+        if bad_jsonrpc is not None:
+            body["jsonrpc"] = bad_jsonrpc
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:257: AssertionError
+___________ test_post_mcp_invalid_jsonrpc_version_returns_32600[1.0] ___________
+
+make_client = <function make_client.<locals>._make at 0x107c859e0>
+bearer = <function bearer.<locals>._headers at 0x107de85e0>, bad_jsonrpc = '1.0'
+
+    @pytest.mark.parametrize("bad_jsonrpc", [None, "1.0", "2", 2.0, True])
+    def test_post_mcp_invalid_jsonrpc_version_returns_32600(make_client, bearer, bad_jsonrpc):
+        """Missing or non-'2.0' jsonrpc member returns -32600."""
+        client = make_client()
+        body = {"method": "ping", "id": 1}
+        if bad_jsonrpc is not None:
+            body["jsonrpc"] = bad_jsonrpc
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:257: AssertionError
+____________ test_post_mcp_invalid_jsonrpc_version_returns_32600[2] ____________
+
+make_client = <function make_client.<locals>._make at 0x107de8220>
+bearer = <function bearer.<locals>._headers at 0x107f47ec0>, bad_jsonrpc = '2'
+
+    @pytest.mark.parametrize("bad_jsonrpc", [None, "1.0", "2", 2.0, True])
+    def test_post_mcp_invalid_jsonrpc_version_returns_32600(make_client, bearer, bad_jsonrpc):
+        """Missing or non-'2.0' jsonrpc member returns -32600."""
+        client = make_client()
+        body = {"method": "ping", "id": 1}
+        if bad_jsonrpc is not None:
+            body["jsonrpc"] = bad_jsonrpc
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:257: AssertionError
+___________ test_post_mcp_invalid_jsonrpc_version_returns_32600[2.0] ___________
+
+make_client = <function make_client.<locals>._make at 0x107f45080>
+bearer = <function bearer.<locals>._headers at 0x107f1b600>, bad_jsonrpc = 2.0
+
+    @pytest.mark.parametrize("bad_jsonrpc", [None, "1.0", "2", 2.0, True])
+    def test_post_mcp_invalid_jsonrpc_version_returns_32600(make_client, bearer, bad_jsonrpc):
+        """Missing or non-'2.0' jsonrpc member returns -32600."""
+        client = make_client()
+        body = {"method": "ping", "id": 1}
+        if bad_jsonrpc is not None:
+            body["jsonrpc"] = bad_jsonrpc
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:257: AssertionError
+__________ test_post_mcp_invalid_jsonrpc_version_returns_32600[True] ___________
+
+make_client = <function make_client.<locals>._make at 0x107dad260>
+bearer = <function bearer.<locals>._headers at 0x107dad620>, bad_jsonrpc = True
+
+    @pytest.mark.parametrize("bad_jsonrpc", [None, "1.0", "2", 2.0, True])
+    def test_post_mcp_invalid_jsonrpc_version_returns_32600(make_client, bearer, bad_jsonrpc):
+        """Missing or non-'2.0' jsonrpc member returns -32600."""
+        client = make_client()
+        body = {"method": "ping", "id": 1}
+        if bad_jsonrpc is not None:
+            body["jsonrpc"] = bad_jsonrpc
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:257: AssertionError
+___________ test_post_mcp_invalid_method_member_returns_32600[None] ____________
+
+make_client = <function make_client.<locals>._make at 0x107f1bb00>
+bearer = <function bearer.<locals>._headers at 0x107f1a3e0>, bad_method = None
+
+    @pytest.mark.parametrize("bad_method", [None, 123, [], {}, True])
+    def test_post_mcp_invalid_method_member_returns_32600(make_client, bearer, bad_method):
+        """Missing or non-string method member returns -32600."""
+        client = make_client()
+        body = {"jsonrpc": "2.0", "id": "1"}
+        if bad_method is not None:
+            body["method"] = bad_method
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:275: AssertionError
+____________ test_post_mcp_invalid_method_member_returns_32600[123] ____________
+
+make_client = <function make_client.<locals>._make at 0x107ec6de0>
+bearer = <function bearer.<locals>._headers at 0x107ec7100>, bad_method = 123
+
+    @pytest.mark.parametrize("bad_method", [None, 123, [], {}, True])
+    def test_post_mcp_invalid_method_member_returns_32600(make_client, bearer, bad_method):
+        """Missing or non-string method member returns -32600."""
+        client = make_client()
+        body = {"jsonrpc": "2.0", "id": "1"}
+        if bad_method is not None:
+            body["method"] = bad_method
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:275: AssertionError
+________ test_post_mcp_invalid_method_member_returns_32600[bad_method2] ________
+
+make_client = <function make_client.<locals>._make at 0x107ec4900>
+bearer = <function bearer.<locals>._headers at 0x107ec4c20>, bad_method = []
+
+    @pytest.mark.parametrize("bad_method", [None, 123, [], {}, True])
+    def test_post_mcp_invalid_method_member_returns_32600(make_client, bearer, bad_method):
+        """Missing or non-string method member returns -32600."""
+        client = make_client()
+        body = {"jsonrpc": "2.0", "id": "1"}
+        if bad_method is not None:
+            body["method"] = bad_method
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:275: AssertionError
+________ test_post_mcp_invalid_method_member_returns_32600[bad_method3] ________
+
+make_client = <function make_client.<locals>._make at 0x107ec4860>
+bearer = <function bearer.<locals>._headers at 0x107ec5260>, bad_method = {}
+
+    @pytest.mark.parametrize("bad_method", [None, 123, [], {}, True])
+    def test_post_mcp_invalid_method_member_returns_32600(make_client, bearer, bad_method):
+        """Missing or non-string method member returns -32600."""
+        client = make_client()
+        body = {"jsonrpc": "2.0", "id": "1"}
+        if bad_method is not None:
+            body["method"] = bad_method
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:275: AssertionError
+___________ test_post_mcp_invalid_method_member_returns_32600[True] ____________
+
+make_client = <function make_client.<locals>._make at 0x107ec4b80>
+bearer = <function bearer.<locals>._headers at 0x107ec5e40>, bad_method = True
+
+    @pytest.mark.parametrize("bad_method", [None, 123, [], {}, True])
+    def test_post_mcp_invalid_method_member_returns_32600(make_client, bearer, bad_method):
+        """Missing or non-string method member returns -32600."""
+        client = make_client()
+        body = {"jsonrpc": "2.0", "id": "1"}
+        if bad_method is not None:
+            body["method"] = bad_method
+        res = client.post(
+            "/v1/mcp",
+            json=body,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:275: AssertionError
+__________________ test_post_mcp_unknown_method_returns_32601 __________________
+
+make_client = <function make_client.<locals>._make at 0x107ec53a0>
+bearer = <function bearer.<locals>._headers at 0x107dad9e0>
+
+    def test_post_mcp_unknown_method_returns_32601(make_client, bearer):
+        """Unknown method returns JSON-RPC -32601 Method not found."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("non_existent_method", req_id="xyz"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:289: AssertionError
+______ test_post_mcp_tools_call_invalid_params_type_returns_32602[string] ______
+
+make_client = <function make_client.<locals>._make at 0x107dad800>
+bearer = <function bearer.<locals>._headers at 0x107daca40>
+bad_params = 'string'
+
+    @pytest.mark.parametrize("bad_params", ["string", 123, []])
+    def test_post_mcp_tools_call_invalid_params_type_returns_32602(make_client, bearer, bad_params):
+        """tools/call with non-dict params returns -32602 Invalid params."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_params, req_id="tc1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:306: AssertionError
+_______ test_post_mcp_tools_call_invalid_params_type_returns_32602[123] ________
+
+make_client = <function make_client.<locals>._make at 0x107deaac0>
+bearer = <function bearer.<locals>._headers at 0x107dac5e0>, bad_params = 123
+
+    @pytest.mark.parametrize("bad_params", ["string", 123, []])
+    def test_post_mcp_tools_call_invalid_params_type_returns_32602(make_client, bearer, bad_params):
+        """tools/call with non-dict params returns -32602 Invalid params."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_params, req_id="tc1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:306: AssertionError
+___ test_post_mcp_tools_call_invalid_params_type_returns_32602[bad_params2] ____
+
+make_client = <function make_client.<locals>._make at 0x107dae3e0>
+bearer = <function bearer.<locals>._headers at 0x107dad9e0>, bad_params = []
+
+    @pytest.mark.parametrize("bad_params", ["string", 123, []])
+    def test_post_mcp_tools_call_invalid_params_type_returns_32602(make_client, bearer, bad_params):
+        """tools/call with non-dict params returns -32602 Invalid params."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_params, req_id="tc1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:306: AssertionError
+_ test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params0] _
+
+make_client = <function make_client.<locals>._make at 0x108007240>
+bearer = <function bearer.<locals>._headers at 0x1080074c0>
+bad_call_params = {}
+
+    @pytest.mark.parametrize("bad_call_params", [
+        {},  # missing name
+        {"arguments": {}},  # missing name
+        {"name": 123, "arguments": {}},  # name not string
+        {"name": "hrms_search", "arguments": "not-a-dict"},  # arguments not dict
+    ])
+    def test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602(make_client, bearer, bad_call_params):
+        """tools/call with missing name or invalid argument types returns -32602."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_call_params, req_id="tc2"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:326: AssertionError
+_ test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params1] _
+
+make_client = <function make_client.<locals>._make at 0x107c86ca0>
+bearer = <function bearer.<locals>._headers at 0x107ec5120>
+bad_call_params = {'arguments': {}}
+
+    @pytest.mark.parametrize("bad_call_params", [
+        {},  # missing name
+        {"arguments": {}},  # missing name
+        {"name": 123, "arguments": {}},  # name not string
+        {"name": "hrms_search", "arguments": "not-a-dict"},  # arguments not dict
+    ])
+    def test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602(make_client, bearer, bad_call_params):
+        """tools/call with missing name or invalid argument types returns -32602."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_call_params, req_id="tc2"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:326: AssertionError
+_ test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params2] _
+
+make_client = <function make_client.<locals>._make at 0x107db45e0>
+bearer = <function bearer.<locals>._headers at 0x107db7ba0>
+bad_call_params = {'name': 123, 'arguments': {}}
+
+    @pytest.mark.parametrize("bad_call_params", [
+        {},  # missing name
+        {"arguments": {}},  # missing name
+        {"name": 123, "arguments": {}},  # name not string
+        {"name": "hrms_search", "arguments": "not-a-dict"},  # arguments not dict
+    ])
+    def test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602(make_client, bearer, bad_call_params):
+        """tools/call with missing name or invalid argument types returns -32602."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_call_params, req_id="tc2"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:326: AssertionError
+_ test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params3] _
+
+make_client = <function make_client.<locals>._make at 0x107db7740>
+bearer = <function bearer.<locals>._headers at 0x107f44c20>
+bad_call_params = {'name': 'hrms_search', 'arguments': 'not-a-dict'}
+
+    @pytest.mark.parametrize("bad_call_params", [
+        {},  # missing name
+        {"arguments": {}},  # missing name
+        {"name": 123, "arguments": {}},  # name not string
+        {"name": "hrms_search", "arguments": "not-a-dict"},  # arguments not dict
+    ])
+    def test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602(make_client, bearer, bad_call_params):
+        """tools/call with missing name or invalid argument types returns -32602."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params=bad_call_params, req_id="tc2"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:326: AssertionError
+______ test_initialize_negotiates_protocol_version[2025-06-18-2025-06-18] ______
+
+make_client = <function make_client.<locals>._make at 0x107f44040>
+bearer = <function bearer.<locals>._headers at 0x107f44540>
+client_version = '2025-06-18', expected_version = '2025-06-18'
+
+    @pytest.mark.parametrize("client_version,expected_version", [
+        ("2025-06-18", "2025-06-18"),
+        ("2025-03-26", "2025-03-26"),
+        ("2024-11-05", "2025-06-18"),
+        ("draft", "2025-06-18"),
+        (None, "2025-06-18"),
+    ])
+    def test_initialize_negotiates_protocol_version(make_client, bearer, client_version, expected_version):
+        """initialize negotiates protocolVersion (client requested if 2025-06-18 or 2025-03-26 else 2025-06-18)."""
+        client = make_client()
+        params = {"protocolVersion": client_version} if client_version else {}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("initialize", params=params, req_id="init-1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:352: AssertionError
+______ test_initialize_negotiates_protocol_version[2025-03-26-2025-03-26] ______
+
+make_client = <function make_client.<locals>._make at 0x107f44e00>
+bearer = <function bearer.<locals>._headers at 0x107fb96c0>
+client_version = '2025-03-26', expected_version = '2025-03-26'
+
+    @pytest.mark.parametrize("client_version,expected_version", [
+        ("2025-06-18", "2025-06-18"),
+        ("2025-03-26", "2025-03-26"),
+        ("2024-11-05", "2025-06-18"),
+        ("draft", "2025-06-18"),
+        (None, "2025-06-18"),
+    ])
+    def test_initialize_negotiates_protocol_version(make_client, bearer, client_version, expected_version):
+        """initialize negotiates protocolVersion (client requested if 2025-06-18 or 2025-03-26 else 2025-06-18)."""
+        client = make_client()
+        params = {"protocolVersion": client_version} if client_version else {}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("initialize", params=params, req_id="init-1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:352: AssertionError
+______ test_initialize_negotiates_protocol_version[2024-11-05-2025-06-18] ______
+
+make_client = <function make_client.<locals>._make at 0x107f44220>
+bearer = <function bearer.<locals>._headers at 0x107f185e0>
+client_version = '2024-11-05', expected_version = '2025-06-18'
+
+    @pytest.mark.parametrize("client_version,expected_version", [
+        ("2025-06-18", "2025-06-18"),
+        ("2025-03-26", "2025-03-26"),
+        ("2024-11-05", "2025-06-18"),
+        ("draft", "2025-06-18"),
+        (None, "2025-06-18"),
+    ])
+    def test_initialize_negotiates_protocol_version(make_client, bearer, client_version, expected_version):
+        """initialize negotiates protocolVersion (client requested if 2025-06-18 or 2025-03-26 else 2025-06-18)."""
+        client = make_client()
+        params = {"protocolVersion": client_version} if client_version else {}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("initialize", params=params, req_id="init-1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:352: AssertionError
+________ test_initialize_negotiates_protocol_version[draft-2025-06-18] _________
+
+make_client = <function make_client.<locals>._make at 0x107f44900>
+bearer = <function bearer.<locals>._headers at 0x107d7eb60>
+client_version = 'draft', expected_version = '2025-06-18'
+
+    @pytest.mark.parametrize("client_version,expected_version", [
+        ("2025-06-18", "2025-06-18"),
+        ("2025-03-26", "2025-03-26"),
+        ("2024-11-05", "2025-06-18"),
+        ("draft", "2025-06-18"),
+        (None, "2025-06-18"),
+    ])
+    def test_initialize_negotiates_protocol_version(make_client, bearer, client_version, expected_version):
+        """initialize negotiates protocolVersion (client requested if 2025-06-18 or 2025-03-26 else 2025-06-18)."""
+        client = make_client()
+        params = {"protocolVersion": client_version} if client_version else {}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("initialize", params=params, req_id="init-1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:352: AssertionError
+_________ test_initialize_negotiates_protocol_version[None-2025-06-18] _________
+
+make_client = <function make_client.<locals>._make at 0x107d7f100>
+bearer = <function bearer.<locals>._headers at 0x107d7f740>
+client_version = None, expected_version = '2025-06-18'
+
+    @pytest.mark.parametrize("client_version,expected_version", [
+        ("2025-06-18", "2025-06-18"),
+        ("2025-03-26", "2025-03-26"),
+        ("2024-11-05", "2025-06-18"),
+        ("draft", "2025-06-18"),
+        (None, "2025-06-18"),
+    ])
+    def test_initialize_negotiates_protocol_version(make_client, bearer, client_version, expected_version):
+        """initialize negotiates protocolVersion (client requested if 2025-06-18 or 2025-03-26 else 2025-06-18)."""
+        client = make_client()
+        params = {"protocolVersion": client_version} if client_version else {}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("initialize", params=params, req_id="init-1"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:352: AssertionError
+____________ test_notifications_initialized_returns_202_empty_body _____________
+
+make_client = <function make_client.<locals>._make at 0x107d7f420>
+bearer = <function bearer.<locals>._headers at 0x107d7c180>
+
+    def test_notifications_initialized_returns_202_empty_body(make_client, bearer):
+        """notifications/initialized returns HTTP 202 with an empty body."""
+        client = make_client()
+        payload = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        res = client.post(
+            "/v1/mcp",
+            json=payload,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 202
+E       assert 404 == 202
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:375: AssertionError
+___________ test_any_notification_without_id_returns_202_empty_body ____________
+
+make_client = <function make_client.<locals>._make at 0x107d7f240>
+bearer = <function bearer.<locals>._headers at 0x107d7c4a0>
+
+    def test_any_notification_without_id_returns_202_empty_body(make_client, bearer):
+        """Any notification request (no id) returns HTTP 202 with an empty body."""
+        client = make_client()
+        payload = {"jsonrpc": "2.0", "method": "custom/notification", "params": {"data": 123}}
+        res = client.post(
+            "/v1/mcp",
+            json=payload,
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 202
+E       assert 404 == 202
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:388: AssertionError
+________________________ test_ping_returns_empty_result ________________________
+
+make_client = <function make_client.<locals>._make at 0x107f47560>
+bearer = <function bearer.<locals>._headers at 0x107f472e0>
+
+    def test_ping_returns_empty_result(make_client, bearer):
+        """ping returns empty result dict."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping", req_id="ping-99"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:404: AssertionError
+_______________ test_tools_list_returns_tools_with_input_schema ________________
+
+make_client = <function make_client.<locals>._make at 0x107d7c040>
+bearer = <function bearer.<locals>._headers at 0x107d7f060>
+
+    def test_tools_list_returns_tools_with_input_schema(make_client, bearer):
+        """tools/list returns {"tools": [{"name", "description", "inputSchema"}]} from HrmsMcpServer."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/list", req_id="tl-1"),
+            headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:420: AssertionError
+_________________ test_tools_list_filters_by_caller_permission _________________
+
+make_client = <function make_client.<locals>._make at 0x108005760>
+bearer = <function bearer.<locals>._headers at 0x108006020>
+
+    def test_tools_list_filters_by_caller_permission(make_client, bearer):
+        """tools/list exposes only tools permitted for the caller's AuthContext."""
+        client = make_client()
+        admin_res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/list", req_id="tl-admin"),
+            headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+        )
+        staff_res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/list", req_id="tl-staff"),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       admin_tools = {t["name"] for t in admin_res.json()["result"]["tools"]}
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'result'
+
+tests/unit/test_gap_f.py:460: KeyError
+___________________________ test_tools_call_success ____________________________
+
+make_client = <function make_client.<locals>._make at 0x107f44cc0>
+bearer = <function bearer.<locals>._headers at 0x107d7c360>
+
+    def test_tools_call_success(make_client, bearer):
+        """tools/call executes tool and formats content, structuredContent, and isError."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_search_labor_regulations", "arguments": {"query": "gratuity"}},
+                req_id="call-1",
+            ),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="AE"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:484: AssertionError
+_______________ test_tools_call_unexposed_tool_returns_is_error ________________
+
+make_client = <function make_client.<locals>._make at 0x107de80e0>
+bearer = <function bearer.<locals>._headers at 0x107debec0>
+
+    def test_tools_call_unexposed_tool_returns_is_error(make_client, bearer):
+        """tools/call on unexposed/calculators returns result with isError=True."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_calculate_eosb_gratuity", "arguments": {"basic_wage": 5000, "tenure_years": 6}},
+                req_id="call-unexp",
+            ),
+            headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="AE"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:506: AssertionError
+_________ test_tools_call_server_owned_argument_rejected_with_is_error _________
+
+make_client = <function make_client.<locals>._make at 0x107f1ab60>
+bearer = <function bearer.<locals>._headers at 0x107f1b9c0>
+
+    def test_tools_call_server_owned_argument_rejected_with_is_error(make_client, bearer):
+        """Passing server owned arguments in arguments returns isError=True."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_search_labor_regulations", "arguments": {"query": "gratuity", "tenant_id": "other"}},
+                req_id="call-owned",
+            ),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="AE"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:526: AssertionError
+______________ test_tools_call_invalid_arguments_returns_is_error ______________
+
+make_client = <function make_client.<locals>._make at 0x107db7060>
+bearer = <function bearer.<locals>._headers at 0x107f18ea0>
+
+    def test_tools_call_invalid_arguments_returns_is_error(make_client, bearer):
+        """Invalid tool arguments produce error in tool execution -> isError=True."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_search_labor_regulations", "arguments": {"query": 12345}},
+                req_id="call-bad-arg",
+            ),
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="AE"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:544: AssertionError
+__________ test_tools_call_uses_token_tenant_and_header_jurisdiction ___________
+
+make_client = <function make_client.<locals>._make at 0x107f18fe0>
+bearer = <function bearer.<locals>._headers at 0x107f1bba0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108036a90>
+
+    def test_tools_call_uses_token_tenant_and_header_jurisdiction(make_client, bearer, monkeypatch):
+        """Tenant comes strictly from token and jurisdiction from X-HRMS-Jurisdiction header."""
+        seen = {}
+    
+        async def spy(self, tenant_id, employee_id, period, jurisdiction):
+            seen.update(tenant=tenant_id, jurisdiction=jurisdiction, employee_id=employee_id, period=period)
+            return {"success": True, "amount": 1800}
+    
+        from hrms_plugin.payroll.service import PayrollService
+        monkeypatch.setattr(PayrollService, "calculate_pf", spy)
+    
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_calculate_pf_contribution", "arguments": {"employee_id": "EMP-9", "period": "2026-09"}},
+                req_id="call-spy",
+            ),
+            headers=_headers(bearer(tenant="acme", roles=["platform_admin"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:571: AssertionError
+_____________________ test_json_rpc_id_types_preserved[0] ______________________
+
+make_client = <function make_client.<locals>._make at 0x107db6f20>
+bearer = <function bearer.<locals>._headers at 0x107db5940>, req_id = 0
+
+    @pytest.mark.parametrize("req_id", [0, 42, "req-string-id", "uuid-1234-5678", None])
+    def test_json_rpc_id_types_preserved(make_client, bearer, req_id):
+        """JSON-RPC id can be integer, string, or null, and is echoed back in the response."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json={"jsonrpc": "2.0", "id": req_id, "method": "ping"},
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:590: AssertionError
+_____________________ test_json_rpc_id_types_preserved[42] _____________________
+
+make_client = <function make_client.<locals>._make at 0x107db7380>
+bearer = <function bearer.<locals>._headers at 0x107db4e00>, req_id = 42
+
+    @pytest.mark.parametrize("req_id", [0, 42, "req-string-id", "uuid-1234-5678", None])
+    def test_json_rpc_id_types_preserved(make_client, bearer, req_id):
+        """JSON-RPC id can be integer, string, or null, and is echoed back in the response."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json={"jsonrpc": "2.0", "id": req_id, "method": "ping"},
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:590: AssertionError
+_______________ test_json_rpc_id_types_preserved[req-string-id] ________________
+
+make_client = <function make_client.<locals>._make at 0x107db71a0>
+bearer = <function bearer.<locals>._headers at 0x107db45e0>
+req_id = 'req-string-id'
+
+    @pytest.mark.parametrize("req_id", [0, 42, "req-string-id", "uuid-1234-5678", None])
+    def test_json_rpc_id_types_preserved(make_client, bearer, req_id):
+        """JSON-RPC id can be integer, string, or null, and is echoed back in the response."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json={"jsonrpc": "2.0", "id": req_id, "method": "ping"},
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:590: AssertionError
+_______________ test_json_rpc_id_types_preserved[uuid-1234-5678] _______________
+
+make_client = <function make_client.<locals>._make at 0x107f19300>
+bearer = <function bearer.<locals>._headers at 0x107f19120>
+req_id = 'uuid-1234-5678'
+
+    @pytest.mark.parametrize("req_id", [0, 42, "req-string-id", "uuid-1234-5678", None])
+    def test_json_rpc_id_types_preserved(make_client, bearer, req_id):
+        """JSON-RPC id can be integer, string, or null, and is echoed back in the response."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json={"jsonrpc": "2.0", "id": req_id, "method": "ping"},
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:590: AssertionError
+____________________ test_json_rpc_id_types_preserved[None] ____________________
+
+make_client = <function make_client.<locals>._make at 0x107db4b80>
+bearer = <function bearer.<locals>._headers at 0x107db6e80>, req_id = None
+
+    @pytest.mark.parametrize("req_id", [0, 42, "req-string-id", "uuid-1234-5678", None])
+    def test_json_rpc_id_types_preserved(make_client, bearer, req_id):
+        """JSON-RPC id can be integer, string, or null, and is echoed back in the response."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json={"jsonrpc": "2.0", "id": req_id, "method": "ping"},
+            headers=_headers(bearer(roles=["staff"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:590: AssertionError
+_____________ test_tools_call_defaults_empty_arguments_if_omitted ______________
+
+make_client = <function make_client.<locals>._make at 0x107dea200>
+bearer = <function bearer.<locals>._headers at 0x107deb2e0>
+
+    def test_tools_call_defaults_empty_arguments_if_omitted(make_client, bearer):
+        """tools/call with arguments omitted passes {} to the server."""
+        client = make_client()
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", params={"name": "hrms_drop_database"}, req_id="c-noargs"),
+            headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_f.py:602: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_f.py::test_get_mcp_returns_405_with_allow_post - a...
+FAILED tests/unit/test_gap_f.py::test_get_mcp_with_auth_and_headers_still_405
+FAILED tests/unit/test_gap_f.py::test_post_mcp_without_token_returns_401 - as...
+FAILED tests/unit/test_gap_f.py::test_post_mcp_lacking_permission_returns_403
+FAILED tests/unit/test_gap_f.py::test_post_mcp_holding_permission_passes_auth
+FAILED tests/unit/test_gap_f.py::test_post_mcp_missing_jurisdiction_header_returns_400
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[XX]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[in]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[ae]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[sa]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[us]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[IND]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[UAE]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jurisdiction_returns_400[global]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_valid_jurisdictions_accepted[IN]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_valid_jurisdictions_accepted[AE]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_valid_jurisdictions_accepted[SA]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_valid_jurisdictions_accepted[US]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_disallowed_origin_returns_403
+FAILED tests/unit/test_gap_f.py::test_post_mcp_allowed_origin_succeeds - asse...
+FAILED tests/unit/test_gap_f.py::test_post_mcp_no_origin_header_succeeds - as...
+FAILED tests/unit/test_gap_f.py::test_post_mcp_rate_limiting - assert 404 == 429
+FAILED tests/unit/test_gap_f.py::test_post_mcp_bad_json_returns_32700 - asser...
+FAILED tests/unit/test_gap_f.py::test_post_mcp_json_array_batch_returns_32600
+FAILED tests/unit/test_gap_f.py::test_post_mcp_non_object_body_returns_32600[123]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_non_object_body_returns_32600[string]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_non_object_body_returns_32600[True]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jsonrpc_version_returns_32600[None]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jsonrpc_version_returns_32600[1.0]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jsonrpc_version_returns_32600[2]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jsonrpc_version_returns_32600[2.0]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_jsonrpc_version_returns_32600[True]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_method_member_returns_32600[None]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_method_member_returns_32600[123]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_method_member_returns_32600[bad_method2]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_method_member_returns_32600[bad_method3]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_invalid_method_member_returns_32600[True]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_unknown_method_returns_32601
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_invalid_params_type_returns_32602[string]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_invalid_params_type_returns_32602[123]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_invalid_params_type_returns_32602[bad_params2]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params0]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params1]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params2]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_tools_call_missing_or_invalid_fields_returns_32602[bad_call_params3]
+FAILED tests/unit/test_gap_f.py::test_initialize_negotiates_protocol_version[2025-06-18-2025-06-18]
+FAILED tests/unit/test_gap_f.py::test_initialize_negotiates_protocol_version[2025-03-26-2025-03-26]
+FAILED tests/unit/test_gap_f.py::test_initialize_negotiates_protocol_version[2024-11-05-2025-06-18]
+FAILED tests/unit/test_gap_f.py::test_initialize_negotiates_protocol_version[draft-2025-06-18]
+FAILED tests/unit/test_gap_f.py::test_initialize_negotiates_protocol_version[None-2025-06-18]
+FAILED tests/unit/test_gap_f.py::test_notifications_initialized_returns_202_empty_body
+FAILED tests/unit/test_gap_f.py::test_any_notification_without_id_returns_202_empty_body
+FAILED tests/unit/test_gap_f.py::test_ping_returns_empty_result - assert 404 ...
+FAILED tests/unit/test_gap_f.py::test_tools_list_returns_tools_with_input_schema
+FAILED tests/unit/test_gap_f.py::test_tools_list_filters_by_caller_permission
+FAILED tests/unit/test_gap_f.py::test_tools_call_success - assert 404 == 200
+FAILED tests/unit/test_gap_f.py::test_tools_call_unexposed_tool_returns_is_error
+FAILED tests/unit/test_gap_f.py::test_tools_call_server_owned_argument_rejected_with_is_error
+FAILED tests/unit/test_gap_f.py::test_tools_call_invalid_arguments_returns_is_error
+FAILED tests/unit/test_gap_f.py::test_tools_call_uses_token_tenant_and_header_jurisdiction
+FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[0] - assert...
+FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[42] - asser...
+FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[req-string-id]
+FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[uuid-1234-5678]
+FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[None] - ass...
+FAILED tests/unit/test_gap_f.py::test_tools_call_defaults_empty_arguments_if_omitted
+67 failed in 3.47s

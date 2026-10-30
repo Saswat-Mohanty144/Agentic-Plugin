@@ -38,6 +38,7 @@ EXPECTED = {
     ("GET", "/api/compliance/dashboard/live"): P.VIEW_COMPLIANCE,
     ("POST", "/api/requisitions/generate-archetypes"): P.MANAGE_RECRUITMENT,
     ("POST", "/v1/requisitions/generate-archetypes"): P.MANAGE_RECRUITMENT,
+    ("POST", "/v1/mcp"): P.USE_COPILOT,
 }
 CONCRETE = {
     "/v1/schema/mappings/{vendor}/{entity_type}": "/v1/schema/mappings/zoho/EMPLOYEE",
@@ -86,7 +87,7 @@ def _app(registry):
 def test_route_table_matches_exactly(registry):
     routes = _routes(_app(registry))
     public = {k for k, v in routes.items() if not v}
-    assert public == {("GET", "/healthz")}
+    assert public == {("GET", "/healthz"), ("GET", "/v1/mcp")}
     assert {k: v[0] for k, v in routes.items() if v} == EXPECTED
     assert all(len(v) <= 1 for v in routes.values())
 
