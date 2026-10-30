@@ -1,0 +1,218 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+____________________ test_payroll_structure_missing_inputs _____________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cca22d0>
+
+    def test_payroll_structure_missing_inputs(supervisor):
+        # Empty context
+        resp = supervisor.process_message(
+            message="Calculate CTC breakdown and net take home",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.PAYROLL_STRUCTURE
+        assert resp.routed_agent == "StatutoryPayrollAgent"
+>       assert resp.confidence_score == 0.0
+E       assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.PAYROLL_STRUCTURE: 'PAYROLL_STRUCTURE'>, routed_agent='StatutoryPayrollAgent', reply_...Formula'"], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:34: AssertionError
+_______________________ test_payroll_eosb_missing_inputs _______________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cc73d50>
+
+    def test_payroll_eosb_missing_inputs(supervisor):
+        # Empty context
+        resp = supervisor.process_message(
+            message="Calculate UAE end of service severance gratuity",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.PAYROLL_EOSB
+        assert resp.routed_agent == "StatutoryPayrollAgent"
+>       assert resp.confidence_score == 0.0
+E       assert 0.95 == 0.0
+E        +  where 0.95 = AgentResponse(intent=<UserIntent.PAYROLL_EOSB: 'PAYROLL_EOSB'>, routed_agent='StatutoryPayrollAgent', reply_text='Calc... (EOSB)'"], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:91: AssertionError
+_______________________ test_leave_apply_missing_inputs ________________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cdd4c50>
+
+    def test_leave_apply_missing_inputs(supervisor):
+        resp = supervisor.process_message(
+            message="Apply leave for vacation request",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.LEAVE_APPLY
+        assert resp.routed_agent == "LeaveAttendanceAgent"
+>       assert resp.confidence_score == 0.0
+E       AssertionError: assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.LEAVE_APPLY: 'LEAVE_APPLY'>, routed_agent='LeaveAttendanceAgent', reply_text='Leave a...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:140: AssertionError
+____________________ test_attendance_anomaly_missing_inputs ____________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cd40450>
+
+    def test_attendance_anomaly_missing_inputs(supervisor):
+        resp = supervisor.process_message(
+            message="Check impossible travel punch anomaly",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.ATTENDANCE_ANOMALY
+        assert resp.routed_agent == "LeaveAttendanceAgent"
+>       assert resp.confidence_score == 0.0
+E       AssertionError: assert 0.94 == 0.0
+E        +  where 0.94 = AgentResponse(intent=<UserIntent.ATTENDANCE_ANOMALY: 'ATTENDANCE_ANOMALY'>, routed_agent='LeaveAttendanceAgent', reply...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:169: AssertionError
+_____________________ test_recruitment_ats_missing_inputs ______________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cc9a4d0>
+
+    def test_recruitment_ats_missing_inputs(supervisor):
+        resp = supervisor.process_message(
+            message="Match candidate resume and give ats score",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.RECRUITMENT_ATS
+        assert resp.routed_agent == "RecruitmentAgent"
+>       assert resp.confidence_score == 0.0
+E       AssertionError: assert 0.91 == 0.0
+E        +  where 0.91 = AgentResponse(intent=<UserIntent.RECRUITMENT_ATS: 'RECRUITMENT_ATS'>, routed_agent='RecruitmentAgent', reply_text='ATS...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:196: AssertionError
+________________________ test_onboarding_missing_inputs ________________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cdd5190>
+
+    def test_onboarding_missing_inputs(supervisor):
+        # 6a. KYC Document Verification
+        resp_docs = supervisor.process_message(
+            message="Verify kyc documents for new hire",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp_docs.intent == UserIntent.ONBOARDING
+        assert resp_docs.routed_agent == "OnboardingAgent"
+>       assert resp_docs.confidence_score == 0.0
+E       assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.ONBOARDING: 'ONBOARDING'>, routed_agent='OnboardingAgent', reply_text='KYC Verificati...ndatory)"], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:230: AssertionError
+_______________________ test_offboarding_missing_inputs ________________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cde89d0>
+
+    def test_offboarding_missing_inputs(supervisor):
+        # 7a. Article 53 settlement timeline
+        resp_timeline = supervisor.process_message(
+            message="Check Article 53 statutory settlement timeline deadline",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp_timeline.intent == UserIntent.OFFBOARDING_FNF
+        assert resp_timeline.routed_agent == "OffboardingAgent"
+>       assert resp_timeline.confidence_score == 0.0
+E       AssertionError: assert 0.93 == 0.0
+E        +  where 0.93 = AgentResponse(intent=<UserIntent.OFFBOARDING_FNF: 'OFFBOARDING_FNF'>, routed_agent='OffboardingAgent', reply_text='UAE...Mandate)'], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:292: AssertionError
+______________________ test_travel_expense_missing_inputs ______________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cdec550>
+
+    def test_travel_expense_missing_inputs(supervisor):
+        resp = supervisor.process_message(
+            message="Audit travel expense claim and reimbursement claim",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.TRAVEL_EXPENSE
+        assert resp.routed_agent == "TravelExpenseAgent"
+>       assert resp.confidence_score == 0.0
+E       AssertionError: assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.TRAVEL_EXPENSE: 'TRAVEL_EXPENSE'>, routed_agent='TravelExpenseAgent', reply_text='Exp...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:353: AssertionError
+________ test_no_reply_contains_invented_figures_when_context_is_empty _________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x10cd92310>
+
+    def test_no_reply_contains_invented_figures_when_context_is_empty(supervisor):
+        queries = [
+            ("Calculate salary structure for employee", Jurisdiction.INDIA),
+            ("Calculate salary structure for employee", Jurisdiction.UAE),
+            ("Calculate UAE end of service gratuity", Jurisdiction.UAE),
+            ("Apply leave for 3 days", Jurisdiction.INDIA),
+            ("Check impossible travel punch anomaly", Jurisdiction.INDIA),
+            ("Match candidate resume and give ats score", Jurisdiction.INDIA),
+            ("Verify kyc documents", Jurisdiction.INDIA),
+            ("Generate provision plan", Jurisdiction.INDIA),
+            ("Evaluate offer letter", Jurisdiction.INDIA),
+            ("Check Article 53 settlement timeline", Jurisdiction.UAE),
+            ("Process exit clearance", Jurisdiction.UAE),
+            ("Calculate final settlement fnf", Jurisdiction.UAE),
+            ("Audit travel expense claim", Jurisdiction.INDIA),
+        ]
+    
+        for msg, jur in queries:
+            resp = supervisor.process_message(message=msg, jurisdiction=jur, auth=ADMIN, context={})
+            assert "1200000" not in resp.reply_text, f"1200000 found in reply for {msg}: {resp.reply_text}"
+            assert "15000" not in resp.reply_text, f"15000 found in reply for {msg}: {resp.reply_text}"
+>           assert "3.5" not in resp.reply_text, f"3.5 found in reply for {msg}: {resp.reply_text}"
+E           AssertionError: 3.5 found in reply for Calculate UAE end of service gratuity: Calculated UAE End of Service Gratuity: AED 36,750.00 for 3.5 years of service.
+E           assert '3.5' not in 'Calculated ... of service.'
+E             
+E             '3.5' is contained here:
+E               50.00 for 3.5 years of service.
+E             ?           +++
+
+tests/unit/test_gap_a.py:397: AssertionError
+____________ test_http_chat_non_agentic_missing_input_and_supplied _____________
+
+make_client = <function make_client.<locals>._make at 0x10d7ebc40>
+bearer = <function bearer.<locals>._headers at 0x10dc594e0>
+
+    def test_http_chat_non_agentic_missing_input_and_supplied(make_client, bearer):
+        client = make_client()
+        headers = bearer(roles=["hr_manager"])
+    
+        # Missing input on payroll structure -> 200 with MISSING_INPUT
+        res_missing = client.post(
+            "/v1/chat",
+            headers=headers,
+            json={"message": "Calculate salary structure", "jurisdiction": "IN", "agentic": False, "context": {}},
+        )
+        assert res_missing.status_code == 200
+        data_missing = res_missing.json()
+        assert data_missing["intent"] == "PAYROLL_STRUCTURE"
+>       assert data_missing["confidence_score"] == 0.0
+E       assert 0.92 == 0.0
+
+tests/unit/test_gap_a.py:416: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_a.py::test_payroll_structure_missing_inputs - asse...
+FAILED tests/unit/test_gap_a.py::test_payroll_eosb_missing_inputs - assert 0....
+FAILED tests/unit/test_gap_a.py::test_leave_apply_missing_inputs - AssertionE...
+FAILED tests/unit/test_gap_a.py::test_attendance_anomaly_missing_inputs - Ass...
+FAILED tests/unit/test_gap_a.py::test_recruitment_ats_missing_inputs - Assert...
+FAILED tests/unit/test_gap_a.py::test_onboarding_missing_inputs - assert 0.92...
+FAILED tests/unit/test_gap_a.py::test_offboarding_missing_inputs - AssertionE...
+FAILED tests/unit/test_gap_a.py::test_travel_expense_missing_inputs - Asserti...
+FAILED tests/unit/test_gap_a.py::test_no_reply_contains_invented_figures_when_context_is_empty
+FAILED tests/unit/test_gap_a.py::test_http_chat_non_agentic_missing_input_and_supplied
+10 failed in 0.95s

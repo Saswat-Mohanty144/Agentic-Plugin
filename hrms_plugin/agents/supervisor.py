@@ -124,6 +124,47 @@ class AgentResponse(BaseModel):
     history_trimmed: int = 0  # oldest history turns dropped to fit the budget (token waste #7)
 
 
+_MISSING_INPUT_FIELD_LABELS: Dict[str, str] = {
+    "annual_ctc": "annual CTC",
+    "basic_wage_monthly": "monthly basic wage",
+    "tenure_years": "tenure in years",
+    "employee_id": "employee ID",
+    "employee_name": "employee name",
+    "requested_days": "requested days",
+    "current_balance": "current balance",
+    "punch1": "initial attendance punch",
+    "punch2": "second attendance punch",
+    "resume_text": "resume text",
+    "required_skills": "required skills",
+    "required_experience_years": "required experience years",
+    "candidate_experience_years": "candidate experience years",
+    "candidate_name": "candidate name",
+    "documents": "submitted documents",
+    "role": "role",
+    "job_title": "job title",
+    "annual_salary": "annual salary",
+    "last_working_day": "last working day",
+    "gross_wage_monthly": "monthly gross wage",
+    "claim_id": "claim ID",
+    "expenses": "expense items",
+}
+
+
+def _missing_input_response(
+    intent: UserIntent,
+    routed_agent: str,
+    missing: List[str],
+) -> AgentResponse:
+    labels = [_MISSING_INPUT_FIELD_LABELS.get(k, k.replace("_", " ")) for k in missing]
+    return AgentResponse(
+        intent=intent,
+        routed_agent=routed_agent,
+        reply_text=f"Please provide the missing inputs ({', '.join(labels)}) to proceed.",
+        confidence_score=0.0,
+        structured_data={"error": "MISSING_INPUT", "missing": missing},
+    )
+
+
 class SupervisorAgent:
     """Central supervisor coordinating domain specialists and statutory legal RAG."""
 
@@ -180,7 +221,10 @@ class SupervisorAgent:
 
         # 1. Statutory Salary Structuring
         if intent == UserIntent.PAYROLL_STRUCTURE:
-            ctc = float(ctx.get("annual_ctc") or ctx.get("ctc") or 1200000.0)
+            ctc_val = ctx.get("annual_ctc") if ctx.get("annual_ctc") is not None else ctx.get("ctc")
+            if ctc_val is None:
+                return _missing_input_response(intent, "StatutoryPayrollAgent", ["annual_ctc"])
+            ctc = float(ctc_val)
             if jur == Jurisdiction.UAE:
                 res_uae = self.payroll_agent.structure_uae_salary(monthly_gross=ctc / 12.0)
                 reply = (
@@ -212,8 +256,19 @@ class SupervisorAgent:
 
         # 2. UAE EOSB Calculation
         elif intent == UserIntent.PAYROLL_EOSB:
-            basic = float(ctx.get("basic_wage_monthly") or ctx.get("basic") or 15000.0)
-            tenure = float(ctx.get("tenure_years") or ctx.get("tenure") or 3.5)
+            missing = []
+            basic_val = (
+                ctx.get("basic_wage_monthly") if ctx.get("basic_wage_monthly") is not None else ctx.get("basic")
+            )
+            if basic_val is None:
+                missing.append("basic_wage_monthly")
+            tenure_val = ctx.get("tenure_years") if ctx.get("tenure_years") is not None else ctx.get("tenure")
+            if tenure_val is None:
+                missing.append("tenure_years")
+            if missing:
+                return _missing_input_response(intent, "StatutoryPayrollAgent", missing)
+            basic = float(basic_val)
+            tenure = float(tenure_val)
             eosb_res = self.payroll_agent.calculate_uae_eosb(basic_wage_monthly=basic, tenure_years=tenure)
             reply = (
                 f"Calculated UAE End of Service Gratuity: AED {eosb_res.total_eosb_gratuity:,.2f} "
@@ -262,10 +317,19 @@ class SupervisorAgent:
 
         # 4. Leave Application
         elif intent == UserIntent.LEAVE_APPLY:
-            emp_id = str(ctx.get("employee_id", "EMP-001"))
+            missing = []
+            if ctx.get("employee_id") is None:
+                missing.append("employee_id")
+            if ctx.get("requested_days") is None:
+                missing.append("requested_days")
+            if ctx.get("current_balance") is None:
+                missing.append("current_balance")
+            if missing:
+                return _missing_input_response(intent, "LeaveAttendanceAgent", missing)
+            emp_id = str(ctx["employee_id"])
             leave_type = str(ctx.get("leave_type", "ANNUAL"))
-            req_days = float(ctx.get("requested_days", 2.0))
-            cur_bal = float(ctx.get("current_balance", 10.0))
+            req_days = float(ctx["requested_days"])
+            cur_bal = float(ctx["current_balance"])
             leave_res = self.leave_agent.evaluate_leave_request(
                 employee_id=emp_id,
                 leave_type=leave_type,
@@ -287,8 +351,15 @@ class SupervisorAgent:
 
         # 5. Impossible Travel
         elif intent == UserIntent.ATTENDANCE_ANOMALY:
-            p1 = ctx.get("punch1", {"lat": 19.0760, "lng": 72.8777, "timestamp": "2026-09-24T09:00:00Z"})
-            p2 = ctx.get("punch2", {"lat": 25.2048, "lng": 55.2708, "timestamp": "2026-09-24T10:00:00Z"})
+            missing = []
+            if ctx.get("punch1") is None:
+                missing.append("punch1")
+            if ctx.get("punch2") is None:
+                missing.append("punch2")
+            if missing:
+                return _missing_input_response(intent, "LeaveAttendanceAgent", missing)
+            p1 = ctx["punch1"]
+            p2 = ctx["punch2"]
             anomaly_res = self.leave_agent.detect_impossible_travel(p1, p2)
             return AgentResponse(
                 intent=intent,
@@ -300,10 +371,21 @@ class SupervisorAgent:
 
         # 6. Recruitment ATS Scoring
         elif intent == UserIntent.RECRUITMENT_ATS:
-            resume = str(ctx.get("resume_text", message))
-            skills = ctx.get("required_skills", ["Python", "FastAPI", "PostgreSQL", "Docker"])
-            req_exp = float(ctx.get("required_experience_years", 3.0))
-            cand_exp = float(ctx.get("candidate_experience_years", 4.0))
+            missing = []
+            if ctx.get("resume_text") is None:
+                missing.append("resume_text")
+            if ctx.get("required_skills") is None:
+                missing.append("required_skills")
+            if ctx.get("required_experience_years") is None:
+                missing.append("required_experience_years")
+            if ctx.get("candidate_experience_years") is None:
+                missing.append("candidate_experience_years")
+            if missing:
+                return _missing_input_response(intent, "RecruitmentAgent", missing)
+            resume = str(ctx["resume_text"])
+            skills = ctx["required_skills"]
+            req_exp = float(ctx["required_experience_years"])
+            cand_exp = float(ctx["candidate_experience_years"])
             ats_res = self.recruitment_agent.score_candidate(
                 resume_text=resume,
                 required_skills=skills,
@@ -341,9 +423,19 @@ class SupervisorAgent:
 
         # 8. Onboarding Specialist
         elif intent == UserIntent.ONBOARDING:
-            cand_name = str(ctx.get("candidate_name", "Jane Doe"))
             if any(k in msg for k in ONBOARDING_DOCUMENT_KEYWORDS):
-                docs = ctx.get("documents", {})
+                missing = []
+                if ctx.get("candidate_name") is None:
+                    missing.append("candidate_name")
+                docs_val = (
+                    ctx.get("documents") if ctx.get("documents") is not None else ctx.get("submitted_documents")
+                )
+                if docs_val is None:
+                    missing.append("documents")
+                if missing:
+                    return _missing_input_response(intent, "OnboardingAgent", missing)
+                cand_name = str(ctx["candidate_name"])
+                docs = docs_val
                 doc_res = self.onboarding_agent.verify_onboarding_documents(
                     candidate_name=cand_name,
                     jurisdiction=jur,
@@ -362,9 +454,19 @@ class SupervisorAgent:
                     statutory_citations=doc_res.statutory_citations,
                 )
             elif "provision" in msg:
-                emp_id = str(ctx.get("employee_id", "EMP-NEW"))
+                missing = []
+                if ctx.get("candidate_name") is None:
+                    missing.append("candidate_name")
+                if ctx.get("employee_id") is None:
+                    missing.append("employee_id")
+                if ctx.get("role") is None:
+                    missing.append("role")
+                if missing:
+                    return _missing_input_response(intent, "OnboardingAgent", missing)
+                cand_name = str(ctx["candidate_name"])
+                emp_id = str(ctx["employee_id"])
                 dept = str(ctx.get("department", "Engineering"))
-                role = str(ctx.get("role", "Software Engineer"))
+                role = str(ctx["role"])
                 buddy = ctx.get("buddy_name")
                 prov_res = self.onboarding_agent.generate_provisioning_plan(
                     employee_id=emp_id,
@@ -385,8 +487,19 @@ class SupervisorAgent:
                     structured_data=prov_res.model_dump(),
                 )
             else:
-                title = str(ctx.get("job_title", "Senior Specialist"))
-                salary = float(ctx.get("annual_salary", 1500000.0))
+                missing = []
+                if ctx.get("candidate_name") is None:
+                    missing.append("candidate_name")
+                if ctx.get("job_title") is None:
+                    missing.append("job_title")
+                salary_val = ctx.get("annual_salary") if ctx.get("annual_salary") is not None else ctx.get("salary")
+                if salary_val is None:
+                    missing.append("annual_salary")
+                if missing:
+                    return _missing_input_response(intent, "OnboardingAgent", missing)
+                cand_name = str(ctx["candidate_name"])
+                title = str(ctx["job_title"])
+                salary = float(salary_val)
                 currency = str(ctx.get("currency", "INR" if jur == Jurisdiction.INDIA else "AED"))
                 b_min = ctx.get("band_min")
                 b_max = ctx.get("band_max")
@@ -412,10 +525,19 @@ class SupervisorAgent:
 
         # 9. Offboarding & Final Settlement (FNF)
         elif intent == UserIntent.OFFBOARDING_FNF:
-            emp_id = str(ctx.get("employee_id", "EMP-EXIT"))
-            emp_name = str(ctx.get("employee_name", "John Exit"))
             if any(k in msg for k in ["timeline", "article 53", "deadline", "14-day"]):
-                lwd = str(ctx.get("last_working_day", "2026-09-20"))
+                missing = []
+                if ctx.get("employee_id") is None:
+                    missing.append("employee_id")
+                if ctx.get("employee_name") is None:
+                    missing.append("employee_name")
+                if ctx.get("last_working_day") is None:
+                    missing.append("last_working_day")
+                if missing:
+                    return _missing_input_response(intent, "OffboardingAgent", missing)
+                emp_id = str(ctx["employee_id"])
+                emp_name = str(ctx["employee_name"])
+                lwd = str(ctx["last_working_day"])
                 today_str = ctx.get("current_date")
                 audit_res = self.offboarding_agent.audit_uae_settlement_timeline(
                     employee_id=emp_id,
@@ -436,8 +558,17 @@ class SupervisorAgent:
                     statutory_citations=[audit_res.statutory_citation],
                 )
             elif "clearance" in msg:
+                missing = []
+                if ctx.get("employee_id") is None:
+                    missing.append("employee_id")
+                if ctx.get("employee_name") is None:
+                    missing.append("employee_name")
+                if missing:
+                    return _missing_input_response(intent, "OffboardingAgent", missing)
+                emp_id = str(ctx["employee_id"])
+                emp_name = str(ctx["employee_name"])
                 dept = str(ctx.get("department", "Engineering"))
-                returned = ctx.get("returned_assets", ["Laptop"])
+                returned = ctx.get("returned_assets", [])
                 pending = ctx.get("pending_assets", [])
                 fin_cleared = bool(ctx.get("finance_cleared", True))
                 clr_res = self.offboarding_agent.evaluate_exit_clearance(
@@ -458,11 +589,33 @@ class SupervisorAgent:
                     structured_data=clr_res.model_dump(),
                 )
             else:
-                basic = float(ctx.get("basic_wage_monthly", 12000.0))
-                gross = float(ctx.get("gross_wage_monthly", 20000.0))
-                tenure = float(ctx.get("tenure_years", 3.0))
-                leave_days = float(ctx.get("unused_leave_days", 5.0))
-                unpaid_days = int(ctx.get("unpaid_work_days", 10))
+                missing = []
+                if ctx.get("employee_id") is None:
+                    missing.append("employee_id")
+                if ctx.get("employee_name") is None:
+                    missing.append("employee_name")
+                basic_val = (
+                    ctx.get("basic_wage_monthly") if ctx.get("basic_wage_monthly") is not None else ctx.get("basic")
+                )
+                if basic_val is None:
+                    missing.append("basic_wage_monthly")
+                gross_val = (
+                    ctx.get("gross_wage_monthly") if ctx.get("gross_wage_monthly") is not None else ctx.get("gross")
+                )
+                if gross_val is None:
+                    missing.append("gross_wage_monthly")
+                tenure_val = ctx.get("tenure_years") if ctx.get("tenure_years") is not None else ctx.get("tenure")
+                if tenure_val is None:
+                    missing.append("tenure_years")
+                if missing:
+                    return _missing_input_response(intent, "OffboardingAgent", missing)
+                emp_id = str(ctx["employee_id"])
+                emp_name = str(ctx["employee_name"])
+                basic = float(basic_val)
+                gross = float(gross_val)
+                tenure = float(tenure_val)
+                leave_days = float(ctx.get("unused_leave_days", 0.0))
+                unpaid_days = int(ctx.get("unpaid_work_days", 0))
                 fnf_res = self.offboarding_agent.compute_final_settlement(
                     employee_id=emp_id,
                     employee_name=emp_name,
@@ -489,14 +642,18 @@ class SupervisorAgent:
 
         # 10. Travel & Expense Claim Audit
         elif intent == UserIntent.TRAVEL_EXPENSE:
-            claim_id = str(ctx.get("claim_id", "CLM-101"))
-            emp_id = str(ctx.get("employee_id", "EMP-TRV"))
-            expenses = ctx.get(
-                "expenses",
-                [
-                    {"id": "EXP-1", "category": "MEAL", "amount": "1500.00"},
-                ],
-            )
+            missing = []
+            if ctx.get("claim_id") is None:
+                missing.append("claim_id")
+            if ctx.get("employee_id") is None:
+                missing.append("employee_id")
+            if ctx.get("expenses") is None:
+                missing.append("expenses")
+            if missing:
+                return _missing_input_response(intent, "TravelExpenseAgent", missing)
+            claim_id = str(ctx["claim_id"])
+            emp_id = str(ctx["employee_id"])
+            expenses = ctx["expenses"]
             cur_code = str(ctx.get("currency", "INR" if jur == Jurisdiction.INDIA else "AED"))
             tier = str(ctx.get("tier", "METRO"))
             has_pre_auth = bool(ctx.get("has_approved_travel_request", True))
