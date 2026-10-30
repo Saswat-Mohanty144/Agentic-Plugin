@@ -559,3 +559,198 @@ def test_remediate_execute_refuses_when_audit_signing_not_configured(make_client
     resp = client.post("/v1/remediate/execute", json=payload, headers=bearer(roles=["hr_manager"]))
     assert resp.status_code == 503
     assert resp.json()["error"] == "AUDIT_SIGNING_NOT_CONFIGURED"
+
+
+# ==============================================================================
+# Review Findings Follow-up Tests
+# ==============================================================================
+
+
+def test_payroll_service_approve_fingerprint_no_force_parameter():
+    """1. approve_fingerprint must not have a 'force' parameter."""
+    import inspect
+
+    from hrms_plugin.payroll.service import PayrollService
+
+    sig = inspect.signature(PayrollService.approve_fingerprint)
+    assert "force" not in sig.parameters, "force parameter must be removed from approve_fingerprint"
+
+
+def test_verify_audit_headers_strict_compliance(test_ed25519_key):
+    """2. verify_audit_headers strict requirements:
+    - Shared build_audit_signed_message function
+    - Header names matched case-insensitively
+    - ALL names in AUDIT_HEADER_NAMES must be present (missing any -> False)
+    - Signed message built from exactly those names (canonical spelling from AUDIT_HEADER_NAMES) sorted,
+      as 'Name:value' lines joined by '\\n'
+    - Extra unrelated headers ignored -> True
+    - Header names in different case -> True
+    - Any single header value tampered -> False
+    - Wrong key -> False
+    - Garbage signature -> False
+    """
+    from hrms_plugin.security.audit import AUDIT_HEADER_NAMES, HostAuditGateway
+
+    build_fn = getattr(audit_module, "build_audit_signed_message", None)
+    assert build_fn is not None, "build_audit_signed_message must be exported"
+
+    verify_audit_headers = audit_module.verify_audit_headers
+
+    gateway = HostAuditGateway()
+    headers = gateway.create_attribution_headers(
+        tenant_id="acme",
+        agent_name="WritebackService",
+        hitl_approver_id="user-approver",
+        reasoning_payload={"action": "test", "num": 42},
+    )
+    http_dict = headers.to_http_headers()
+    pub = test_ed25519_key["pub"]
+
+    # Valid -> True
+    assert verify_audit_headers(http_dict, pub) is True
+
+    # Shared function check: canonical spelling, sorted, Name:value joined by \n
+    msg = build_fn(http_dict)
+    assert isinstance(msg, bytes)
+    lines = msg.decode("utf-8").split("\n")
+    assert len(lines) == len(AUDIT_HEADER_NAMES)
+    expected_canon_names = sorted(AUDIT_HEADER_NAMES)
+    for idx, canon_name in enumerate(expected_canon_names):
+        assert lines[idx].startswith(f"{canon_name}:")
+
+    # Extra unrelated header present -> True
+    with_extra = dict(http_dict)
+    with_extra["X-Unrelated-Header"] = "unrelated-value"
+    with_extra["Content-Type"] = "application/json"
+    with_extra["Authorization"] = "Bearer token"
+    assert verify_audit_headers(with_extra, pub) is True
+
+    # Header names in different case -> True
+    diff_case = {}
+    for i, (k, v) in enumerate(http_dict.items()):
+        if i % 2 == 0:
+            diff_case[k.lower()] = v
+        else:
+            diff_case[k.upper()] = v
+    assert verify_audit_headers(diff_case, pub) is True
+
+    # Any single audit header missing -> False
+    for canon_name in AUDIT_HEADER_NAMES:
+        missing_one = {k: v for k, v in http_dict.items() if k.lower() != canon_name.lower()}
+        assert verify_audit_headers(missing_one, pub) is False, f"Missing {canon_name} must return False"
+
+    # Any single header value tampered -> False
+    for canon_name in AUDIT_HEADER_NAMES:
+        tampered_one = dict(http_dict)
+        tampered_one[canon_name] = tampered_one[canon_name] + "-tampered"
+        assert verify_audit_headers(tampered_one, pub) is False, f"Tampered {canon_name} must return False"
+
+    # Wrong key -> False
+    other_priv = Ed25519PrivateKey.generate()
+    assert verify_audit_headers(http_dict, other_priv.public_key()) is False
+
+    # Garbage signature -> False
+    garbage_sigs = ["!@#$%", "not-valid-base64url===", "", "abc", "short"]
+    for bad_sig in garbage_sigs:
+        bad_dict = dict(http_dict)
+        bad_dict["X-Audit-Signature"] = bad_sig
+        assert verify_audit_headers(bad_dict, pub) is False
+
+
+def test_remediate_execute_audit_signing_error_returns_503(make_client, bearer, monkeypatch):
+    """4. execute_remediation: if create_attribution_headers raises AuditSigningError, API returns 503."""
+    from hrms_plugin.security.audit import AuditSigningError
+    from hrms_plugin.server import app as app_mod
+
+    def _fail_signing(*args, **kwargs):
+        raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED", "Key disappeared")
+
+    monkeypatch.setattr(app_mod.audit_gateway, "create_attribution_headers", _fail_signing)
+
+    client = make_client()
+    payload = {
+        "violation_id": "VIO-001",
+        "target_entity": "EMPLOYEE",
+        "entity_id": "EMP-001",
+        "patch_payload": {"annual_leave_balance": 20},
+    }
+    resp = client.post("/v1/remediate/execute", json=payload, headers=bearer(roles=["hr_manager"]))
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "AUDIT_SIGNING_NOT_CONFIGURED"}
+
+
+def test_writeback_approve_audit_signing_error_returns_503(
+    make_client, bearer, monkeypatch, tmp_path, mock_frappe
+):
+    """4. writeback approve: if create_attribution_headers raises AuditSigningError, API returns 503."""
+    from hrms_plugin.security.audit import AuditSigningError
+    from hrms_plugin.server import app as app_mod
+
+    path = tmp_path / "hosts.yaml"
+    path.write_text(yaml.safe_dump(HOSTS))
+    monkeypatch.setenv("HRMS_HOSTS", str(path))
+    monkeypatch.setenv("ACME_FRAPPE_KEY", "k")
+    monkeypatch.setenv("ACME_FRAPPE_SECRET", "s")
+    monkeypatch.setattr(
+        app_mod.writeback_service,
+        "_client_factory",
+        lambda h, k, s: FrappeClient(
+            h, k, s, http_client=httpx.AsyncClient(transport=httpx.MockTransport(mock_frappe.handler))
+        ),
+    )
+
+    client = make_client()
+    body = {"doctype": "Employee", "name": "HR-EMP-00001", "patch": {"notice_number_of_days": 60}}
+    prop = client.post("/v1/writeback/proposals", json=body, headers=bearer(sub="user-1"))
+    pid = prop.json()["id"]
+
+    def _fail_signing(*args, **kwargs):
+        raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED", "Key file removed mid-flight")
+
+    monkeypatch.setattr(app_mod.writeback_service._audit, "create_attribution_headers", _fail_signing)
+
+    resp = client.post(f"/v1/writeback/proposals/{pid}/approve", headers=bearer(sub="user-approver"))
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "AUDIT_SIGNING_NOT_CONFIGURED"}
+
+
+def test_writeback_rollback_audit_signing_error_returns_503(
+    make_client, bearer, monkeypatch, tmp_path, mock_frappe
+):
+    """4. writeback rollback: if create_attribution_headers raises AuditSigningError, API returns 503."""
+    from hrms_plugin.security.audit import AuditSigningError
+    from hrms_plugin.server import app as app_mod
+
+    path = tmp_path / "hosts.yaml"
+    path.write_text(yaml.safe_dump(HOSTS))
+    monkeypatch.setenv("HRMS_HOSTS", str(path))
+    monkeypatch.setenv("ACME_FRAPPE_KEY", "k")
+    monkeypatch.setenv("ACME_FRAPPE_SECRET", "s")
+    monkeypatch.setattr(
+        app_mod.writeback_service,
+        "_client_factory",
+        lambda h, k, s: FrappeClient(
+            h, k, s, http_client=httpx.AsyncClient(transport=httpx.MockTransport(mock_frappe.handler))
+        ),
+    )
+
+    client = make_client()
+    body = {"doctype": "Employee", "name": "HR-EMP-00001", "patch": {"notice_number_of_days": 60}}
+    prop = client.post("/v1/writeback/proposals", json=body, headers=bearer(sub="user-1"))
+    pid = prop.json()["id"]
+
+    appr = client.post(f"/v1/writeback/proposals/{pid}/approve", headers=bearer(sub="user-approver"))
+    assert appr.status_code == 200
+
+    rb1 = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="user-1"))
+    assert rb1.status_code == 202
+
+    def _fail_signing(*args, **kwargs):
+        raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED", "Key file removed mid-flight")
+
+    monkeypatch.setattr(app_mod.writeback_service._audit, "create_attribution_headers", _fail_signing)
+
+    rb2 = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="user-2"))
+    assert rb2.status_code == 503
+    assert rb2.json() == {"error": "AUDIT_SIGNING_NOT_CONFIGURED"}
+

@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from hrms_plugin.integrations.frappe import FrappeClient, FrappeError
 from hrms_plugin.integrations.host_registry import HostConfig, HostRegistryError, load_host_registry_from_env
-from hrms_plugin.security.audit import HostAuditGateway
+from hrms_plugin.security.audit import AuditSigningError, HostAuditGateway
 from hrms_plugin.security.rbac import AuthContext
 from hrms_plugin.storage.base import BaseKeyValueStore
 
@@ -165,7 +165,7 @@ class WritebackService:
                 self._save(proposal)
                 raise WritebackError("EXPIRED")
             if not self._audit.is_configured():
-                raise WritebackError("AUDIT_SIGNING_NOT_CONFIGURED")
+                raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED")
             current = await self._call(auth.tenant_id, lambda c: c.get_document(proposal["doctype"], proposal["name"]))
             if current.get("modified") != proposal["base_modified"]:
                 proposal["status"] = "CONFLICT"
@@ -215,7 +215,7 @@ class WritebackService:
                 raise WritebackError("SAME_PERSON", "the confirmer must not be the requester")
 
             if not self._audit.is_configured():
-                raise WritebackError("AUDIT_SIGNING_NOT_CONFIGURED")
+                raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED")
 
             current = await self._call(auth.tenant_id, lambda c: c.get_document(proposal["doctype"], proposal["name"]))
             if current.get("modified") != proposal.get("after_modified"):

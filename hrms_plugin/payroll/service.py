@@ -49,18 +49,9 @@ class PayrollService:
         return f"{tenant_id}:{vendor}:{doctype}"
 
     def approve_fingerprint(
-        self, tenant_id: str, vendor: str, doctype: str, fingerprint: str, approved_by: str, force: bool = False
+        self, tenant_id: str, vendor: str, doctype: str, fingerprint: str, approved_by: str
     ) -> Dict[str, Any]:
         key = self._key(tenant_id, vendor, doctype)
-        if force:
-            record = {
-                "status": "APPROVED",
-                "fingerprint": fingerprint,
-                "approved_by": approved_by,
-                "approved_at": self._clock(),
-            }
-            self._store.set(APPROVED_NS, key, record)
-            return record
         pending = self._store.get(PENDING_NS, key)
         if not pending or pending.get("fingerprint") != fingerprint:
             record = {

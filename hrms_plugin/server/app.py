@@ -44,7 +44,7 @@ from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
-from hrms_plugin.security.audit import HostAuditGateway
+from hrms_plugin.security.audit import AuditSigningError, HostAuditGateway
 from hrms_plugin.security.http_auth import ApiError, require
 from hrms_plugin.security.jwks_cache import JwksCache, make_httpx_fetcher
 from hrms_plugin.security.pii import PiiEgressBlocked, PiiSession
@@ -803,7 +803,7 @@ def execute_remediation(
     """Issue host audit attribution headers for a reviewed remediation. This endpoint writes NOTHING to the host:
     changes are made only through /v1/writeback/proposals, approved by a different person (piece F2, agy D-F2)."""
     if not audit_gateway.is_configured():
-        raise ApiError(503, {"error": "AUDIT_SIGNING_NOT_CONFIGURED"})
+        raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED")
     # Generate Host Audit Attribution Headers
     headers = audit_gateway.create_attribution_headers(
         tenant_id=auth.tenant_id,
@@ -1104,10 +1104,11 @@ async def _voice_upstream_error_handler(request: Request, exc: VoiceUpstreamErro
 
 async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JSONResponse:
     status = WRITEBACK_STATUS.get(exc.code, 500)
-    content = {"error": exc.code}
-    if exc.detail:
-        content["detail"] = exc.detail
-    return JSONResponse(status_code=status, content=content)
+    return JSONResponse(status_code=status, content={"error": exc.code, "detail": exc.detail})
+
+
+async def _audit_signing_error_handler(_request: Request, _exc: AuditSigningError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"error": "AUDIT_SIGNING_NOT_CONFIGURED"})
 
 
 async def _llm_not_allowed_handler(_request: Request, _exc: LlmNotAllowed) -> JSONResponse:
@@ -1168,6 +1169,7 @@ def create_app(
     application.add_exception_handler(LlmNotAllowed, _llm_not_allowed_handler)
     application.add_exception_handler(LlmBudgetExceeded, _llm_budget_exceeded_handler)
     application.add_exception_handler(WritebackError, _writeback_error_handler)
+    application.add_exception_handler(AuditSigningError, _audit_signing_error_handler)
     application.add_exception_handler(VoiceUpstreamError, _voice_upstream_error_handler)
     application.include_router(router)
     return application

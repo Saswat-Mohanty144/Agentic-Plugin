@@ -63,6 +63,18 @@ class HostAuditHeaders(BaseModel):
         return headers
 
 
+def build_audit_signed_message(headers: Dict[str, Any]) -> bytes:
+    """Build the canonical signed message string over all required audit headers, sorted by canonical name."""
+    headers_lower = {k.lower(): v for k, v in headers.items()}
+    lines = []
+    for name in sorted(AUDIT_HEADER_NAMES):
+        key = name.lower()
+        if key not in headers_lower:
+            raise ValueError(f"Missing required audit header: {name}")
+        lines.append(f"{name}:{headers_lower[key]}")
+    return "\n".join(lines).encode("utf-8")
+
+
 def verify_audit_headers(headers: Dict[str, str], public_key: Any) -> bool:
     """Verify Ed25519 signature over audit headers."""
     try:
@@ -86,19 +98,16 @@ def verify_audit_headers(headers: Dict[str, str], public_key: Any) -> bool:
         if not sig_b64:
             return False
 
+        if "+" in sig_b64 or "/" in sig_b64:
+            return False
+
         padding = "=" * ((4 - len(sig_b64) % 4) % 4)
-        sig_bytes = base64.urlsafe_b64decode(sig_b64 + padding)
+        trans = (sig_b64 + padding).encode("ascii").translate(bytes.maketrans(b"-_", b"+/"))
+        sig_bytes = base64.b64decode(trans, validate=True)
+        if len(sig_bytes) != 64:
+            return False
 
-        known_lower = {name.lower(): name for name in AUDIT_HEADER_NAMES}
-        audit_items = {k: v for k, v in headers.items() if k.lower() != "x-audit-signature"}
-        if any(k.lower() not in known_lower for k in audit_items):
-            if any(k.lower() in known_lower for k in audit_items):
-                audit_items = {
-                    known_lower[k.lower()]: str(v) for k, v in audit_items.items() if k.lower() in known_lower
-                }
-
-        lines = [f"{k}:{v}" for k, v in sorted(audit_items.items())]
-        msg = "\n".join(lines).encode("utf-8")
+        msg = build_audit_signed_message(headers)
         pub.verify(sig_bytes, msg)
         return True
     except Exception:
@@ -164,8 +173,7 @@ class HostAuditGateway:
             "X-Trace-Timestamp": now_utc,
             "X-Audit-Key-Id": key_id,
         }
-        lines = [f"{k}:{v}" for k, v in sorted(base_headers.items())]
-        msg = "\n".join(lines).encode("utf-8")
+        msg = build_audit_signed_message(base_headers)
         sig = priv_key.sign(msg)
         sig_b64 = base64.urlsafe_b64encode(sig).rstrip(b"=").decode("ascii")
 
