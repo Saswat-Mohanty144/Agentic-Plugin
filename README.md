@@ -534,7 +534,8 @@ flowchart TD
   never count as drift. A changed shape stops the read until it is approved with
   `POST /v1/hosts/requisitions/shape/approve` (`MANAGE_SCHEMA`). Only the last observed fingerprint can be approved,
   and approval takes two different people: the first call returns `202 PENDING_CONFIRMATION`, the same person again
-  gets `403 SAME_PERSON`, and a second admin's call approves it.
+  gets `403 SAME_PERSON`, and a second admin's call approves it. Approving the fingerprint that is already approved
+  returns `200 ALREADY_APPROVED` and opens no request.
 - **Tenant mapping override.** An approved tenant mapping for the same vendor (created with the synthesize routes
   and `vendor: "frappe"` or `"iceipts"`, see [section 12](#12-flow-schema-adaptation-for-a-new-hr-system)) replaces
   the profile's field rules. Profile fields support `strip`, `lower` and `upper` transforms and `required` (a row
@@ -584,7 +585,8 @@ and the components used, so an auditor can trace every number. Stored results ca
 
 Salary-slip fingerprints are approved with `POST /v1/schema/fingerprints/approve` (`MANAGE_SCHEMA`, recent sign-in)
 by two different people: the first call returns `202 PENDING_CONFIRMATION`, the second admin's call approves. A
-request for a different fingerprint replaces the pending one. Quarantined drifts are listed by
+request for a different fingerprint replaces the pending one; the fingerprint already approved returns
+`200 ALREADY_APPROVED` and opens no request. Quarantined drifts are listed by
 `GET /v1/schema/fingerprints/quarantine`.
 
 ---
@@ -665,14 +667,15 @@ flowchart LR
    lists entities and field types. Sample values are removed from the response. When sample records are sent and the
    tenant already has an ACTIVE mapping for that entity (`vendor` in the request, default the tenant's host vendor),
    the response also lists `drift`: new fields the mapping does not cover and expected fields that are missing, with
-   severity. Drift reports carry field names, never values.
+   severity. Drift reports carry field names, never values. Sending neither a document nor sample records gives
+   `422 INVALID_ARGUMENT`; a synthesize field entry that is not an object or has no string `name` gives the same.
 2. **Synthesize** (`POST /v1/schema/synthesize`). Body: `domain`, `discovered_fields`, `vendor` (lower-case; default
    the tenant's host vendor from `HRMS_HOSTS`, else `host`) and optional `sample_records` (at most 50). Matches
    discovered field names to the canonical model by rules: exact name or synonym (confidence 0.95–1.0), normalised
    name (0.90), normalised synonym (0.85), substring (0.75). Mapped fields with confidence ≥ 0.8 and a single source
    become writable back. The result is saved as a **PROPOSED** (draft) version.
    Canonical types: requisition, candidate, employee, leave request, leave balance, punch, payslip, expense claim,
-   asset, attendance request; others get a spec built on the fly.
+   asset, attendance request; the four supported types without a canonical spec (interview, offer, payroll run, appraisal) get one built on the fly; any other domain -> 422 INVALID_DOMAIN.
 3. **Coverage report.** Every draft stores `coverage`, returned by synthesize and by `GET /v1/schema/mappings`. For
    each canonical field: `status`, `source`, `confidence`, `origin` (RULE, LLM or MANUAL), `rationale`, `required`
    `accepted_by` and `suggested_classification` ([section 6.1](#61-classification-rules-which-fields-are-personal-data));
@@ -834,7 +837,7 @@ Errors are JSON `{"error": "<CODE>", ...}`. Common codes:
 | 403 | `FORBIDDEN`, `TENANT_MISMATCH`, `LLM_NOT_ALLOWED_FOR_TENANT`, `DATA_TIER_NOT_ALLOWED`, `DATA_RESIDENCY_MISMATCH`, `VOICE_NOT_ALLOWED_FOR_TENANT`, `SAME_PERSON`, `ORIGIN_NOT_ALLOWED` |
 | 404 | `NOT_FOUND`, `SLIP_NOT_FOUND` |
 | 409 | `HOST_NOT_CONFIGURED`, `SCHEMA_DRIFT`, `MAPPING_NOT_APPROVED`, `MAPPING_NOT_APPLICABLE`, `PROBE_FAILED`, `REVIEW_REQUIRED`, `CONFLICT`, `INVALID_STATE`, `FINGERPRINT_NOT_OBSERVED` |
-| 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE`, `REVIEW_INVALID` |
+| 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `INVALID_DOMAIN`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE`, `REVIEW_INVALID` |
 | 429 | `RATE_LIMITED`, `LLM_BUDGET_EXHAUSTED` |
 | 502 / 504 | `HOST_ERROR`, `VOICE_UPSTREAM_ERROR`, `VOICE_UPSTREAM_TIMEOUT` |
 | 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED`, `AUDIT_SIGNING_NOT_CONFIGURED`, `DISCLOSURE_INDEX_NOT_CONFIGURED` |
@@ -848,7 +851,8 @@ HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message p
 
 - **Headers.** `Authorization: Bearer <token>` (same sign-in as every route, permission `USE_COPILOT`),
   `X-HRMS-Jurisdiction: IN|AE|SA|US` (required), optional `MCP-Protocol-Version` (`2025-06-18` or `2025-03-26`). A
-  browser `Origin`, when present, must be one of the caller's tenant's allowed origins. Rate-limited per tenant.
+  browser `Origin`, when present, must be one of the caller's tenant's allowed origins. Rate-limited per tenant
+  (every MCP frame, including `ping` and notifications, counts toward the tenant rate limit to protect against floods).
 - **Tenant opt-in.** MCP hands host data to an external AI client, so it is off by default. `tools/list` and
   `tools/call` need the tenant policy `mcp_enabled: true` and `max_data_tier: 2`, else
   `403 MCP_NOT_ALLOWED_FOR_TENANT`. Each `tools/call` is written to the egress log (provider `mcp-client`, the tool
@@ -882,7 +886,7 @@ HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message p
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `NVIDIA_API_KEY` | Provider credentials | none |
 | `SARVAM_API_KEY` | Voice provider key | voice off |
 | `HRMS_AUDIT_SIGNING_KEY_FILE`, `HRMS_AUDIT_KEY_ID` | Ed25519 private key (PEM) for signing host-write audit headers, and its id | host writes refused |
-| `HRMS_DISCLOSURE_KEY_FILE` | Secret (at least 32 bytes) for disclosure fingerprints; a changed file is picked up | no fingerprints, lookup 503 |
+| `HRMS_DISCLOSURE_KEY_FILE` | Secret (at least 32 bytes) for disclosure fingerprints; a changed file is picked up. Create it yourself (`openssl rand -out disclosure.key 32`, mode 600). Compose passes the variable through; k8s mounts the optional Secret `hrms-plugin-disclosure-key` at `/etc/hrms/disclosure/disclosure.key` | no fingerprints, lookup 503 |
 | `HRMS_DEMO_ENDPOINTS` | `true` enables demo compliance routes | off |
 | `HRMS_ENABLE_API_DOCS` | `true` serves `/docs`, `/redoc`, `/openapi.json` | off |
 | `HRMS_EVAL_LIVE_APPROVED`, `HRMS_EVAL_TENANT` | Gate for live evals | off |
@@ -1097,8 +1101,8 @@ failing test recorded first and was checked by mutation):
 | CI on `main` only | Every branch and pull request |
 | Review-round findings (vendor default, MCP data policy, pending-request expiry, deploy mounts, stream citations, tenant-scoped origin, drift on nested fields, currency for SA/US) | Fixed; see the plan file, section "Review round" |
 | Stakeholder feedback: show partial matches honestly, let an expert accept/reject/configure, keep protocols open | Coverage report, review/reject actions, approval blocked until reviewed, `protocol: rest\|mcp` ([section 12](#12-flow-schema-adaptation-for-a-new-hr-system), [17.5](#175-vendor-profiles-hrms_pluginintegrationsprofilesyaml)); plan `docs/superpowers/plans/2026-10-30-voice-review-plan.md` |
-
 | Classify PII on top of schema translation with a decision model; check whether PII has been shared | Rules table with value check and opt-in acceptance; disclosure fingerprints and lookup ([6.1](#61-classification-rules-which-fields-are-personal-data), [6.2](#62-has-this-persons-data-been-shared)); plan `docs/superpowers/plans/2026-10-30-pii-classification-disclosure-plan.md` |
+| Adversarial audit (functional, non-functional, regression): introspect never reported missing fields; MCP profiles with a tenant mapping failed; a field entry without `name` gave 500; two schema routes returned errors without a code; deploy files lacked the disclosure key; re-approving an approved fingerprint opened a new request | All fixed with failing tests first; report and orchestrator verification in `docs/superpowers/plans/2026-10-30-audit-k-report.md`, decisions A1-A10 in the PII plan file |
 
 **Considered and not adopted:** GoRules JDM (`zen-engine`) for the rules: same idea, but a compiled dependency and
 in-rule JavaScript; the YAML table can be exported to JDM later if business users need its editor. open-connector: a

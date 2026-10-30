@@ -27,6 +27,7 @@ services:
       - HRMS_PAYROLL_RULES
       - HRMS_AUDIT_SIGNING_KEY_FILE
       - HRMS_AUDIT_KEY_ID
+      - HRMS_DISCLOSURE_KEY_FILE
     volumes:
       # Tenant issuer registry (spec §6.1). Required: compose refuses to start if the host path is not given.
       - ${HRMS_TENANT_REGISTRY_FILE:?set HRMS_TENANT_REGISTRY_FILE to your tenant registry YAML}:/etc/hrms/tenants.yaml:ro

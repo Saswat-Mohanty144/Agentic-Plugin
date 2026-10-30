@@ -53,12 +53,17 @@ spec:
               value: /etc/hrms/config/hosts.yaml
             - name: HRMS_PAYROLL_RULES
               value: /etc/hrms/config/payroll_rules.yaml
+            - name: HRMS_DISCLOSURE_KEY_FILE
+              value: /etc/hrms/disclosure/disclosure.key
           volumeMounts:
             - name: tenant-registry
               mountPath: /etc/hrms
               readOnly: true
             - name: audit-key
               mountPath: /etc/hrms/audit
+              readOnly: true
+            - name: disclosure-key
+              mountPath: /etc/hrms/disclosure
               readOnly: true
             - name: app-config
               mountPath: /etc/hrms/config
@@ -97,6 +102,10 @@ spec:
         - name: audit-key
           secret:
             secretName: hrms-plugin-audit-key
+            optional: true
+        - name: disclosure-key
+          secret:
+            secretName: hrms-plugin-disclosure-key
             optional: true
         - name: app-config
           configMap:

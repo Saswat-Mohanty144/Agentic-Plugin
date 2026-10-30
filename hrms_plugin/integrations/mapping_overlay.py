@@ -11,7 +11,14 @@ from typing import Dict, List, Tuple
 
 from pydantic import ValidationError
 
-from hrms_plugin.integrations.declarative import INT_FIELDS, REQUISITION_FIELDS, EntitySpec, FieldSpec
+from hrms_plugin.integrations.declarative import (
+    INT_FIELDS,
+    REQUISITION_FIELDS,
+    AnyEntitySpec,
+    EntitySpec,
+    FieldSpec,
+    McpEntitySpec,
+)
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
 
 _STR_TRANSFORMS = {"string", "strip", "lower", "upper"}
@@ -55,14 +62,15 @@ def _field_spec(fm: FieldMap) -> FieldSpec:
         raise OverlayError(fm.target, f"invalid source path {fm.source!r}") from None
 
 
-def overlay(spec: EntitySpec, mapping: EntityMapping) -> Tuple[EntitySpec, List[str]]:
+def overlay(spec: AnyEntitySpec, mapping: EntityMapping) -> Tuple[AnyEntitySpec, List[str]]:
     fields = dict(spec.fields)
     overridden: List[str] = []
     for fm in mapping.fields:
         fields[fm.target] = _field_spec(fm)  # type: ignore[index]
         overridden.append(fm.target)
+    spec_cls = McpEntitySpec if isinstance(spec, McpEntitySpec) else EntitySpec
     try:
-        merged = EntitySpec.model_validate({**spec.model_dump(by_alias=True), "fields": {
+        merged = spec_cls.model_validate({**spec.model_dump(by_alias=True), "fields": {
             name: fs.model_dump(by_alias=True, exclude_none=True) for name, fs in fields.items()}})
     except ValidationError as exc:
         message = "; ".join(str(e["msg"]) for e in exc.errors())

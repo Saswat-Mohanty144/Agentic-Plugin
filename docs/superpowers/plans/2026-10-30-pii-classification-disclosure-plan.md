@@ -39,3 +39,20 @@ clean. After merging: full suite, one mutation proof, README update.
 - Labour-law and data-protection review of the rule content (K1.2) by a privacy/legal reviewer: NEEDS_HUMAN. The
   rules are conservative defaults and every suggestion needs a person to accept it.
 - Airbyte manifest importer: after a licence check per connector (NEEDS_HUMAN: legal).
+
+## Audit round (2026-10-30, agy adversarial audit, verified by the orchestrator)
+
+Report: `docs/superpowers/plans/2026-10-30-audit-k-report.md` (see its "Orchestrator verification" section).
+
+| ID | Finding (verified) | Decision |
+|---|---|---|
+| A1 | BUG-1: introspect drift never reports missing expected fields although README section 12 promises it | Introspect calls the drift check with `check_missing=True` against the ACTIVE mapping; a mapped single-source field absent from every sample record -> WARNING event `ADD_REQUIRED_FIELD` (field name only) |
+| A2 | BUG-2: `overlay()` always rebuilds a REST `EntitySpec`, so an MCP profile with an approved mapping fails | Rebuild with the spec's own class (`EntitySpec` or `McpEntitySpec`); protocol keys preserved |
+| A3 | BUG-3: `discovered_fields` item without a string `name` -> 500 | `422 INVALID_ARGUMENT` naming the item index; no 500 |
+| A4 | BUG-4: two routes raise bare `HTTPException` (`{"detail": ...}` without `error`) | Introspect with neither swagger nor samples -> `422 INVALID_ARGUMENT`; unknown mapping -> `404 NOT_FOUND`; no `HTTPException` left in `server/` |
+| A5 | BUG-5: deploy files do not pass `HRMS_DISCLOSURE_KEY_FILE` | Compose passes it through; k8s mounts optional Secret `hrms-plugin-disclosure-key` read-only at `/etc/hrms/disclosure` and sets the variable to `/etc/hrms/disclosure/disclosure.key` |
+| A6 | Q2: re-approving the shape / payroll fingerprint that is already approved opens a new two-person request | Return `200 {"status": "ALREADY_APPROVED", "fingerprint": ...}` and create no pending request; a different fingerprint keeps the two-step flow |
+| A7 | Q1: README "others get a spec built on the fly" is ambiguous | Doc only: the four supported types without a canonical spec (interview, offer, payroll run, appraisal) get one built on the fly; any other domain -> `422 INVALID_DOMAIN` |
+| A8 | Q3: every MCP frame (including `ping` and notifications) is rate-limited | Keep (protects against floods); document it |
+| A9 | BUG-6 (widget drops `thinking`, `history_trimmed`) | Not a defect: the widget renders an allow-list; `thinking` carries raw model reasoning and stays out of the browser. The audit test is corrected to pin the allow-list |
+| A10 | Audit test `test_requisition_shape_approval_guards` leaves a malformed approved shape in the shared store, breaking 3 existing tests | Audit tests must restore every global they touch; full suite with audit tests first must show 0 failures |

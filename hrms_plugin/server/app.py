@@ -22,7 +22,7 @@ except ImportError:
     pass
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
@@ -229,7 +229,7 @@ class IntrospectRequest(BaseModel):
 
 class SynthesizeRequest(BaseModel):
     domain: str = "EMPLOYEE"
-    discovered_fields: List[Dict[str, Any]]
+    discovered_fields: List[Any]
     vendor: Optional[str] = Field(default=None, pattern=r"^[a-z0-9_-]{1,32}$")
     sample_records: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=50)
 
@@ -553,6 +553,7 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
                         entity_type=domain_type,
                         mapping=active_mapping,
                         raw_response=combined_resp,
+                        check_missing=True,
                     )
                     for ev in events:
                         patch = dict(ev.suggested_patch) if ev.suggested_patch else None
@@ -573,7 +574,7 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
             "drift": drift_events,
         }
     else:
-        raise HTTPException(status_code=400, detail="Must provide swagger_dict or sample_records")
+        raise ApiError(422, {"error": "INVALID_ARGUMENT", "detail": "Must provide swagger_dict or sample_records"})
 
 
 def _prepare_synthesis_discovered(domain_value: str, req: SynthesizeRequest):
@@ -585,8 +586,18 @@ def _prepare_synthesis_discovered(domain_value: str, req: SynthesizeRequest):
         else None
     )
     discovered_fields_dict = {}
-    for f in req.discovered_fields:
-        name = f["name"]
+    for idx, f in enumerate(req.discovered_fields):
+        if not isinstance(f, dict):
+            raise ApiError(
+                422,
+                {"error": "INVALID_ARGUMENT", "detail": f"discovered_fields item at index {idx} must be an object"},
+            )
+        name = f.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ApiError(
+                422,
+                {"error": "INVALID_ARGUMENT", "detail": f"discovered_fields item at index {idx} missing string 'name'"},
+            )
         enums = f.get("enum_values")
         if enums is None and sample_ent and name in sample_ent.fields:
             enums = sample_ent.fields[name].enum_values
@@ -704,7 +715,7 @@ def get_schema_mapping(
     except MappingGovernanceError as exc:  # INVALID_KEY: a client error, never a 500 (E2E-GOV-3)
         raise ApiError(400, {"error": exc.code}) from None
     if not mapping:
-        raise HTTPException(status_code=404, detail=f"No mapping found for {vendor}/{entity_type}")
+        raise ApiError(404, {"error": "NOT_FOUND", "detail": f"No mapping found for {vendor}/{entity_type}"})
     from hrms_plugin.storage.mapping_store import entity_mapping_to_dict
     return entity_mapping_to_dict(mapping)
 
@@ -1019,6 +1030,10 @@ def approve_requisition_shape(
     observed = _storage.get("observed_shapes", key)
     if observed is None or observed["fingerprint"] != req.fingerprint:
         raise ApiError(409, {"error": "FINGERPRINT_NOT_OBSERVED"})
+
+    approved = _storage.get("approved_shapes", key)
+    if approved and approved.get("fingerprint") == req.fingerprint:
+        return {"status": "ALREADY_APPROVED", "fingerprint": req.fingerprint}
 
     pending = _storage.get("pending_shapes", key)
     requested_at = pending.get("requested_at") if pending else None
