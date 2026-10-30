@@ -333,6 +333,57 @@ flowchart TD
   transcript is redacted when it reaches the AI layer.
 - **Leftover data.** On start-up the service deletes any rows left by an older plaintext PII vault.
 
+### 6.1 Classification rules (which fields are personal data)
+
+Each mapped field gets a data class: PII, COMPENSATION, INTERNAL or PUBLIC, plus whether the AI model may see its
+value (`llm_visible`). The plugin suggests a class from a rules table, `hrms_plugin/governance/classification_rules.yaml`,
+a first-match decision table that a non-engineer can read and edit. Rules match on the canonical field name, the entity
+type, or the kind of name (a person identifier such as `pan_number`, or money such as `bonus_amount`). The file is
+checked when it loads; a rule that makes PII or COMPENSATION visible to the model is refused. Examples:
+
+| Field | Suggested class | Visible to the model |
+|---|---|---|
+| `full_name`, `email`, `phone`, `employee_ref`, `reason` | PII | no |
+| `basic_salary`, `net_pay`, expense `amount` | COMPENSATION | no |
+| requisition `title`, `location` | PUBLIC | yes |
+| `department`, `status`, `leave_type`, candidate `skills` | INTERNAL | yes |
+| `punch_time`, `serial_number`, other operational fields | INTERNAL | no |
+
+**Value check.** When sample records are sent during schema adaptation, each field's sample values are also scanned
+with the PII detector. If they look like PII (a PAN, an email and so on), the suggestion becomes PII with the reason
+"sample values look like PAN", whatever the name suggested. The values are never stored or returned.
+
+Suggestions are advice. They take effect only when the approver sends `accept_suggested_classification: true`
+([section 12](#12-flow-schema-adaptation-for-a-new-hr-system), step 8); a class typed by the approver always wins, and a
+field with neither stays PII and hidden. The stored version records where each class came from (`MANUAL`,
+`SUGGESTED:<rule id>` or `DEFAULT`). The rule content is a conservative default that a privacy or legal reviewer should
+confirm per jurisdiction.
+
+### 6.2 Has this person's data been shared?
+
+Every outgoing call (AI model, MCP client, voice) already writes a content-free row to the egress log
+([section 7](#7-flow-llm-gateway-policy-cost-and-logging)). With a disclosure key configured, each row also lists the
+personal data items it touched, as keyed fingerprints, never values:
+
+- **AI model:** items that were replaced by tokens before sending; outcome `WITHHELD` (the provider never saw them).
+- **MCP client:** items found in a tool result that went to the external client in clear; outcome `DISCLOSED`.
+- **Voice:** text sent for speech is scanned the same way (it is normally empty, because text with PII is not spoken).
+  Uploaded audio cannot be inspected, so audio rows carry no items.
+
+A fingerprint is HMAC-SHA256 over tenant, kind and the normalised value with a secret key
+(`HRMS_DISCLOSURE_KEY_FILE`, at least 32 bytes). A plain hash is never stored, because ID numbers are short enough to
+guess. Without the key, rows carry no fingerprints and the lookup answers `503 DISCLOSURE_INDEX_NOT_CONFIGURED`.
+
+`POST /v1/governance/disclosures/lookup` with `{"kind": "PAN", "value": "..."}` answers whether that item left the
+system for the caller's tenant, and when, to which provider and channel, and with which outcome. It is a POST so the
+value never appears in a URL or access log. It needs `MANAGE_GOVERNANCE` and a recent sign-in, is rate-limited, never
+echoes the value, and every lookup is itself recorded (who, when, kind, found; no value). Fingerprints follow the egress
+log's retention, purge and deletion on request.
+
+Limits: the answer covers what this plugin sent, not what the host HRMS or a user shared elsewhere. Matching is exact
+after normalisation (case, and spaces and hyphens in ID numbers), so a phone number written with and without its country
+code counts as two items.
+
 ---
 
 ## 7. Flow: LLM gateway, policy, cost and logging
@@ -624,7 +675,8 @@ flowchart LR
    asset, attendance request; others get a spec built on the fly.
 3. **Coverage report.** Every draft stores `coverage`, returned by synthesize and by `GET /v1/schema/mappings`. For
    each canonical field: `status`, `source`, `confidence`, `origin` (RULE, LLM or MANUAL), `rationale`, `required`
-   and `accepted_by`; plus `unused_host_fields` and counts. Statuses:
+   `accepted_by` and `suggested_classification` ([section 6.1](#61-classification-rules-which-fields-are-personal-data));
+   plus `unused_host_fields` and counts. Statuses:
 
    | Status | Meaning |
    |---|---|
@@ -649,7 +701,8 @@ flowchart LR
 8. **Approve** (`POST .../versions/{version}/approve`, recent sign-in). The approver must not be the proposer of that
    version (`403 SAME_PERSON`). A draft with any NEEDS_REVIEW field cannot be approved (`409 REVIEW_REQUIRED`, listing
    the fields), nor one whose probe failed (`409 PROBE_FAILED`). The body may classify each field (`data_class`,
-   `llm_visible`). The new version becomes **ACTIVE** and the previous one **SUPERSEDED**.
+   `llm_visible`) and may set `accept_suggested_classification: true` to take the suggested class for fields it does
+   not classify ([section 6.1](#61-classification-rules-which-fields-are-personal-data)). The new version becomes **ACTIVE** and the previous one **SUPERSEDED**.
 
 Field transforms available to mappings: string, strip, lower, upper, int, decimal, datetime, date, list, join_names,
 bool, plus value maps for enumerations.
@@ -764,6 +817,7 @@ Decree M/51) and US (FLSA). Matching is by keyword weighting.
 | `POST /v1/writeback/proposals/{id}/rollback` | MUTATE_EMPLOYEE, recent sign-in | Undo an executed change (two people: first call `202`) |
 | `POST /v1/mcp` | USE_COPILOT | MCP server for AI clients ([section 16.1](#161-mcp-endpoint)) |
 | `GET /v1/governance/llm-egress` | VIEW_COMPLIANCE | Tenant's AI egress log |
+| `POST /v1/governance/disclosures/lookup` | MANAGE_GOVERNANCE, recent sign-in | Has this personal data item been sent out? ([6.2](#62-has-this-persons-data-been-shared)) |
 | `DELETE /v1/governance/llm-egress` | MANAGE_GOVERNANCE, recent sign-in | Delete the tenant's egress log |
 | `POST /v1/remediate/execute` | EXECUTE_REMEDIATION, recent sign-in | Audit headers for a fix (no write) |
 | `POST /v1/requisitions/generate-archetypes` (also `/api/...`) | MANAGE_RECRUITMENT | Requisition templates |
@@ -783,7 +837,7 @@ Errors are JSON `{"error": "<CODE>", ...}`. Common codes:
 | 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE`, `REVIEW_INVALID` |
 | 429 | `RATE_LIMITED`, `LLM_BUDGET_EXHAUSTED` |
 | 502 / 504 | `HOST_ERROR`, `VOICE_UPSTREAM_ERROR`, `VOICE_UPSTREAM_TIMEOUT` |
-| 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED`, `AUDIT_SIGNING_NOT_CONFIGURED` |
+| 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED`, `AUDIT_SIGNING_NOT_CONFIGURED`, `DISCLOSURE_INDEX_NOT_CONFIGURED` |
 
 Set `HRMS_ENABLE_API_DOCS=true` to serve the interactive OpenAPI docs at `/docs`.
 
@@ -828,6 +882,7 @@ HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message p
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `NVIDIA_API_KEY` | Provider credentials | none |
 | `SARVAM_API_KEY` | Voice provider key | voice off |
 | `HRMS_AUDIT_SIGNING_KEY_FILE`, `HRMS_AUDIT_KEY_ID` | Ed25519 private key (PEM) for signing host-write audit headers, and its id | host writes refused |
+| `HRMS_DISCLOSURE_KEY_FILE` | Secret (at least 32 bytes) for disclosure fingerprints; a changed file is picked up | no fingerprints, lookup 503 |
 | `HRMS_DEMO_ENDPOINTS` | `true` enables demo compliance routes | off |
 | `HRMS_ENABLE_API_DOCS` | `true` serves `/docs`, `/redoc`, `/openapi.json` | off |
 | `HRMS_EVAL_LIVE_APPROVED`, `HRMS_EVAL_TENANT` | Gate for live evals | off |
@@ -1006,7 +1061,7 @@ HRMS_FRAPPE_SANDBOX=1 pytest tests/integration   # live Frappe tests (needs the 
 | `tests/integration` | Live Frappe HR v15 sandbox |
 | `sdk/test` | Widget core logic, streaming parser and DOM-level behaviour (212 tests) |
 
-Latest full run on `agentic-ai` (2026-10-30): **2,383 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
+Latest full run on `agentic-ai` (2026-10-30): **2,454 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
 **212 passed**, ruff clean. The last measured line coverage was 98.9% (2026-10-29, before the section-20 fixes).
 
 How quality was established:
@@ -1043,6 +1098,14 @@ failing test recorded first and was checked by mutation):
 | Review-round findings (vendor default, MCP data policy, pending-request expiry, deploy mounts, stream citations, tenant-scoped origin, drift on nested fields, currency for SA/US) | Fixed; see the plan file, section "Review round" |
 | Stakeholder feedback: show partial matches honestly, let an expert accept/reject/configure, keep protocols open | Coverage report, review/reject actions, approval blocked until reviewed, `protocol: rest\|mcp` ([section 12](#12-flow-schema-adaptation-for-a-new-hr-system), [17.5](#175-vendor-profiles-hrms_pluginintegrationsprofilesyaml)); plan `docs/superpowers/plans/2026-10-30-voice-review-plan.md` |
 
+| Classify PII on top of schema translation with a decision model; check whether PII has been shared | Rules table with value check and opt-in acceptance; disclosure fingerprints and lookup ([6.1](#61-classification-rules-which-fields-are-personal-data), [6.2](#62-has-this-persons-data-been-shared)); plan `docs/superpowers/plans/2026-10-30-pii-classification-disclosure-plan.md` |
+
+**Considered and not adopted:** GoRules JDM (`zen-engine`) for the rules: same idea, but a compiled dependency and
+in-rule JavaScript; the YAML table can be exported to JDM later if business users need its editor. open-connector: a
+credential gateway for SaaS actions, not a schema translator, and its licence needs a commercial agreement to offer it
+as a hosted service. Airbyte: built to copy data into a warehouse, against this plugin's read-in-place design; its
+YAML connector definitions could seed vendor profiles after a per-connector licence check.
+
 **Remaining gaps:**
 
 | Gap | Effect |
@@ -1051,6 +1114,7 @@ failing test recorded first and was checked by mutation):
 | Single replica | SQLite and in-process limits; scaling out needs a shared store (hosting topology decision) |
 | MCP endpoint answers in JSON only | No server-sent-event stream; enough for request/response tool calls |
 | MCP client to vendors is untested against a real vendor | Simulated servers only; needs a vendor MCP server and credentials to prove |
+| Classification rule content not yet reviewed by a privacy/legal reviewer | Conservative defaults; every suggestion needs an approver to accept it |
 | No review screen in the widget | Review, reject and approve are API actions; an admin screen would sit on top of them |
 
 **Waiting on owners (not code decisions):**
