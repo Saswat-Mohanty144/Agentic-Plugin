@@ -1,0 +1,495 @@
+FFFFFFFFFFFFFFFFFFF                                                      [100%]
+=================================== FAILURES ===================================
+________________ test_ref_is_stable_for_same_tenant_kind_value _________________
+
+disclosure_key = b'4s\x0bF\x0b\xe0\xbb;\r\x87i\xb2S\xf7\x0c\xbanPf\xe8=\xef\xb0\x1f\x9dX\xf2\xd4n\x07\xa5j'
+
+    def test_ref_is_stable_for_same_tenant_kind_value(disclosure_key):
+        """Ref is deterministic and stable for identical tenant, kind, and canonical value."""
+        ref1 = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+        ref2 = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+>       assert ref1 is not None
+E       assert None is not None
+
+tests/unit/test_gap_k2.py:46: AssertionError
+__________________ test_ref_differs_across_tenants_and_kinds ___________________
+
+disclosure_key = b'\xb8J\xf3,\xd8\x8f\xb1\xc7u\x7f\xc2\x16\x90\xc5o&v\xd4n\xb2L\xf9+D\xce\x89\x1fK\xb5\x1e\xd2$'
+
+    def test_ref_differs_across_tenants_and_kinds(disclosure_key):
+        """Ref varies when tenant, kind, or value changes."""
+        base_ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+        other_tenant_ref = disclosure.compute_ref("globex", "PAN", FAKE_PAN)
+        other_kind_ref = disclosure.compute_ref("acme", "AADHAAR", FAKE_PAN)
+        other_val_ref = disclosure.compute_ref("acme", "PAN", "XYZPE1234F")
+    
+>       assert base_ref != other_tenant_ref
+E       assert None != None
+
+tests/unit/test_gap_k2.py:58: AssertionError
+_________ test_canonical_removes_spaces_hyphens_only_for_listed_kinds __________
+
+    def test_canonical_removes_spaces_hyphens_only_for_listed_kinds():
+        """canonical: NFKC normalise, casefold, strip; remove spaces/hyphens ONLY for listed kinds."""
+        listed = [
+            ("AADHAAR", " 2345-6789 0124 ", "234567890124"),
+            ("PAN", " ABC-PE 1234 F ", "abcpe1234f"),
+            ("CARD", " 4111-2222 3333 4444 ", "4111222233334444"),
+            ("IBAN", " GB82-WEST 1234-5698 ", "gb82west12345698"),
+            ("SSN", " 123-45-6789 ", "123456789"),
+            ("EMIRATES_ID", " 784-1234-1234567-1 ", "784123412345671"),
+            ("PHONE", " +91-98765 43210 ", "+919876543210"),
+        ]
+        for kind, raw, expected in listed:
+>           assert disclosure.canonical(kind, raw) == expected
+E           AssertionError: assert '' == '234567890124'
+E             
+E             - 234567890124
+
+tests/unit/test_gap_k2.py:75: AssertionError
+_______________________ test_key_missing_short_empty_env _______________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-472/test_key_missing_short_empty_e0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110f06910>
+
+    def test_key_missing_short_empty_env(tmp_path, monkeypatch):
+        """Missing, empty, non-existent, or <32 byte key files mean disclosure is not configured."""
+        monkeypatch.delenv("HRMS_DISCLOSURE_KEY_FILE", raising=False)
+        assert disclosure.get_disclosure_key() is None
+        assert disclosure.is_configured() is False
+        assert disclosure.compute_ref("acme", "PAN", FAKE_PAN) is None
+    
+        monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", "")
+        assert disclosure.get_disclosure_key() is None
+        assert disclosure.is_configured() is False
+    
+        monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(tmp_path / "nonexistent.key"))
+        assert disclosure.get_disclosure_key() is None
+        assert disclosure.is_configured() is False
+    
+        short_file = tmp_path / "short.key"
+        short_file.write_bytes(b"short_key_under_32_bytes_len")
+        monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(short_file))
+        assert disclosure.get_disclosure_key() is None
+        assert disclosure.is_configured() is False
+    
+        valid_file = tmp_path / "valid.key"
+        valid_file.write_bytes(b"x" * 32)
+        monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", str(valid_file))
+>       assert disclosure.get_disclosure_key() == b"x" * 32
+E       AssertionError: assert None == (b'x' * 32)
+E        +  where None = <function get_disclosure_key at 0x10fc81260>()
+E        +    where <function get_disclosure_key at 0x10fc81260> = disclosure.get_disclosure_key
+
+tests/unit/test_gap_k2.py:111: AssertionError
+________________ test_pii_session_original_value_public_method _________________
+
+    def test_pii_session_original_value_public_method():
+        """PiiSession provides a public original_value(token) returning original value without persistence."""
+        session = PiiSession()
+        redacted = session.redact_text(f"Audit PAN {FAKE_PAN} now")
+        assert FAKE_PAN not in redacted
+    
+        import re
+        match = re.search(r"\[PII_PAN_\d+_[0-9a-f]{8}\]", redacted)
+        assert match is not None
+        token = match.group(0)
+    
+>       assert session.original_value(token) == FAKE_PAN
+               ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'original_value'
+
+tests/unit/test_gap_k2.py:126: AttributeError
+________________ test_egress_log_record_and_update_subject_refs ________________
+
+disclosure_key = b'J\xfedy\x8e\x0b\x96\x96]\x84\xd0\x91x\x96o\xa7\xb0\x90\x05S\x8a\xc8\xd1\x8fG)\xf1\xaanT_\xa5'
+
+    def test_egress_log_record_and_update_subject_refs(disclosure_key):
+        """EgressLog.record and update record channel and subject_refs, maintaining llm_egress_subjects index."""
+        store = MemoryKeyValueStore()
+        log = EgressLog(store, clock=lambda: NOW)
+    
+        ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+        subject_refs = [{"ref": ref, "kind": "PAN", "outcome": "WITHHELD"}]
+    
+>       key = log.record(
+            tenant_id="acme",
+            provider="fake",
+            model="m1",
+            payload_sha256="sha256:" + "0" * 64,
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=subject_refs,
+        )
+E       TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:141: TypeError
+__________ test_egress_log_unconfigured_key_sets_subject_index_false ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110ef81d0>
+
+    def test_egress_log_unconfigured_key_sets_subject_index_false(monkeypatch):
+        """When key is missing, subject_refs is [] and subject_index is False."""
+        monkeypatch.delenv("HRMS_DISCLOSURE_KEY_FILE", raising=False)
+        store = MemoryKeyValueStore()
+        log = EgressLog(store, clock=lambda: NOW)
+    
+>       key = log.record(
+            tenant_id="acme",
+            provider="fake",
+            model="m1",
+            payload_sha256="sha256:" + "0" * 64,
+            redacted_kinds={},
+            channel="llm",
+            subject_refs=[{"ref": "fake_ref", "kind": "PAN", "outcome": "WITHHELD"}],
+        )
+E       TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:169: TypeError
+______________ test_purge_and_delete_tenant_remove_index_entries _______________
+
+disclosure_key = b'\xb9\xcaa:t\xc9\xf9T\xe5\x87p7\x0c\xf6\xd5\xec\xc7\xac\x8f\xc0/\xe3v\x9e8#\xcf\xac\xca\xec$0'
+
+    def test_purge_and_delete_tenant_remove_index_entries(disclosure_key):
+        """Purge and delete_tenant remove index entries from llm_egress_subjects."""
+        clock = {"t": 1000.0}
+        store = MemoryKeyValueStore()
+        log = EgressLog(store, clock=lambda: clock["t"])
+    
+        ref_pan = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+        ref_aadhaar = disclosure.compute_ref("acme", "AADHAAR", FAKE_AADHAAR)
+    
+        # Record row 1 at t=1000
+>       k1 = log.record(
+            tenant_id="acme",
+            provider="fake",
+            model="m1",
+            payload_sha256="sha256:" + "1" * 64,
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref_pan, "kind": "PAN", "outcome": "WITHHELD"}],
+        )
+E       TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:195: TypeError
+_________________ test_llm_call_with_pan_records_withheld_ref __________________
+
+disclosure_key = b"\xa0\r\xad\x85 \xb3c\x94\xf3/g\x91\x9c\xf5\x80L\x98:\xd3g\xae\x1a\x8b'\x0c\xa0\xc5\x83;\x8dl`"
+
+    @pytest.mark.asyncio
+    async def test_llm_call_with_pan_records_withheld_ref(disclosure_key):
+        """LLM call with a PAN records a WITHHELD ref in the egress row and indexes it."""
+        store = MemoryKeyValueStore()
+        log = EgressLog(store, clock=lambda: NOW)
+        gw = LLMGateway(
+            config=LLMConfig(provider=LLMProvider.FAKE),
+            egress_log=log,
+            policy_resolver=registry_policy_resolver(load_registry(REGISTRY)),
+        )
+        gw.client = DummyLLM()
+    
+        msg = ChatMessage(role="user", content=f"Verify employee PAN {FAKE_PAN} please")
+        res = await gw.chat([msg], tenant_id="acme")
+        assert res.content == "verified"
+    
+        [record] = log.list("acme")
+>       assert record["channel"] == "llm"
+               ^^^^^^^^^^^^^^^^^
+E       KeyError: 'channel'
+
+tests/unit/test_gap_k2.py:264: KeyError
+__________________ test_mcp_tools_call_records_disclosed_refs __________________
+
+make_client = <function make_client.<locals>._make at 0x110d4ca40>
+bearer = <function bearer.<locals>._headers at 0x110e0a340>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110e31ed0>
+disclosure_key = b'\xe5 <@\xe5\xd9\xb4\x1bV}\xf6\x9e\xa9\x8d\xbd\xedz\x81\x81B\x9d\xf7\x01Z\xffS\xe1AXx\xf21'
+
+    def test_mcp_tools_call_records_disclosed_refs(make_client, bearer, monkeypatch, disclosure_key):
+        """MCP tools/call output containing string email and identifier scalar records DISCLOSED refs."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        log = EgressLog(egress_store, clock=lambda: NOW)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        tool_output = {
+            "success": True,
+            "notes": f"Notification forwarded to {FAKE_EMAIL} for review",
+            "employee_name": "Tariq Al-Mansoor",
+        }
+    
+        async def mock_call_tool(self, name, arguments):
+            return tool_output
+    
+        monkeypatch.setattr(HrmsMcpServer, "call_tool", mock_call_tool)
+    
+        headers = {**bearer(tenant="acme", roles=["staff"]), "X-Jurisdiction": "IN"}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", {"name": "hrms_search_labor_regulations", "arguments": {"q": "test"}}),
+            headers=headers,
+        )
+>       assert res.status_code == 200
+E       assert 400 == 200
+E        +  where 400 = <Response [400 Bad Request]>.status_code
+
+tests/unit/test_gap_k2.py:310: AssertionError
+______________________ test_failed_mcp_call_adds_no_refs _______________________
+
+make_client = <function make_client.<locals>._make at 0x110eba480>
+bearer = <function bearer.<locals>._headers at 0x110eba2a0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110f3a250>
+disclosure_key = b'\x1d9\xbaX\xff\xa4\xce\xf6\xcfES\xc6H\x1c~\xce\xc9\xe8\x81f\xa6\x84@\xb8i\x19\x96\xfbv20X'
+
+    def test_failed_mcp_call_adds_no_refs(make_client, bearer, monkeypatch, disclosure_key):
+        """Failed MCP tools/call does not add any disclosure refs."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        log = EgressLog(egress_store, clock=lambda: NOW)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        async def mock_failed_tool(self, name, arguments):
+            return {"success": False, "error": "FAILURE", "email": FAKE_EMAIL}
+    
+        monkeypatch.setattr(HrmsMcpServer, "call_tool", mock_failed_tool)
+    
+        headers = {**bearer(tenant="acme", roles=["staff"]), "X-Jurisdiction": "IN"}
+        res = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", {"name": "hrms_search_labor_regulations", "arguments": {}}),
+            headers=headers,
+        )
+>       assert res.status_code == 200
+E       assert 400 == 200
+E        +  where 400 = <Response [400 Bad Request]>.status_code
+
+tests/unit/test_gap_k2.py:351: AssertionError
+____________ test_lookup_endpoint_key_missing_or_short_returns_503 _____________
+
+make_client = <function make_client.<locals>._make at 0x110e65e40>
+bearer = <function bearer.<locals>._headers at 0x110e66340>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110e62850>
+
+    def test_lookup_endpoint_key_missing_or_short_returns_503(make_client, bearer, monkeypatch):
+        """503 DISCLOSURE_INDEX_NOT_CONFIGURED when key file is missing, empty, or shorter than 32 bytes."""
+        client = make_client()
+        monkeypatch.delenv("HRMS_DISCLOSURE_KEY_FILE", raising=False)
+    
+        res = client.post(
+            "/v1/governance/disclosures/lookup",
+            json={"kind": "PAN", "value": FAKE_PAN},
+            headers=bearer(roles=["platform_admin"]),
+        )
+>       assert res.status_code == 503
+E       assert 404 == 503
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_k2.py:372: AssertionError
+______ test_lookup_endpoint_requires_manage_governance_and_recent_signin _______
+
+make_client = <function make_client.<locals>._make at 0x110e65a80>
+bearer = <function bearer.<locals>._headers at 0x110e66c00>
+disclosure_key = b'\xd7$*\xe8\x1d<^j\xef\xa4\x88\xd4\x1c\xbc\xe5I\xaf\xd2?#\xc3\xa9\xa4Z<\xa2\x9e\xd9]xi\xfc'
+
+    def test_lookup_endpoint_requires_manage_governance_and_recent_signin(make_client, bearer, disclosure_key):
+        """Requires MANAGE_GOVERNANCE (403 for hr_admin/hr_manager) and recent sign-in (401 for old token)."""
+        client = make_client()
+    
+        # 1. hr_manager/hr_admin lacks MANAGE_GOVERNANCE -> 403
+        res_hr = client.post(
+            "/v1/governance/disclosures/lookup",
+            json={"kind": "PAN", "value": FAKE_PAN},
+            headers=bearer(roles=["hr_admin"]),
+        )
+>       assert res_hr.status_code == 403
+E       assert 404 == 403
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_k2.py:386: AssertionError
+__________________ test_lookup_never_seen_returns_found_false __________________
+
+make_client = <function make_client.<locals>._make at 0x110e66200>
+bearer = <function bearer.<locals>._headers at 0x110e67b00>
+disclosure_key = b'\xce\x1c\x82\xd6\xed\xce3\\\r\xbd\xe7j\x95\x17`m\xf1D_\x99m\x89\xfb\xbf\x82\xfc?\xf9\xaf\xffy\xdc'
+
+    def test_lookup_never_seen_returns_found_false(make_client, bearer, disclosure_key):
+        """Lookup for a value never logged returns found: False, empty disclosures list."""
+        client = make_client()
+        res = client.post(
+            "/v1/governance/disclosures/lookup",
+            json={"kind": "PAN", "value": FAKE_PAN},
+            headers=bearer(roles=["platform_admin"]),
+        )
+>       assert res.status_code == 200
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_k2.py:414: AssertionError
+____________ test_lookup_another_tenants_value_returns_found_false _____________
+
+make_client = <function make_client.<locals>._make at 0x110e66d40>
+bearer = <function bearer.<locals>._headers at 0x110e66fc0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110f65c90>
+disclosure_key = b'8\xc7\x83MEol!\x9e\x13\xb4\xfd\xc2Qd\xf9\x97\x19\xc6\x03\x0b\tG#@\xfcv\xad6\xe7\x14B'
+
+    def test_lookup_another_tenants_value_returns_found_false(make_client, bearer, monkeypatch, disclosure_key):
+        """A disclosure logged for tenant 'globex' cannot be found by tenant 'acme'."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        log = EgressLog(egress_store, clock=lambda: NOW)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        ref_globex = disclosure.compute_ref("globex", "PAN", FAKE_PAN)
+>       log.record(
+            tenant_id="globex",
+            provider="fake",
+            model="m1",
+            payload_sha256="sha256:" + "0" * 64,
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref_globex, "kind": "PAN", "outcome": "WITHHELD"}],
+        )
+E       TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:431: TypeError
+____________________ test_lookup_finds_llm_and_mcp_records _____________________
+
+make_client = <function make_client.<locals>._make at 0x110ee0a40>
+bearer = <function bearer.<locals>._headers at 0x110e099e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110f3a5d0>
+disclosure_key = b"\xe7\xd7\\\xf6\xde\x83\xcc\x921\x9e'\xc2\x12\x0e\x85\xd1\xb9e+\x7f4\x8d\x96\xbeL\x96\xbe\xc86\xbc\xa0\xc9"
+
+    def test_lookup_finds_llm_and_mcp_records(make_client, bearer, monkeypatch, disclosure_key):
+        """Lookup finds WITHHELD (LLM) and DISCLOSED (MCP) records."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        log = EgressLog(egress_store, clock=lambda: NOW)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    
+>       log.record(
+            tenant_id="acme",
+            provider="fake-provider",
+            model="fake-model",
+            payload_sha256="sha256:" + "1" * 64,
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref, "kind": "PAN", "outcome": "WITHHELD"}],
+            status="COMPLETED",
+        )
+E       TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:463: TypeError
+__________ test_response_and_stored_lookup_never_contain_value_or_ref __________
+
+make_client = <function make_client.<locals>._make at 0x110e08f40>
+bearer = <function bearer.<locals>._headers at 0x110f894e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110d59810>
+disclosure_key = b'\x7f\x91\x98^\xc1\xac\x08\xed\xd5N\xbe\xb7\xf6\xa9\xdc\xa5s\xde\xb60\x12\x03\x0c\xcfN>O\x1cd\x91\xb9\x13'
+
+    def test_response_and_stored_lookup_never_contain_value_or_ref(make_client, bearer, monkeypatch, disclosure_key):
+        """Response text and stored audit record never echo or contain the raw value or the ref."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        log = EgressLog(egress_store, clock=lambda: NOW)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+>       log.record(
+            tenant_id="acme",
+            provider="fake",
+            model="m",
+            payload_sha256="sha256:" + "0" * 64,
+            redacted_kinds={"PAN": 1},
+            channel="llm",
+            subject_refs=[{"ref": ref, "kind": "PAN", "outcome": "WITHHELD"}],
+            status="COMPLETED",
+        )
+E       TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:502: TypeError
+___________ test_invalid_kind_or_empty_or_overlong_value_returns_422 ___________
+
+make_client = <function make_client.<locals>._make at 0x110e09760>
+bearer = <function bearer.<locals>._headers at 0x110e0ab60>
+disclosure_key = b'Z\x16&\xa6\x12J\xdf7\x8a`\xf1.Pmj\x1fX\x8d\x99 |\x8e\x06\xf0-\x06U+\xf5\xdcg.'
+
+    def test_invalid_kind_or_empty_or_overlong_value_returns_422(make_client, bearer, disclosure_key):
+        """Invalid kind, empty kind, empty value, or >256 chars value returns 422 Unprocessable Entity."""
+        client = make_client()
+        h = bearer(roles=["platform_admin"])
+    
+        # Invalid kind
+>       assert client.post("/v1/governance/disclosures/lookup", json={"kind": "INVALID_KIND", "value": FAKE_PAN}, headers=h).status_code == 422
+E       AssertionError: assert 404 == 422
+E        +  where 404 = <Response [404 Not Found]>.status_code
+E        +    where <Response [404 Not Found]> = post('/v1/governance/disclosures/lookup', json={'kind': 'INVALID_KIND', 'value': 'ABCPE1234F'}, headers={'Authorization': 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUtcnNhIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2lkcC5hY21l...tpyrPFbJ9C6eSRjtikPUWV_PrGn3wiCqeVAYBaZy599IRkBUak5h6D4eLNWeBK5UiIzkyCNq4u87tABzmf5XG-j3WWQxrT2o9szVYvpWAI-C46zO4XUxw'})
+E        +      where post = <starlette.testclient.TestClient object at 0x10fc19510>.post
+
+tests/unit/test_gap_k2.py:540: AssertionError
+_______________ test_lookup_at_most_200_results_and_newest_first _______________
+
+make_client = <function make_client.<locals>._make at 0x110e0a660>
+bearer = <function bearer.<locals>._headers at 0x110f88f40>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fc14150>
+disclosure_key = b'\xe9\n\xfb\x19\xef\x9a\\L\\\xdc\xad\xe6\xf2\xbe\x1c5\x0f\x85\x82^i\xd3\xab\x08\x82Z\x97>F`\x14\xde'
+
+    def test_lookup_at_most_200_results_and_newest_first(make_client, bearer, monkeypatch, disclosure_key):
+        """Lookup returns at most 200 disclosures, ordered newest first."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        log = EgressLog(egress_store)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        ref = disclosure.compute_ref("acme", "PAN", FAKE_PAN)
+    
+        # Insert 220 records with increasing timestamps
+        for i in range(220):
+            log._clock = lambda t=float(i): t
+>           log.record(
+                tenant_id="acme",
+                provider="fake",
+                model=f"m-{i}",
+                payload_sha256="sha256:" + f"{i:064x}",
+                redacted_kinds={"PAN": 1},
+                channel="llm",
+                subject_refs=[{"ref": ref, "kind": "PAN", "outcome": "WITHHELD"}],
+                status="COMPLETED",
+            )
+E           TypeError: EgressLog.record() got an unexpected keyword argument 'channel'
+
+tests/unit/test_gap_k2.py:567: TypeError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_k2.py::test_ref_is_stable_for_same_tenant_kind_value
+FAILED tests/unit/test_gap_k2.py::test_ref_differs_across_tenants_and_kinds
+FAILED tests/unit/test_gap_k2.py::test_canonical_removes_spaces_hyphens_only_for_listed_kinds
+FAILED tests/unit/test_gap_k2.py::test_key_missing_short_empty_env - Assertio...
+FAILED tests/unit/test_gap_k2.py::test_pii_session_original_value_public_method
+FAILED tests/unit/test_gap_k2.py::test_egress_log_record_and_update_subject_refs
+FAILED tests/unit/test_gap_k2.py::test_egress_log_unconfigured_key_sets_subject_index_false
+FAILED tests/unit/test_gap_k2.py::test_purge_and_delete_tenant_remove_index_entries
+FAILED tests/unit/test_gap_k2.py::test_llm_call_with_pan_records_withheld_ref
+FAILED tests/unit/test_gap_k2.py::test_mcp_tools_call_records_disclosed_refs
+FAILED tests/unit/test_gap_k2.py::test_failed_mcp_call_adds_no_refs - assert ...
+FAILED tests/unit/test_gap_k2.py::test_lookup_endpoint_key_missing_or_short_returns_503
+FAILED tests/unit/test_gap_k2.py::test_lookup_endpoint_requires_manage_governance_and_recent_signin
+FAILED tests/unit/test_gap_k2.py::test_lookup_never_seen_returns_found_false
+FAILED tests/unit/test_gap_k2.py::test_lookup_another_tenants_value_returns_found_false
+FAILED tests/unit/test_gap_k2.py::test_lookup_finds_llm_and_mcp_records - Typ...
+FAILED tests/unit/test_gap_k2.py::test_response_and_stored_lookup_never_contain_value_or_ref
+FAILED tests/unit/test_gap_k2.py::test_invalid_kind_or_empty_or_overlong_value_returns_422
+FAILED tests/unit/test_gap_k2.py::test_lookup_at_most_200_results_and_newest_first
+19 failed in 1.08s

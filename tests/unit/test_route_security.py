@@ -29,6 +29,7 @@ EXPECTED = {
     ("GET", "/v1/payroll/pf/results/{employee_id}/{period}"): P.VIEW_SALARY,
     ("POST", "/v1/hosts/requisitions/shape/approve"): P.MANAGE_SCHEMA,
     ("DELETE", "/v1/governance/llm-egress"): P.MANAGE_GOVERNANCE,
+    ("POST", "/v1/governance/disclosures/lookup"): P.MANAGE_GOVERNANCE,
     ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve"): P.MANAGE_SCHEMA,
     ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/review"): P.MANAGE_SCHEMA,
     ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/reject"): P.MANAGE_SCHEMA,

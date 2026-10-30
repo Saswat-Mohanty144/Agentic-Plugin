@@ -355,6 +355,10 @@ class PiiSession:
         return any(m.start() <= index < m.end() for m in _TOKEN_RE.finditer(text))
 
     # restoring ------------------------------------------------------------------------------------
+    def original_value(self, token: str) -> Optional[str]:
+        """Return the original value for a token minted by this session, or None."""
+        return self._value_for.get(token)
+
     def minted_counts(self) -> Dict[str, int]:
         """How many distinct values of each kind this session has tokenised so far (no values)."""
         return dict(self._minted)
