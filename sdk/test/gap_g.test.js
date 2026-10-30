@@ -165,7 +165,10 @@ class FakeElement {
 
 function matchesSelector(el, sel) {
   if (sel.startsWith('#')) return el.id === sel.slice(1);
-  if (sel.startsWith('.')) return el.classList.contains(sel.slice(1));
+  if (sel.startsWith('.')) {
+    const classes = sel.slice(1).split('.');
+    return classes.every((c) => el.classList.contains(c));
+  }
   return el.tagName.toLowerCase() === sel.toLowerCase();
 }
 
@@ -320,6 +323,37 @@ function createSseStreamResponse(chunks, status = 200) {
 
 test('parseSseFrames exists as exported function on core', () => {
   assert.equal(typeof core.parseSseFrames, 'function');
+});
+
+test('parseSseEvents alias is removed from core', () => {
+  assert.equal(core.parseSseEvents, undefined);
+});
+
+test('parseSseFrames: result event is recognized in KNOWN_SSE_EVENTS and parsed', () => {
+  const payload =
+    'data: {"event": "result", "data": {"statutory_citations": ["UAE Labour Law Article 51"], ' +
+    '"suggested_actions": [{"label": "Adjust Probation", "entity_type": "EMPLOYEE", "entity_id": "HR-EMP-0042", ' +
+    '"patch": {"probation_days": 180}}], "partial": false, "truncated": false}}\n\n';
+  const res = core.parseSseFrames(payload);
+  assert.deepEqual(res.events, [
+    {
+      event: 'result',
+      data: {
+        statutory_citations: ['UAE Labour Law Article 51'],
+        suggested_actions: [
+          {
+            label: 'Adjust Probation',
+            entity_type: 'EMPLOYEE',
+            entity_id: 'HR-EMP-0042',
+            patch: { probation_days: 180 },
+          },
+        ],
+        partial: false,
+        truncated: false,
+      },
+    },
+  ]);
+  assert.equal(res.remaining, '');
 });
 
 test('parseSseFrames: single complete frame parsed', () => {
@@ -686,6 +720,276 @@ test('streaming chat: token rendering is plain text and never injects unescaped 
   const lastBubble = bubbles[bubbles.length - 1];
   assert.equal(lastBubble.textContent, '<img src=x onerror=alert(1)>');
   assert.doesNotMatch(lastBubble.innerHTML, /<img\b/i);
+});
+
+test(
+  'streaming chat: stream carries token, done, result with citation and suggested action, intent -> proposal flow ok',
+  async () => {
+    const copilot = createCopilot({}, async () => 'token-proposer');
+    const fetchCalls = [];
+
+    global.fetch = async (url, opts) => {
+      fetchCalls.push({ url, opts, body: opts && opts.body ? JSON.parse(opts.body) : null });
+      if (url.endsWith('/v1/chat/stream')) {
+        const resultData = JSON.stringify({
+          statutory_citations: ['UAE Labour Law Article 51'],
+          suggested_actions: [{
+            label: 'Adjust Probation Period',
+            entity_type: 'EMPLOYEE',
+            entity_id: 'HR-EMP-0042',
+            patch: { probation_days: 180 },
+          }],
+          partial: false,
+          truncated: false,
+        });
+        return createSseStreamResponse([
+          'data: {"event": "token", "data": "Probation period exceeds statutory limit."}\n\n',
+          'data: {"event": "done", "data": {"finish_reason": "stop"}}\n\n',
+          `data: {"event": "result", "data": ${resultData}}\n\n`,
+          'data: {"event": "intent", "data": "hrms_policy"}\n\n',
+        ]);
+      }
+    if (url.endsWith('/v1/writeback/proposals')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'PROP-2026-99', status: 'PENDING' }),
+      };
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Audit employee probation';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  const assistantMsgs = chatLogs.querySelectorAll('.msg.assistant');
+  assert.ok(assistantMsgs.length >= 1, 'Should have an assistant message');
+  const msgDiv = assistantMsgs[assistantMsgs.length - 1];
+
+  // 1. Text token bubble
+  const bubble = msgDiv.querySelector('.bubble');
+  assert.ok(bubble, 'Assistant message should have a bubble');
+  assert.match(bubble.textContent, /Probation period exceeds statutory limit\./);
+
+  // 2. Citation in same assistant message
+  const citationsBox = msgDiv.querySelector('.citations');
+  assert.ok(citationsBox, 'Statutory citations should be rendered in assistant message');
+  assert.match(citationsBox.textContent, /UAE Labour Law Article 51/);
+
+  // 3. Suggested action button in same assistant message
+  const actionBtns = msgDiv.querySelectorAll('.action-btn');
+  assert.equal(actionBtns.length, 1, 'Should render suggested action button');
+  assert.equal(actionBtns[0].textContent, 'Adjust Probation Period');
+
+  // 4. Click action button -> confirmation text with confirm button
+  await actionBtns[0].click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.match(chatLogs.textContent, /Propose this change to Employee HR-EMP-0042\?/);
+  assert.match(chatLogs.textContent, /probation_days → 180/);
+  assert.match(chatLogs.textContent, /A different approver must approve it before anything is written\./);
+
+  // 5. Click confirm button -> posts to /v1/writeback/proposals
+  const allActionBtns = copilot.shadowRoot.querySelectorAll('.action-btn');
+  const confirmBtn = allActionBtns[allActionBtns.length - 1];
+  assert.equal(confirmBtn.textContent, '📝 Propose this change');
+
+  await confirmBtn.click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const proposalCalls = fetchCalls.filter((c) => c.url.endsWith('/v1/writeback/proposals'));
+  assert.equal(proposalCalls.length, 1, 'Proposal should be submitted');
+  assert.deepEqual(proposalCalls[0].body, {
+    doctype: 'Employee',
+    name: 'HR-EMP-0042',
+    patch: { probation_days: 180 },
+  });
+  assert.match(chatLogs.textContent, /Proposal PROP-2026-99 created \(PENDING\)/);
+
+  // 6. Confirm button once: true behavior - clicking again does not submit again
+  await confirmBtn.click();
+  await new Promise((r) => setTimeout(r, 20));
+  const proposalCallsAfter = fetchCalls.filter((c) => c.url.endsWith('/v1/writeback/proposals'));
+  assert.equal(proposalCallsAfter.length, 1, 'Proposal must not be re-submitted on second click (once: true)');
+});
+
+test('streaming chat: stream ends naturally without intent event and renders citations and actions', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      const resultData = JSON.stringify({
+        statutory_citations: ['Article 12'],
+        suggested_actions: [{
+          label: 'Fix Record',
+          entity_type: 'EMPLOYEE',
+          entity_id: 'EMP-1',
+          patch: { status: 'Active' },
+        }],
+      });
+      return createSseStreamResponse([
+        'data: {"event": "token", "data": "Stream ending naturally."}\n\n',
+        'data: {"event": "done", "data": {"finish_reason": "stop"}}\n\n',
+        `data: {"event": "result", "data": ${resultData}}\n\n`,
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Test end without intent';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  const msgs = chatLogs.querySelectorAll('.msg.assistant');
+  const msgDiv = msgs[msgs.length - 1];
+  assert.ok(msgDiv.querySelector('.citations'));
+  assert.match(msgDiv.querySelector('.citations').textContent, /Article 12/);
+  assert.ok(msgDiv.querySelector('.actions'));
+  assert.match(msgDiv.querySelector('.actions').textContent, /Fix Record/);
+});
+
+test('streaming chat: result event with empty or missing citations and actions does not render empty containers',
+  async () => {
+    const copilot = createCopilot({}, async () => 'token-ok');
+    global.fetch = async (url) => {
+      if (url.endsWith('/v1/chat/stream')) {
+        return createSseStreamResponse([
+          'data: {"event": "token", "data": "Clean answer without citations or actions."}\n\n',
+          'data: {"event": "done", "data": {}}\n\n',
+          'data: {"event": "result", "data": {"statutory_citations": [], "suggested_actions": []}}\n\n',
+          'data: {"event": "intent", "data": "hrms_policy"}\n\n',
+        ]);
+      }
+    };
+
+    const input = copilot.shadowRoot.querySelector('#chat-input');
+    input.value = 'Clean answer';
+    await copilot.shadowRoot.querySelector('#send-btn').click();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+    const msgs = chatLogs.querySelectorAll('.msg.assistant');
+    const msgDiv = msgs[msgs.length - 1];
+    assert.equal(msgDiv.querySelector('.citations'), null);
+    assert.equal(msgDiv.querySelector('.actions'), null);
+  }
+);
+
+test('streaming chat: citation HTML in result is safely escaped via textContent', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      const xssCitation = '<script>alert(1)</script><img src=x onerror=alert(1)>';
+      return createSseStreamResponse([
+        'data: {"event": "token", "data": "Citation XSS test."}\n\n',
+        'data: {"event": "done", "data": {}}\n\n',
+        `data: {"event": "result", "data": {"statutory_citations": ["${xssCitation}"], "suggested_actions": []}}\n\n`,
+        'data: {"event": "intent", "data": "hrms_policy"}\n\n',
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'XSS citation test';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  const citations = chatLogs.querySelector('.citations');
+  assert.ok(citations);
+  assert.doesNotMatch(citations.innerHTML, /<img\b|<script\b/i);
+  assert.match(citations.textContent, /<script>alert\(1\)<\/script>/);
+});
+
+test('streaming chat: result event with non-object data is handled gracefully', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      return createSseStreamResponse([
+        'data: {"event": "token", "data": "Graceful handling test."}\n\n',
+        'data: {"event": "done", "data": {}}\n\n',
+        'data: {"event": "result", "data": null}\n\n',
+        'data: {"event": "intent", "data": "hrms_policy"}\n\n',
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Graceful handling';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /Graceful handling test\./);
+});
+
+test('streaming chat: fallback path remains unchanged with citations and actions and proposal flow', async () => {
+  const copilot = createCopilot({}, async () => 'token-proposer');
+  const fetchCalls = [];
+
+  global.fetch = async (url, opts) => {
+    fetchCalls.push({ url, opts, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    if (url.endsWith('/v1/chat/stream')) {
+      return { ok: false, status: 404, json: async () => ({}) };
+    }
+    if (url.endsWith('/v1/chat')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reply_text: 'Fallback reply text.',
+          statutory_citations: ['Fallback Law Section 4'],
+          suggested_actions: [
+            {
+              label: 'Fallback Action',
+              entity_type: 'EMPLOYEE',
+              entity_id: 'HR-EMP-0042',
+              patch: { probation_days: 90 },
+            },
+          ],
+        }),
+      };
+    }
+    if (url.endsWith('/v1/writeback/proposals')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'PROP-2026-100', status: 'PENDING' }),
+      };
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Fallback flow test';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /Fallback reply text\./);
+  assert.match(chatLogs.textContent, /Fallback Law Section 4/);
+
+  const actionBtn = copilot.shadowRoot.querySelector('.action-btn');
+  assert.ok(actionBtn);
+  assert.equal(actionBtn.textContent, 'Fallback Action');
+
+  await actionBtn.click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.match(chatLogs.textContent, /Propose this change to Employee HR-EMP-0042\?/);
+  const confirmBtn = copilot.shadowRoot.querySelectorAll('.action-btn');
+  await confirmBtn[confirmBtn.length - 1].click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const proposalCalls = fetchCalls.filter((c) => c.url.endsWith('/v1/writeback/proposals'));
+  assert.equal(proposalCalls.length, 1);
+  assert.deepEqual(proposalCalls[0].body, {
+    doctype: 'Employee',
+    name: 'HR-EMP-0042',
+    patch: { probation_days: 90 },
+  });
+  assert.match(chatLogs.textContent, /Proposal PROP-2026-100 created \(PENDING\)/);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

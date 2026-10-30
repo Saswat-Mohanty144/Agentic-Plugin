@@ -153,7 +153,7 @@
     return JURISDICTIONS.indexOf(value) >= 0 ? value : 'IN';
   }
 
-  const KNOWN_SSE_EVENTS = new Set(['token', 'tool_call', 'partial', 'error', 'done', 'intent']);
+  const KNOWN_SSE_EVENTS = new Set(['token', 'tool_call', 'partial', 'error', 'done', 'result', 'intent']);
 
   function parseSseFrames(buffer) {
     if (typeof buffer !== 'string' || !buffer) return { events: [], remaining: '' };
@@ -183,7 +183,7 @@
 
   const core = { escapeHtml, formatMarkdown, isTrustedMessage, sanitizeContext, validateApiUrl, buildHeaders,
     buildProposalBody, describePatch, confirmationText, describeHttpError, normalizeJurisdiction,
-    parseSseFrames, parseSseEvents: parseSseFrames };
+    parseSseFrames };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = core;
@@ -402,7 +402,19 @@
               m.appendChild(errBox);
               chatLogs.scrollTop = chatLogs.scrollHeight;
               return true;
-            } else if (item.event === 'done' || item.event === 'intent') {
+            } else if (item.event === 'result') {
+              const m = ensureMsgDiv();
+              const resData = item.data && typeof item.data === 'object' ? item.data : {};
+              if (Array.isArray(resData.statutory_citations) && resData.statutory_citations.length > 0) {
+                this.renderCitations(m, resData.statutory_citations);
+              }
+              if (Array.isArray(resData.suggested_actions) && resData.suggested_actions.length > 0) {
+                this.renderActions(m, resData.suggested_actions);
+              }
+              chatLogs.scrollTop = chatLogs.scrollHeight;
+            } else if (item.event === 'done') {
+              // do NOT stop reading at done; continue until intent or end of stream
+            } else if (item.event === 'intent') {
               return true;
             }
           }
@@ -453,6 +465,36 @@
       return this.appendMessage(sender, text, actions, [], [], { plain: true });
     }
 
+    renderCitations(container, citations) {
+      if (!citations || !citations.length) return;
+      const box = document.createElement('div');
+      box.className = 'citations';
+      box.innerHTML = '<small>📚 Statutory Citations:</small><ul></ul>';
+      const list = box.querySelector('ul');
+      citations.forEach((c) => {
+        const li = document.createElement('li');
+        const small = document.createElement('small');
+        small.textContent = String(c);
+        li.appendChild(small);
+        list.appendChild(li);
+      });
+      container.appendChild(box);
+    }
+
+    renderActions(container, actions) {
+      if (!actions || !actions.length) return;
+      const bar = document.createElement('div');
+      bar.className = 'actions';
+      actions.forEach((action) => {
+        const btn = document.createElement('button');
+        btn.className = 'action-btn';
+        btn.textContent = action.label || `⚡ Action (${action.violation_id || action.name || 'Execute'})`;
+        btn.addEventListener('click', () => this.handleAction(action));  // closure, not data in markup
+        bar.appendChild(btn);
+      });
+      container.appendChild(bar);
+    }
+
     appendMessage(sender, text, actions = [], citations = [], thoughts = [], options = {}) {
       const chatLogs = this.shadowRoot.querySelector('#chat-logs');
       const msgDiv = document.createElement('div');
@@ -475,31 +517,11 @@
       msgDiv.appendChild(bubble);
 
       if (citations && citations.length > 0) {
-        const box = document.createElement('div');
-        box.className = 'citations';
-        box.innerHTML = '<small>📚 Statutory Citations:</small><ul></ul>';
-        const list = box.querySelector('ul');
-        citations.forEach((c) => {
-          const li = document.createElement('li');
-          const small = document.createElement('small');
-          small.textContent = String(c);
-          li.appendChild(small);
-          list.appendChild(li);
-        });
-        msgDiv.appendChild(box);
+        this.renderCitations(msgDiv, citations);
       }
 
       if (actions && actions.length > 0) {
-        const bar = document.createElement('div');
-        bar.className = 'actions';
-        actions.forEach((action) => {
-          const btn = document.createElement('button');
-          btn.className = 'action-btn';
-          btn.textContent = action.label || `⚡ Action (${action.violation_id || action.name || 'Execute'})`;
-          btn.addEventListener('click', () => this.handleAction(action));  // closure, not data in markup
-          bar.appendChild(btn);
-        });
-        msgDiv.appendChild(bar);
+        this.renderActions(msgDiv, actions);
       }
 
       chatLogs.appendChild(msgDiv);
