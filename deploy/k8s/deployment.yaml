@@ -6,7 +6,10 @@ metadata:
     app.kubernetes.io/name: hrms-agentic-plugin
     app.kubernetes.io/component: intelligence-sidecar
 spec:
-  replicas: 2
+  # SQLite is single-writer; scaling out needs a shared store (hosting topology is an owner decision).
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: hrms-agentic-plugin
@@ -15,32 +18,43 @@ spec:
       labels:
         app: hrms-agentic-plugin
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
       containers:
         - name: plugin-api
           image: ghcr.io/your-org/hrms-agentic-plugin:1.0.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8000
               name: http
+          envFrom:
+            - secretRef:
+                name: hrms-plugin-secrets
+                optional: true
           env:
-            - name: HOST_HRMS_BASE_URL
-              value: "http://iceipts-hrms-service:5000"
-            - name: HRMS_VENDOR_PROFILE
-              value: "iceipts"
             - name: PORT
               value: "8000"
             - name: HRMS_TENANT_REGISTRY
               value: /etc/hrms/tenants.yaml
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: hrms-plugin-secrets
-                  key: jwt-secret
-                  optional: true
+            - name: HRMS_DATA_DIR
+              value: /var/lib/hrms
           volumeMounts:
             - name: tenant-registry
               mountPath: /etc/hrms
               readOnly: true
+            - name: hrms-data
+              mountPath: /var/lib/hrms
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: "250m"
@@ -68,3 +82,8 @@ spec:
             items:
               - key: tenants.yaml
                 path: tenants.yaml
+        - name: hrms-data
+          persistentVolumeClaim:
+            claimName: hrms-data
+        - name: tmp
+          emptyDir: {}
