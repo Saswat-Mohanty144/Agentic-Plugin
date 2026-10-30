@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
+from hrms_plugin.governance import disclosure
 from hrms_plugin.governance.rate_limit import enforce_rate_limit
 from hrms_plugin.security.http_auth import ApiError, require
 from hrms_plugin.security.rbac import AuthContext, Permission
@@ -144,6 +145,8 @@ async def mcp_post(
                 payload_sha256=payload_sha256,
                 redacted_kinds={},
                 status="SENT",
+                channel="mcp",
+                subject_refs=[],
             )
 
         server = HrmsMcpServer(auth=auth, jurisdiction=jurisdiction)
@@ -152,7 +155,11 @@ async def mcp_post(
             safe_output = json.loads(json.dumps(output, default=str))
             is_error = bool(output.get("success") is False or "error" in output)
             if egress_log is not None and key is not None:
-                egress_log.update(key, status="FAILED" if is_error else "COMPLETED")
+                if is_error:
+                    egress_log.update(key, status="FAILED")
+                else:
+                    subject_refs = disclosure.extract_disclosed_refs(auth.tenant_id, safe_output)
+                    egress_log.update(key, status="COMPLETED", subject_refs=subject_refs)
             return _rpc_ok(req_id, {
                 "content": [{"type": "text", "text": json.dumps(safe_output)}],
                 "structuredContent": safe_output,

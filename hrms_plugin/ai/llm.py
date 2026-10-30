@@ -38,6 +38,7 @@ try:
 except ImportError:
     pass
 
+from hrms_plugin.governance import disclosure
 from hrms_plugin.security.pii import PiiEgressBlocked, PiiSession, StreamRestorer
 
 logger = logging.getLogger(__name__)
@@ -893,7 +894,9 @@ class LLMGateway:
 
     _TOKEN_KIND = re.compile(r"\[PII_([A-Z_]+?)_\d+_[0-9a-f]{8}\]")
 
-    def _record_egress(self, tenant_id: str, protected: List[ChatMessage]) -> Optional[str]:
+    def _record_egress(
+        self, tenant_id: str, protected: List[ChatMessage], pii: Optional[PiiSession] = None
+    ) -> Optional[str]:
         """Log what is about to leave: hash of the redacted payload and the kinds redacted IN THIS CALL."""
         if self.egress_log is None:
             return None
@@ -906,12 +909,26 @@ class LLMGateway:
         kinds: Dict[str, int] = {}
         for kind in distinct_tokens.values():
             kinds[kind] = kinds.get(kind, 0) + 1
+
+        subject_refs = []
+        if pii is not None and disclosure.is_configured():
+            seen_refs = set()
+            for token, kind in distinct_tokens.items():
+                orig_val = pii.original_value(token)
+                if orig_val is not None:
+                    ref = disclosure.compute_ref(tenant_id, kind, orig_val)
+                    if ref and ref not in seen_refs:
+                        seen_refs.add(ref)
+                        subject_refs.append({"ref": ref, "kind": kind, "outcome": "WITHHELD"})
+
         return self.egress_log.record(
             tenant_id=tenant_id,
             provider=self.config.provider.value,
             model=self.config.model,
             payload_sha256="sha256:" + hashlib.sha256(payload.encode()).hexdigest(),
             redacted_kinds=kinds,
+            channel="llm",
+            subject_refs=subject_refs,
         )
 
     def _finish_egress(self, key: Optional[str], **fields: Any) -> None:
@@ -1068,7 +1085,7 @@ class LLMGateway:
         if text_only:
             offered = tools if (tools and self.client.supports_tool_choice_none) else None
             kwargs = {**kwargs, "tool_choice": "none"} if offered else kwargs
-        egress_key = self._record_egress(tenant_id, protected)
+        egress_key = self._record_egress(tenant_id, protected, pii=pii)
         try:
             response = await self.client.chat(
                 messages=protected,
@@ -1108,7 +1125,7 @@ class LLMGateway:
             return
         pii = pii or PiiSession(tokenize_compensation=policy.tokenize_compensation)
         protected = self._protect(messages, pii)
-        egress_key = self._record_egress(tenant_id, protected)
+        egress_key = self._record_egress(tenant_id, protected, pii=pii)
         restorer = StreamRestorer(pii)
         status = "ABORTED"
         kwargs = self._task_options(TaskClass.AGENT_REACT)

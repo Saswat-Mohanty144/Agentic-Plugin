@@ -35,6 +35,7 @@ from hrms_plugin.agents.supervisor import AgentResponse, SupervisorAgent
 from hrms_plugin.agents.tools import STATUTORY_JURISDICTIONS
 from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpstreamError
 from hrms_plugin.ai.llm import LLMNotConfigured
+from hrms_plugin.governance import disclosure
 from hrms_plugin.governance.classification_rules import apply_value_check
 from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
@@ -269,6 +270,21 @@ class RemediationExecuteRequest(BaseModel):
     patch_payload: Dict[str, Any]
 
 
+class DisclosureLookupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(min_length=1)
+    value: str = Field(min_length=1, max_length=256)
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, v: str) -> str:
+        kind_upper = v.upper()
+        if kind_upper not in disclosure.VALID_KINDS:
+            raise ValueError(f"Invalid kind: {v}")
+        return kind_upper
+
+
 router = APIRouter()
 
 
@@ -396,13 +412,21 @@ def _require_voice_opt_in(request: Request, tenant_id: str) -> None:
 
 
 @contextlib.asynccontextmanager
-async def _voice_egress(tenant_id: str, model: str, payload: bytes):
+async def _voice_egress(tenant_id: str, model: str, payload: bytes,
+                        subject_refs: Optional[List[Dict[str, Any]]] = None):
     """V2: every real Sarvam call is logged before it leaves; nothing is logged when nothing is sent."""
     if not voice_agent.api_key:
         yield
         return
-    key = egress_log.record(tenant_id=tenant_id, provider=VOICE_PROVIDER, model=model,
-                            payload_sha256="sha256:" + hashlib.sha256(payload).hexdigest(), redacted_kinds={})
+    key = egress_log.record(
+        tenant_id=tenant_id,
+        provider=VOICE_PROVIDER,
+        model=model,
+        payload_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
+        redacted_kinds={},
+        channel="voice",
+        subject_refs=list(subject_refs or []),
+    )
     try:
         yield
     except BaseException:
@@ -413,7 +437,7 @@ async def _voice_egress(tenant_id: str, model: str, payload: bytes):
 
 async def _transcribe(request: Request, auth: AuthContext, audio: bytes, language_code: Optional[str]) -> Dict:
     """V4: audio cannot be redacted, so the tenant's opt-in is the gate; the transcript is redacted by the LLM layer."""
-    async with _voice_egress(auth.tenant_id, STT_MODEL, audio):
+    async with _voice_egress(auth.tenant_id, STT_MODEL, audio, subject_refs=[]):
         return await voice_agent.transcribe_audio(audio, language_code=language_code, model=STT_MODEL)
 
 
@@ -422,7 +446,8 @@ async def _synthesize(auth: AuthContext, text: str, **kw: Any) -> Dict:
     kinds = PiiSession().find_pii(text)
     if kinds:
         raise PiiEgressBlocked(kinds)
-    async with _voice_egress(auth.tenant_id, TTS_MODEL, text.encode()):
+    tts_refs = disclosure.extract_disclosed_refs(auth.tenant_id, text) if disclosure.is_configured() else []
+    async with _voice_egress(auth.tenant_id, TTS_MODEL, text.encode(), subject_refs=tts_refs):
         return await voice_agent.synthesize_speech(text=text, model=TTS_MODEL, **kw)
 
 
@@ -1036,6 +1061,32 @@ def delete_llm_egress(
 ):
     """Deletion on request (QF): every egress row of the caller's tenant. Super admin, freshly authenticated."""
     return {"tenant_id": auth.tenant_id, "deleted": egress_log.delete_tenant(auth.tenant_id)}
+
+
+@router.post("/v1/governance/disclosures/lookup")
+def lookup_disclosure(
+    req: DisclosureLookupRequest,
+    request: Request,
+    auth: AuthContext = Depends(
+        require(Permission.MANAGE_GOVERNANCE, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
+):
+    """Lookup disclosures of a specific PII item for this tenant (K2.4)."""
+    enforce_rate_limit(request, auth)
+    if not disclosure.is_configured():
+        raise ApiError(503, {"error": "DISCLOSURE_INDEX_NOT_CONFIGURED"})
+
+    current_log = getattr(request.app.state, "egress_log", None) or egress_log
+    ref = disclosure.compute_ref(auth.tenant_id, req.kind, req.value)
+    disclosures = current_log.find_subject(auth.tenant_id, ref, limit=200) if ref else []
+    found = bool(disclosures)
+    current_log.record_lookup(auth.tenant_id, auth.user_id, req.kind, found)
+
+    return {
+        "kind": req.kind,
+        "found": found,
+        "disclosures": disclosures,
+    }
 
 
 @router.post("/v1/remediate/execute")
