@@ -1,5 +1,6 @@
 # Frappe HRMS. Source: frappe/hrms@develop hrms/hr/doctype/job_requisition/job_requisition.json (checked 2026-10-29);
 # REST: /api/resource/:doctype, explicit `fields`, offset paging, rows under `data`.
+protocol: rest
 vendor: frappe
 auth: frappe_token
 entities:
