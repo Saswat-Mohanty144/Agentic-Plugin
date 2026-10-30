@@ -310,6 +310,38 @@ class AgenticOrchestrator:
             tool_calls=[s.tool_call for s in state.steps if s.tool_call],
         )
 
+    def _prepare_session(
+        self,
+        user_message: str,
+        jurisdiction: str,
+        context: Optional[Dict[str, Any]],
+        history: Optional[List[Dict[str, str]]],
+        auth: AuthContext,
+    ) -> Tuple[str, _RunState, List[ChatMessage], Optional[List[ToolDefinition]], Dict[str, Any]]:
+        tenant_id = auth.tenant_id
+        ctx = context or {}
+        policy = self.llm_gateway.preflight(tenant_id)
+        state = _RunState(
+            pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
+            stated=_user_numbers(user_message, history, ctx),
+        )
+        state.pii.learn(ctx)
+        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
+        for h in history or []:
+            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
+        messages.append(ChatMessage(role="user", content=user_message))
+        tools = self._offered_tools(auth, user_message, history)
+        trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
+        return tenant_id, state, messages, tools, trusted
+
+    def _tool_message(self, tc: ToolCall, output: Any) -> ChatMessage:
+        return ChatMessage(
+            role="tool",
+            content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
+            tool_call_id=tc.id,
+            name=tc.name,
+        )
+
     async def run(
         self,
         user_message: str,
@@ -320,19 +352,9 @@ class AgenticOrchestrator:
         auth: AuthContext,
     ) -> AgentResponse:
         """Execute autonomous ReAct agent loop until final answer is formulated."""
-        tenant_id = auth.tenant_id
-        ctx = context or {}
-        policy = self.llm_gateway.preflight(tenant_id)  # fail closed before any work (piece G2)
-        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
-                          stated=_user_numbers(user_message, history, ctx))
-        state.pii.learn(ctx)
-        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
-        for h in history or []:
-            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
-        messages.append(ChatMessage(role="user", content=user_message))
-
-        tools = self._offered_tools(auth, user_message, history)
-        trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
+        tenant_id, state, messages, tools, trusted = self._prepare_session(
+            user_message, jurisdiction, context, history, auth
+        )
 
         for iteration in range(1, self.max_iterations + 1):
             llm_resp = await self.llm_gateway.chat(
@@ -353,9 +375,7 @@ class AgenticOrchestrator:
             messages.append(self._assistant_turn(llm_resp))
             for tc in llm_resp.tool_calls:
                 output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
-                messages.append(ChatMessage(
-                    role="tool", content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
-                    tool_call_id=tc.id, name=tc.name))
+                messages.append(self._tool_message(tc, output))
 
         # Step limit reached (#5): one more call with tool use forbidden, answering from the results gathered so far.
         final_resp = await self.llm_gateway.chat(
@@ -381,39 +401,38 @@ class AgenticOrchestrator:
         auth: AuthContext,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream real-time SSE events for thoughts, tool dispatches, final tokens and the resolved intent."""
-        tenant_id = auth.tenant_id
-        ctx = context or {}
-        tools = self._offered_tools(auth, user_message, history)
-        trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
-        policy = self.llm_gateway.preflight(tenant_id)
-        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
-                          stated=_user_numbers(user_message, history, ctx))
-        state.pii.learn(ctx)
+        tenant_id, state, messages, tools, trusted = self._prepare_session(
+            user_message, jurisdiction, context, history, auth
+        )
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
-        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
-        for h in history or []:
-            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
-        messages.append(ChatMessage(role="user", content=user_message))
-        llm_resp = await self.llm_gateway.chat(
-            messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
-        )
-        if llm_resp.thought_process:
-            yield {"event": "thinking", "data": llm_resp.thought_process}
+        for iteration in range(1, self.max_iterations + 1):
+            llm_resp = await self.llm_gateway.chat(
+                messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
+            )
+            thought = llm_resp.thought_process or (
+                f"Step {iteration}: Reasoning through available information." if llm_resp.tool_calls else None
+            )
+            if llm_resp.thought_process:
+                yield {"event": "thinking", "data": llm_resp.thought_process}
 
-        if not llm_resp.tool_calls:
-            # Stream the answer we already have instead of calling the LLM again (piece E4).
-            for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
-                yield {"event": "token", "data": piece}
-            yield {"event": "done", "data": {"finish_reason": llm_resp.finish_reason}}
-            yield {"event": "intent", "data": self._intent(state).value}
-            return
+            if not llm_resp.tool_calls:
+                for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
+                    yield {"event": "token", "data": piece}
+                yield {
+                    "event": "done",
+                    "data": {
+                        "finish_reason": llm_resp.finish_reason,
+                        "truncated": llm_resp.finish_reason in LENGTH_STOP_REASONS,
+                    },
+                }
+                yield {"event": "intent", "data": self._intent(state).value}
+                return
 
-        messages.append(self._assistant_turn(llm_resp))
-        if llm_resp.tool_calls:
+            messages.append(self._assistant_turn(llm_resp))
             for tc in llm_resp.tool_calls:
                 yield {"event": "tool_call", "data": {"name": tc.name, "arguments": tc.arguments}}
-                output = await self._execute_tool_call(tc, trusted, state, llm_resp.thought_process, 1, auth)
+                output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
                 step_call = state.steps[-1].tool_call or {}
                 yield {
                     "event": "tool_observation",
@@ -424,12 +443,15 @@ class AgenticOrchestrator:
                         "output": output,
                     },
                 }
-                messages.append(ChatMessage(
-                    role="tool", content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
-                    tool_call_id=tc.id, name=tc.name))
-            yield {"event": "thinking", "data": "Synthesizing verified compliant response..."}
+                messages.append(self._tool_message(tc, output))
 
-        # Same tools as the first turn so the cached prefix matches; the gateway forbids their use here (agy H-F1).
+        # After max_iterations rounds still requesting tools:
+        yield {"event": "partial", "data": True}
         async for chunk in self.llm_gateway.chat_stream(messages, tools=tools, tenant_id=tenant_id, pii=state.pii):
-            yield chunk
+            if chunk.get("event") == "done":
+                data = dict(chunk.get("data") or {})
+                data["truncated"] = data.get("finish_reason") in LENGTH_STOP_REASONS
+                yield {**chunk, "data": data}
+            else:
+                yield chunk
         yield {"event": "intent", "data": self._intent(state).value}

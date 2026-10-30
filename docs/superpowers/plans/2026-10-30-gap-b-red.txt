@@ -1,0 +1,348 @@
+FFFEFFEFFFFF.                                                            [100%]
+==================================== ERRORS ====================================
+___________ ERROR at teardown of test_stream_2_tool_rounds_positive ____________
+
+    @pytest.fixture
+    def scripted():
+        """Factory for scripted gateways; fails the test on teardown if any scripted response is unused."""
+        clients = []
+    
+        def _make(*responses):
+            gateway, client = scripted_gateway(responses)
+            clients.append(client)
+            return gateway, client
+    
+        yield _make
+>       assert_consumed(clients)
+
+tests/conftest.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+clients = [<tests.support.scripted_llm.ScriptedLLMClient object at 0x10f57e110>]
+
+    def assert_consumed(clients: Iterable[ScriptedLLMClient]) -> None:
+        leftovers = sum(c.remaining for c in clients)
+        if leftovers:
+>           raise AssertionError(f"{leftovers} scripted response(s) left unused")
+E           AssertionError: 1 scripted response(s) left unused
+
+tests/support/scripted_llm.py:81: AssertionError
+___ ERROR at teardown of test_stream_boundary_max_iterations_plus_1_partial ____
+
+    @pytest.fixture
+    def scripted():
+        """Factory for scripted gateways; fails the test on teardown if any scripted response is unused."""
+        clients = []
+    
+        def _make(*responses):
+            gateway, client = scripted_gateway(responses)
+            clients.append(client)
+            return gateway, client
+    
+        yield _make
+>       assert_consumed(clients)
+
+tests/conftest.py:30: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+clients = [<tests.support.scripted_llm.ScriptedLLMClient object at 0x10f89de10>]
+
+    def assert_consumed(clients: Iterable[ScriptedLLMClient]) -> None:
+        leftovers = sum(c.remaining for c in clients)
+        if leftovers:
+>           raise AssertionError(f"{leftovers} scripted response(s) left unused")
+E           AssertionError: 1 scripted response(s) left unused
+
+tests/support/scripted_llm.py:81: AssertionError
+=================================== FAILURES ===================================
+______________________ test_stream_0_tool_rounds_positive ______________________
+
+scripted = <function scripted.<locals>._make at 0x10f5cce00>
+
+    @pytest.mark.asyncio
+    async def test_stream_0_tool_rounds_positive(scripted):
+        """Positive: 0 tool rounds formulation streams tokens directly without extra LLM call."""
+        gateway, client = scripted(final("Direct answer without tools."))
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("What is the probation period?", jurisdiction="AE", auth=ADMIN))
+    
+        assert len(client.calls) == 1
+        event_names = [e["event"] for e in events]
+        assert "tool_call" not in event_names
+        assert "tool_observation" not in event_names
+        assert "partial" not in event_names
+    
+        tokens = [e["data"] for e in events if e["event"] == "token"]
+        assert "".join(tokens) == "Direct answer without tools."
+    
+        done_ev = next(e for e in events if e["event"] == "done")
+>       assert done_ev["data"] == {"finish_reason": "stop", "truncated": False}
+E       AssertionError: assert {'finish_reason': 'stop'} == {'finish_reas...cated': False}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {'truncated': False}
+E         Use -v to get more diff
+
+tests/unit/test_gap_b.py:53: AssertionError
+______________________ test_stream_1_tool_round_positive _______________________
+
+scripted = <function scripted.<locals>._make at 0x10f75a3e0>
+
+    @pytest.mark.asyncio
+    async def test_stream_1_tool_round_positive(scripted):
+        """Positive: 1 tool round emits tool_call/observation, calls LLM, and streams tokens."""
+        gateway, client = scripted(
+            tool_call("search_labor_regulations", query="probation period"),
+            final("Probation period is up to 6 months."),
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Check probation law", jurisdiction="AE", auth=ADMIN))
+    
+        assert len(client.calls) == 2
+        event_names = [e["event"] for e in events]
+        assert event_names.count("tool_call") == 1
+        assert event_names.count("tool_observation") == 1
+        assert "partial" not in event_names
+    
+        tc_ev = next(e for e in events if e["event"] == "tool_call")
+        assert tc_ev["data"]["name"] == "search_labor_regulations"
+    
+        tokens = [e["data"] for e in events if e["event"] == "token"]
+>       assert "".join(tokens) == "Probation period is up to 6 months."
+E       AssertionError: assert 'Probation pe...to 6 months. ' == 'Probation pe... to 6 months.'
+E         
+E         - Probation period is up to 6 months.
+E         + Probation period is up to 6 months. 
+E         ?                                    +
+
+tests/unit/test_gap_b.py:78: AssertionError
+______________________ test_stream_2_tool_rounds_positive ______________________
+
+scripted = <function scripted.<locals>._make at 0x10f5cd940>
+
+    @pytest.mark.asyncio
+    async def test_stream_2_tool_rounds_positive(scripted):
+        """Positive: 2 tool rounds sequentially execute before streaming final answer."""
+        gateway, client = scripted(
+            tool_call("search_labor_regulations", query="gratuity rules"),
+            tool_call("calculate_eosb_gratuity", basic_wage=5000, tenure_years=3),
+            final("Gratuity calculated under UAE labor law."),
+        )
+        orch = _orch(gateway)
+        events = await _collect(
+            orch.run_stream(
+                "What is gratuity for basic 5000 and 3 years?",
+                jurisdiction="AE",
+                context={"basic_wage": 5000, "tenure_years": 3},
+                auth=ADMIN,
+            )
+        )
+    
+>       assert len(client.calls) == 3
+E       AssertionError: assert 2 == 3
+E        +  where 2 = len([{'messages': [ChatMessage(role='system', content='You are the Enterprise Agentic HRMS Cognitive Supervisor.\nYou poss...}', tool_calls=None, tool_call_id='call_b81e6091', name='search_labor_regulations', raw_content=None)], 'tools': None}])
+E        +    where [{'messages': [ChatMessage(role='system', content='You are the Enterprise Agentic HRMS Cognitive Supervisor.\nYou poss...}', tool_calls=None, tool_call_id='call_b81e6091', name='search_labor_regulations', raw_content=None)], 'tools': None}] = <tests.support.scripted_llm.ScriptedLLMClient object at 0x10f57e110>.calls
+
+tests/unit/test_gap_b.py:104: AssertionError
+_________________ test_stream_boundary_exactly_max_iterations __________________
+
+scripted = <function scripted.<locals>._make at 0x10f75afc0>
+
+    @pytest.mark.asyncio
+    async def test_stream_boundary_exactly_max_iterations(scripted):
+        """Boundary: Finishing on exactly max_iterations without tool request is not partial."""
+        gateway, client = scripted(
+            tool_call("search_labor_regulations", query="step 1"),
+            final("Resolved on second iteration within max_iterations=2."),
+        )
+        orch = _orch(gateway, max_iterations=2)
+        events = await _collect(orch.run_stream("Search and answer", jurisdiction="AE", auth=ADMIN))
+    
+        assert len(client.calls) == 2
+        event_names = [e["event"] for e in events]
+        assert event_names.count("tool_call") == 1
+        assert "partial" not in event_names
+    
+        tokens = [e["data"] for e in events if e["event"] == "token"]
+>       assert "".join(tokens) == "Resolved on second iteration within max_iterations=2."
+E       AssertionError: assert 'Resolved on ...terations=2. ' == 'Resolved on ...iterations=2.'
+E         
+E         Skipping 42 identical leading characters in diff, use -v to show
+E         - erations=2.
+E         + erations=2. 
+E         ?            +
+
+tests/unit/test_gap_b.py:136: AssertionError
+______________ test_stream_boundary_max_iterations_plus_1_partial ______________
+
+scripted = <function scripted.<locals>._make at 0x10f75b060>
+
+    @pytest.mark.asyncio
+    async def test_stream_boundary_max_iterations_plus_1_partial(scripted):
+        """Boundary: Hitting max_iterations while still requesting tools emits partial and forces text-only stream."""
+        gateway, client = scripted(
+            tool_call("search_labor_regulations", query="step 1"),
+            tool_call("search_labor_regulations", query="step 2"),
+            final("Step limit reached; answering from gathered evidence."),
+        )
+        orch = _orch(gateway, max_iterations=2)
+        events = await _collect(orch.run_stream("Exhaustive multi-step search", jurisdiction="AE", auth=ADMIN))
+    
+>       assert len(client.calls) == 3
+E       AssertionError: assert 2 == 3
+E        +  where 2 = len([{'messages': [ChatMessage(role='system', content='You are the Enterprise Agentic HRMS Cognitive Supervisor.\nYou poss...}', tool_calls=None, tool_call_id='call_04868d4f', name='search_labor_regulations', raw_content=None)], 'tools': None}])
+E        +    where [{'messages': [ChatMessage(role='system', content='You are the Enterprise Agentic HRMS Cognitive Supervisor.\nYou poss...}', tool_calls=None, tool_call_id='call_04868d4f', name='search_labor_regulations', raw_content=None)], 'tools': None}] = <tests.support.scripted_llm.ScriptedLLMClient object at 0x10f89de10>.calls
+
+tests/unit/test_gap_b.py:153: AssertionError
+__________ test_stream_truncated_true_on_length_stop_reasons[length] ___________
+
+scripted = <function scripted.<locals>._make at 0x10f75b420>, reason = 'length'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reason", ["length", "max_tokens", "MAX_TOKENS"])
+    async def test_stream_truncated_true_on_length_stop_reasons(scripted, reason):
+        """Positive/Boundary: done event reports truncated=True when finish_reason in LENGTH_STOP_REASONS."""
+        gateway, _ = scripted(
+            LLMResponse(content="Cut off reply...", finish_reason=reason, model="scripted", provider="scripted")
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Long query", jurisdiction="AE", auth=ADMIN))
+    
+        done_ev = next(e for e in events if e["event"] == "done")
+>       assert done_ev["data"] == {"finish_reason": reason, "truncated": True}
+E       AssertionError: assert {'finish_reason': 'length'} == {'finish_reas...ncated': True}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {'truncated': True}
+E         Use -v to get more diff
+
+tests/unit/test_gap_b.py:185: AssertionError
+________ test_stream_truncated_true_on_length_stop_reasons[max_tokens] _________
+
+scripted = <function scripted.<locals>._make at 0x10f75be20>
+reason = 'max_tokens'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reason", ["length", "max_tokens", "MAX_TOKENS"])
+    async def test_stream_truncated_true_on_length_stop_reasons(scripted, reason):
+        """Positive/Boundary: done event reports truncated=True when finish_reason in LENGTH_STOP_REASONS."""
+        gateway, _ = scripted(
+            LLMResponse(content="Cut off reply...", finish_reason=reason, model="scripted", provider="scripted")
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Long query", jurisdiction="AE", auth=ADMIN))
+    
+        done_ev = next(e for e in events if e["event"] == "done")
+>       assert done_ev["data"] == {"finish_reason": reason, "truncated": True}
+E       AssertionError: assert {'finish_reas... 'max_tokens'} == {'finish_reas...ncated': True}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {'truncated': True}
+E         Use -v to get more diff
+
+tests/unit/test_gap_b.py:185: AssertionError
+________ test_stream_truncated_true_on_length_stop_reasons[MAX_TOKENS] _________
+
+scripted = <function scripted.<locals>._make at 0x10f75a480>
+reason = 'MAX_TOKENS'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reason", ["length", "max_tokens", "MAX_TOKENS"])
+    async def test_stream_truncated_true_on_length_stop_reasons(scripted, reason):
+        """Positive/Boundary: done event reports truncated=True when finish_reason in LENGTH_STOP_REASONS."""
+        gateway, _ = scripted(
+            LLMResponse(content="Cut off reply...", finish_reason=reason, model="scripted", provider="scripted")
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Long query", jurisdiction="AE", auth=ADMIN))
+    
+        done_ev = next(e for e in events if e["event"] == "done")
+>       assert done_ev["data"] == {"finish_reason": reason, "truncated": True}
+E       AssertionError: assert {'finish_reas... 'MAX_TOKENS'} == {'finish_reas...ncated': True}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {'truncated': True}
+E         Use -v to get more diff
+
+tests/unit/test_gap_b.py:185: AssertionError
+__________________ test_stream_truncated_false_on_normal_stop __________________
+
+scripted = <function scripted.<locals>._make at 0x10f75a200>
+
+    @pytest.mark.asyncio
+    async def test_stream_truncated_false_on_normal_stop(scripted):
+        """Positive: done event reports truncated=False on standard stop finish_reason."""
+        gateway, _ = scripted(final("Normal complete reply."))
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Normal query", jurisdiction="AE", auth=ADMIN))
+    
+        done_ev = next(e for e in events if e["event"] == "done")
+>       assert done_ev["data"] == {"finish_reason": "stop", "truncated": False}
+E       AssertionError: assert {'finish_reason': 'stop'} == {'finish_reas...cated': False}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 1 more item:
+E         {'truncated': False}
+E         Use -v to get more diff
+
+tests/unit/test_gap_b.py:196: AssertionError
+_______________ test_stream_grounding_refusal_inside_stream_loop _______________
+
+scripted = <function scripted.<locals>._make at 0x10f75aa20>
+
+    @pytest.mark.asyncio
+    async def test_stream_grounding_refusal_inside_stream_loop(scripted):
+        """Negative/Boundary: Ungrounded tool call is refused in-loop with UNGROUNDED_AMOUNT observation."""
+        bad_call = ToolCall(
+            id="c-ungrounded",
+            name="calculate_eosb_gratuity",
+            arguments={"basic_wage": 99999, "tenure_years": 10},
+        )
+        gateway, client = scripted(
+            LLMResponse(content="", tool_calls=[bad_call], finish_reason="tool_calls", model="s", provider="s"),
+            final("Please specify your basic wage and tenure."),
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Calculate my gratuity", jurisdiction="AE", auth=ADMIN))
+    
+        obs_ev = next(e for e in events if e["event"] == "tool_observation")
+        assert obs_ev["data"]["output"] == {
+            "success": False,
+            "error": "UNGROUNDED_AMOUNT",
+            "params": ["basic_wage", "tenure_years"],
+        }
+    
+        # Verify tool result error was fed back to second LLM turn
+        second_call_messages = client.calls[1]["messages"]
+        tool_msg = next(m for m in second_call_messages if m.role == "tool")
+        assert "UNGROUNDED_AMOUNT" in tool_msg.content
+    
+        tokens = [e["data"] for e in events if e["event"] == "token"]
+>       assert "".join(tokens) == "Please specify your basic wage and tenure."
+E       AssertionError: assert 'Please speci... and tenure. ' == 'Please speci...e and tenure.'
+E         
+E         - Please specify your basic wage and tenure.
+E         + Please specify your basic wage and tenure. 
+E         ?                                           +
+
+tests/unit/test_gap_b.py:227: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  hrms_plugin.agents.orchestrator:orchestrator.py:256 tool call refused: ungrounded numbers
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_b.py::test_stream_0_tool_rounds_positive - Asserti...
+FAILED tests/unit/test_gap_b.py::test_stream_1_tool_round_positive - Assertio...
+FAILED tests/unit/test_gap_b.py::test_stream_2_tool_rounds_positive - Asserti...
+FAILED tests/unit/test_gap_b.py::test_stream_boundary_exactly_max_iterations
+FAILED tests/unit/test_gap_b.py::test_stream_boundary_max_iterations_plus_1_partial
+FAILED tests/unit/test_gap_b.py::test_stream_truncated_true_on_length_stop_reasons[length]
+FAILED tests/unit/test_gap_b.py::test_stream_truncated_true_on_length_stop_reasons[max_tokens]
+FAILED tests/unit/test_gap_b.py::test_stream_truncated_true_on_length_stop_reasons[MAX_TOKENS]
+FAILED tests/unit/test_gap_b.py::test_stream_truncated_false_on_normal_stop
+FAILED tests/unit/test_gap_b.py::test_stream_grounding_refusal_inside_stream_loop
+ERROR tests/unit/test_gap_b.py::test_stream_2_tool_rounds_positive - Assertio...
+ERROR tests/unit/test_gap_b.py::test_stream_boundary_max_iterations_plus_1_partial
+10 failed, 1 passed, 2 errors in 0.40s
