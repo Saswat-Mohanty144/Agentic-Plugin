@@ -224,6 +224,23 @@ class MappingStore:
         row = max(active, key=lambda r: r["version"])
         return row["version"], entity_mapping_from_dict(row["mapping"])
 
+    def active_classification(
+        self,
+        tenant_id: str,
+        vendor: str,
+        entity_type: str | EntityType,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the ACTIVE version's field classification dict, or None if no active version."""
+        try:
+            active = [r for r in self._versions(tenant_id, vendor, entity_type).values() if r.get("status") == "ACTIVE"]
+        except Exception:
+            return None
+        if not active:
+            return None
+        row = max(active, key=lambda r: r["version"])
+        classification = row.get("classification")
+        return dict(classification) if isinstance(classification, dict) else None
+
     def list_versions(self, tenant_id: str) -> List[Dict]:
         prefix = f"{tenant_id}:"
         rows = [r for k, r in sorted(self.backend.get_all(self.VERSIONS_NAMESPACE).items()) if k.startswith(prefix)]

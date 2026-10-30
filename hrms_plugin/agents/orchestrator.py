@@ -12,14 +12,14 @@ import logging
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
 from hrms_plugin.agents.supervisor import AgentResponse, UserIntent, matching_intents
 from hrms_plugin.agents.tools import AgenticToolRegistry
 from hrms_plugin.ai.llm import LENGTH_STOP_REASONS, ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
-from hrms_plugin.security.pii import PiiSession
+from hrms_plugin.security.pii import PiiSession, identifier_kind, normalise
 from hrms_plugin.security.rbac import AuthContext
 
 logger = logging.getLogger(__name__)
@@ -188,6 +188,55 @@ def _collect_from_text(text: str, state: _RunState) -> None:
                 state.citations.append(line.strip(" -•*"))
 
 
+def normalise_entity(raw: Any) -> str:
+    """Normalise entity: upper-cased, spaces and hyphens -> '_'."""
+    if raw is None:
+        return ""
+    if hasattr(raw, "value"):
+        raw = raw.value
+    text = str(raw).strip()
+    return re.sub(r"[\s-]+", "_", text).strip("_").upper()
+
+
+def _learn_classified_pii(pii: PiiSession, value: Any, kind: str) -> None:
+    if isinstance(value, (str, int, float, Decimal)) and not isinstance(value, bool):
+        text = normalise(str(value)).strip()
+        if len(text) >= 2:
+            pii._known[text.casefold()] = kind
+    elif isinstance(value, dict):
+        for nested in value.values():
+            _learn_classified_pii(pii, nested, kind)
+    elif isinstance(value, (list, tuple)):
+        for nested in value:
+            _learn_classified_pii(pii, nested, kind)
+
+
+def _learn_context(
+    pii: PiiSession,
+    ctx: Dict[str, Any],
+    classification: Optional[Dict[str, Any]],
+    tokenize_compensation: bool,
+) -> None:
+    pii.learn(ctx)
+    if not classification:
+        return
+    for k, v in ctx.items():
+        if k in SERVER_OWNED_PARAMS:
+            continue
+        spec = classification.get(k)
+        if not isinstance(spec, dict):
+            continue
+        data_class = spec.get("data_class")
+        if data_class == "PII":
+            kind = identifier_kind(k) or "PII"
+            _learn_classified_pii(pii, v, kind)
+        elif data_class == "COMPENSATION" and tokenize_compensation:
+            pii._learn_money(v)
+
+
+ClassificationResolver = Callable[[str, str], Optional[Dict[str, Any]]]
+
+
 class AgenticOrchestrator:
     """Super Agentic ReAct Engine coordinating multi-step tool reasoning and statutory compliance."""
 
@@ -196,15 +245,49 @@ class AgenticOrchestrator:
         llm_gateway: Optional[LLMGateway] = None,
         tool_registry: Optional[AgenticToolRegistry] = None,
         max_iterations: int = 5,
+        classification_for: Optional[ClassificationResolver] = None,
+        *,
+        classification_resolver: Optional[ClassificationResolver] = None,
     ):
         self.llm_gateway = llm_gateway or LLMGateway()
         self.tool_registry = tool_registry or AgenticToolRegistry()
         self.max_iterations = max_iterations
+        self.classification_for = classification_for or classification_resolver
 
-    def _system_messages(self, jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> List[ChatMessage]:
+    def _resolve_classification(self, tenant_id: str, ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not self.classification_for:
+            return None
+        raw_entity = ctx.get("entity")
+        if not raw_entity:
+            return None
+        normalised = normalise_entity(raw_entity)
+        if not normalised:
+            return None
+        try:
+            return self.classification_for(tenant_id, normalised)
+        except Exception as exc:
+            logger.warning("classification resolution failed for entity %s: %s", normalised, exc)
+            return None
+
+    def _system_messages(
+        self,
+        jurisdiction: str,
+        tenant_id: str,
+        ctx: Dict[str, Any],
+        classification: Optional[Dict[str, Any]] = None,
+    ) -> List[ChatMessage]:
         """Frozen prompt first (cacheable prefix, piece H1), then this request's jurisdiction, tenant and context."""
+        if classification is None and self.classification_for is not None:
+            classification = self._resolve_classification(tenant_id, ctx)
         keys = sorted(k for k in ctx if k not in SERVER_OWNED_PARAMS)
-        navigation = [f"{k}={ctx[k]}" for k in LLM_VISIBLE_CONTEXT_KEYS if k in ctx]
+        visible_keys = list(LLM_VISIBLE_CONTEXT_KEYS)
+        if classification:
+            for k in sorted(ctx):
+                if k not in SERVER_OWNED_PARAMS and k not in visible_keys:
+                    spec = classification.get(k)
+                    if isinstance(spec, dict) and spec.get("llm_visible") is True:
+                        visible_keys.append(k)
+        navigation = [f"{k}={ctx[k]}" for k in visible_keys if k in ctx and k not in SERVER_OWNED_PARAMS]
         context_str = (
             "Context fields provided by the host application (values are passed to tools automatically): "
             + (", ".join(keys) if keys else "none")
@@ -325,8 +408,11 @@ class AgenticOrchestrator:
         policy = self.llm_gateway.preflight(tenant_id)  # fail closed before any work (piece G2)
         state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
                           stated=_user_numbers(user_message, history, ctx))
-        state.pii.learn(ctx)
-        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
+        classification = self._resolve_classification(tenant_id, ctx)
+        _learn_context(state.pii, ctx, classification, policy.tokenize_compensation)
+        messages: List[ChatMessage] = self._system_messages(
+            jurisdiction, tenant_id, ctx, classification=classification
+        )
         for h in history or []:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
         messages.append(ChatMessage(role="user", content=user_message))
@@ -388,10 +474,13 @@ class AgenticOrchestrator:
         policy = self.llm_gateway.preflight(tenant_id)
         state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
                           stated=_user_numbers(user_message, history, ctx))
-        state.pii.learn(ctx)
+        classification = self._resolve_classification(tenant_id, ctx)
+        _learn_context(state.pii, ctx, classification, policy.tokenize_compensation)
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
-        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
+        messages: List[ChatMessage] = self._system_messages(
+            jurisdiction, tenant_id, ctx, classification=classification
+        )
         for h in history or []:
             messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
         messages.append(ChatMessage(role="user", content=user_message))

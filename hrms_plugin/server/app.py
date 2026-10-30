@@ -105,6 +105,29 @@ writeback_service = WritebackService(store=_storage)
 egress_log = EgressLog(_storage)
 mapping_store = MappingStore(backend=_storage)
 
+
+def make_classification_resolver(
+    store: MappingStore,
+) -> Callable[[str, str], Optional[Dict[str, Any]]]:
+    """Resolve active field classification for a tenant and entity type using the tenant's host vendor."""
+
+    def classification_for(tenant_id: str, entity: str) -> Optional[Dict[str, Any]]:
+        try:
+            from hrms_plugin.integrations.host_registry import load_host_registry_from_env
+
+            host = load_host_registry_from_env().for_tenant(tenant_id)
+            if not host:
+                return None
+            return store.active_classification(tenant_id, host.vendor, entity)
+        except Exception:
+            return None
+
+    return classification_for
+
+
+classification_for = make_classification_resolver(mapping_store)
+supervisor.classification_for = classification_for
+
 audit_gateway = HostAuditGateway()
 introspector = SchemaIntrospector()
 synthesizer = MappingSynthesizer()
