@@ -153,8 +153,37 @@
     return JURISDICTIONS.indexOf(value) >= 0 ? value : 'IN';
   }
 
+  const KNOWN_SSE_EVENTS = new Set(['token', 'tool_call', 'partial', 'error', 'done', 'intent']);
+
+  function parseSseFrames(buffer) {
+    if (typeof buffer !== 'string' || !buffer) return { events: [], remaining: '' };
+    const parts = buffer.split(/(?:\r?\n){2,}/);
+    const remaining = parts.pop() || '';
+    const events = [];
+    for (const frame of parts) {
+      if (!frame.trim()) continue;
+      const lines = frame.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line.startsWith('data: ') && !line.startsWith('data:')) continue;
+        const raw = line.startsWith('data: ') ? line.slice(6) : line.slice(5);
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object' && typeof parsed.event === 'string') {
+            if (KNOWN_SSE_EVENTS.has(parsed.event)) {
+              events.push({ event: parsed.event, data: parsed.data });
+            }
+          }
+        } catch (e) {
+          // malformed JSON line ignored
+        }
+      }
+    }
+    return { events, remaining };
+  }
+
   const core = { escapeHtml, formatMarkdown, isTrustedMessage, sanitizeContext, validateApiUrl, buildHeaders,
-    buildProposalBody, describePatch, confirmationText, describeHttpError, normalizeJurisdiction };
+    buildProposalBody, describePatch, confirmationText, describeHttpError, normalizeJurisdiction,
+    parseSseFrames, parseSseEvents: parseSseFrames };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = core;
@@ -266,7 +295,9 @@
           return;
         }
         this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations);
-        if (data.reply_audio_base64) {
+        if (data && data.audio_withheld) {
+          this.appendPlain('assistant', 'Audio withheld: the reply contains personal data');
+        } else if (data && data.reply_audio_base64) {
           const audio = new Audio('data:audio/wav;base64,' + data.reply_audio_base64);
           audio.play().catch(() => {});
         }
@@ -283,27 +314,134 @@
       input.value = '';
       this.appendMessage('user', text);
 
+      const payload = {
+        message: text,
+        jurisdiction: this.jurisdiction,
+        context: this.currentContext,
+        agentic: true,
+      };
+
       try {
-        const res = await fetch(`${this.apiUrl}/v1/chat`, {
+        let res = await fetch(`${this.apiUrl}/v1/chat/stream`, {
           method: 'POST',
           headers: await this.authHeaders(),
-          body: JSON.stringify({
-            message: text,
-            jurisdiction: this.jurisdiction,
-            context: this.currentContext,
-            agentic: true,
-          }),
+          body: JSON.stringify(payload),
         });
-
-        const data = await res.json().catch(() => null);
+        if (!res) res = { ok: false, status: 404 };
         if (!res.ok) {
+          if (res.status === 404 || res.status === 405) {
+            return await this.sendFallbackChat(payload);
+          }
+          const data = await res.json().catch(() => null);
           this.appendPlain('assistant', `⚠️ ${describeHttpError(res.status, data)}`);
           return;
         }
-        this.appendMessage('assistant', data.reply_text, data.suggested_actions, data.statutory_citations, data.thought_process);
+
+        if (!res.body || typeof res.body.getReader !== 'function') {
+          return await this.sendFallbackChat(payload);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let msgDiv = null;
+        let bubble = null;
+        const chatLogs = this.shadowRoot.querySelector('#chat-logs');
+
+        const ensureMsgDiv = () => {
+          if (!msgDiv) {
+            msgDiv = document.createElement('div');
+            msgDiv.className = 'msg assistant';
+            chatLogs.appendChild(msgDiv);
+          }
+          return msgDiv;
+        };
+
+        const ensureBubble = () => {
+          ensureMsgDiv();
+          if (!bubble) {
+            bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            bubble.style.whiteSpace = 'pre-line';
+            msgDiv.appendChild(bubble);
+          }
+          return bubble;
+        };
+
+        const handleEvents = (events) => {
+          for (const item of events) {
+            if (item.event === 'token') {
+              const b = ensureBubble();
+              b.textContent += String(item.data == null ? '' : item.data);
+              chatLogs.scrollTop = chatLogs.scrollHeight;
+            } else if (item.event === 'tool_call') {
+              const m = ensureMsgDiv();
+              const step = document.createElement('div');
+              step.className = 'tool-step';
+              const name = (item.data && typeof item.data === 'object' && item.data.name)
+                ? item.data.name
+                : String(item.data || '');
+              step.textContent = `Using ${name}…`;
+              m.appendChild(step);
+              chatLogs.scrollTop = chatLogs.scrollHeight;
+            } else if (item.event === 'partial') {
+              const m = ensureMsgDiv();
+              const notice = document.createElement('div');
+              notice.className = 'notice';
+              notice.textContent = 'Notice: The answer may be incomplete.';
+              m.appendChild(notice);
+              chatLogs.scrollTop = chatLogs.scrollHeight;
+            } else if (item.event === 'error') {
+              const m = ensureMsgDiv();
+              const errBox = document.createElement('div');
+              errBox.className = 'error-box';
+              const code = (item.data && typeof item.data === 'object' && item.data.error)
+                ? item.data.error
+                : String(item.data || 'UNKNOWN_ERROR');
+              errBox.textContent = `⚠️ Error: ${code}`;
+              m.appendChild(errBox);
+              chatLogs.scrollTop = chatLogs.scrollHeight;
+              return true;
+            } else if (item.event === 'done' || item.event === 'intent') {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseSseFrames(buffer);
+          buffer = parsed.remaining;
+          if (handleEvents(parsed.events)) break;
+        }
+
+        buffer += decoder.decode();
+        if (buffer) {
+          const parsed = parseSseFrames(buffer + '\n\n');
+          handleEvents(parsed.events);
+        }
       } catch (err) {
         this.appendPlain('assistant', `⚠️ Could not reach AI sidecar: ${err.message}`);
       }
+    }
+
+    async sendFallbackChat(payload) {
+      const res = await fetch(`${this.apiUrl}/v1/chat`, {
+        method: 'POST',
+        headers: await this.authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        this.appendPlain('assistant', `⚠️ ${describeHttpError(res.status, data)}`);
+        return;
+      }
+      this.appendMessage(
+        'assistant', data.reply_text, data.suggested_actions, data.statutory_citations, data.thought_process
+      );
     }
 
     formatMarkdown(text) {
@@ -632,6 +770,30 @@
             font-size: 11px;
             color: #5b21b6;
             font-style: italic;
+          }
+          .tool-step {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 4px;
+            font-style: italic;
+          }
+          .notice {
+            background: #fef3c7;
+            border-left: 3px solid #f59e0b;
+            padding: 4px 8px;
+            margin-top: 4px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #92400e;
+          }
+          .error-box {
+            background: #fee2e2;
+            border-left: 3px solid #ef4444;
+            padding: 4px 8px;
+            margin-top: 4px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #b91c1c;
           }
           .action-btn:hover {
             background: #059669;

@@ -343,6 +343,24 @@ function dispatchWindowMessage(origin, data) {
   }
 }
 
+function createSseStreamResponse(chunks, status = 200) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(chunk));
+      }
+      controller.close();
+    },
+  });
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    body: stream,
+    json: async () => ({}),
+  };
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Behaviour 1: XSS through formatMarkdown
 // ---------------------------------------------------------------------------------------------------------------
@@ -777,6 +795,12 @@ test('B5-POS-02: copilot component calls async tokenProvider on each request and
   const fetchCalls = [];
   global.fetch = async (url, opts) => {
     fetchCalls.push({ url, opts });
+    if (url.endsWith('/v1/chat/stream')) {
+      return createSseStreamResponse([
+        'data: {"event": "token", "data": "Acknowledged"}\n\n',
+        'data: {"event": "done", "data": {}}\n\n',
+      ]);
+    }
     return {
       ok: true,
       status: 200,
@@ -789,11 +813,11 @@ test('B5-POS-02: copilot component calls async tokenProvider on each request and
 
   input.value = 'Message 1';
   await sendBtn.click();
-  await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 20));
 
   input.value = 'Message 2';
   await sendBtn.click();
-  await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => setTimeout(r, 20));
 
   assert.equal(fetchCalls.length, 2);
   assert.equal(fetchCalls[0].opts.headers.Authorization, 'Bearer token-version-1');
@@ -1014,9 +1038,9 @@ test('B7-POS-01: remediation flow converts action to proposal, requires confirma
   await confirmBtn.click();
   await new Promise((r) => setTimeout(r, 10));
 
-  // Step 5: Verify POST /v1/writeback/proposals request shape
-  assert.equal(fetchCalls.length, 2);
-  const propCall = fetchCalls[1];
+  // Step 5: Verify POST /v1/writeback/proposals request shape (/v1/chat/stream falls back to /v1/chat, then proposal)
+  assert.equal(fetchCalls.length, 3);
+  const propCall = fetchCalls[2];
   assert.equal(propCall.url, 'https://ai.acme.test/v1/writeback/proposals');
   assert.equal(propCall.opts.method, 'POST');
   assert.deepEqual(propCall.body, {
@@ -1216,4 +1240,142 @@ test('B8-NEG-02: attribute breakout attempt streamed chunk-by-chunk never inject
       assert.match(m[1], /^https:\/\/([^<>"'&\s⟦⟧]|&amp;)+$/);
     }
   }
+});
+
+test('B8-POS-03: /v1/chat/stream renders tokens progressively into assistant bubble as plain text', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      return createSseStreamResponse([
+        'data: {"event": "token", "data": "Processing statutory "}\n\n',
+        'data: {"event": "token", "data": "gratuity for EMP-01."}\n\n',
+        'data: {"event": "done", "data": {}}\n\n',
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Calculate gratuity';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /Processing statutory gratuity for EMP-01\./);
+});
+
+test('B8-POS-04: /v1/chat/stream renders tool_call step line Using <name>…', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      return createSseStreamResponse([
+        'data: {"event": "tool_call", "data": {"name": "calculate_gratuity"}}\n\n',
+        'data: {"event": "token", "data": "Result ready."}\n\n',
+        'data: {"event": "done", "data": {}}\n\n',
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Run tool';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /Using calculate_gratuity…/);
+  assert.match(chatLogs.textContent, /Result ready\./);
+});
+
+test('B8-POS-05: /v1/chat/stream partial event renders notice that answer may be incomplete', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      return createSseStreamResponse([
+        'data: {"event": "partial", "data": true}\n\n',
+        'data: {"event": "token", "data": "Partial output"}\n\n',
+        'data: {"event": "done", "data": {}}\n\n',
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Trigger partial';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /answer may be incomplete/i);
+  assert.match(chatLogs.textContent, /Partial output/);
+});
+
+test('B8-POS-06: /v1/chat/stream error event renders error code', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/chat/stream')) {
+      return createSseStreamResponse([
+        'data: {"event": "error", "data": {"error": "PII_EGRESS_BLOCKED"}}\n\n',
+      ]);
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Trigger PII block';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /PII_EGRESS_BLOCKED/);
+});
+
+test('B8-POS-07: /v1/chat/stream 404/405 falls back to /v1/chat', async () => {
+  const copilot = createCopilot({}, async () => 'token-ok');
+  const called = [];
+  global.fetch = async (url) => {
+    called.push(url);
+    if (url.endsWith('/v1/chat/stream')) {
+      return { ok: false, status: 404, json: async () => ({ error: 'NOT_FOUND' }) };
+    }
+    if (url.endsWith('/v1/chat')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ reply_text: 'Fallback successful' }),
+      };
+    }
+  };
+
+  const input = copilot.shadowRoot.querySelector('#chat-input');
+  input.value = 'Fallback test';
+  await copilot.shadowRoot.querySelector('#send-btn').click();
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.ok(called.some((u) => u.endsWith('/v1/chat/stream')));
+  assert.ok(called.some((u) => u.endsWith('/v1/chat')));
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /Fallback successful/);
+});
+
+test('B8-POS-08: /v1/voice/turn with audio_withheld renders notice and does not play audio', async () => {
+  audioInstances.length = 0;
+  const copilot = createCopilot({}, async () => 'token-ok');
+  global.fetch = async (url) => {
+    if (url.endsWith('/v1/voice/turn')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          reply_text: 'Sensitive salary details: AED 50,000.',
+          audio_withheld: 'PII_EGRESS_BLOCKED',
+          reply_audio_base64: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=',
+        }),
+      };
+    }
+  };
+
+  await copilot.sendVoiceAudio('voice-payload');
+  await new Promise((r) => setTimeout(r, 20));
+
+  const chatLogs = copilot.shadowRoot.querySelector('#chat-logs');
+  assert.match(chatLogs.textContent, /Sensitive salary details: AED 50,000\./);
+  assert.match(chatLogs.textContent, /Audio withheld: the reply contains personal data/);
+  assert.equal(audioInstances.length, 0, 'No audio should play when audio_withheld is set');
 });
