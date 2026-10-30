@@ -19,6 +19,7 @@ from hrms_plugin.storage.base import BaseKeyValueStore
 logger = logging.getLogger(__name__)
 
 APPROVED_NS = "approved_fingerprints"
+PENDING_NS = "pending_fingerprints"
 QUARANTINE_NS = "quarantine"
 RESULTS_NS = "pf_results"  # latest result per tenant, employee and period, with provenance (QB)
 VENDOR = "frappe"
@@ -49,9 +50,30 @@ class PayrollService:
 
     def approve_fingerprint(
         self, tenant_id: str, vendor: str, doctype: str, fingerprint: str, approved_by: str
-    ) -> Dict:
-        record = {"fingerprint": fingerprint, "approved_by": approved_by, "approved_at": self._clock()}
-        self._store.set(APPROVED_NS, self._key(tenant_id, vendor, doctype), record)
+    ) -> Dict[str, Any]:
+        key = self._key(tenant_id, vendor, doctype)
+        pending = self._store.get(PENDING_NS, key)
+        if not pending or pending.get("fingerprint") != fingerprint:
+            record = {
+                "status": "PENDING_CONFIRMATION",
+                "fingerprint": fingerprint,
+                "requested_by": approved_by,
+                "requested_at": self._clock(),
+            }
+            self._store.set(PENDING_NS, key, record)
+            return record
+        if pending.get("requested_by") == approved_by:
+            return _error("SAME_PERSON")
+        record = {
+            "status": "APPROVED",
+            "fingerprint": fingerprint,
+            "approved_by": approved_by,
+            "approved_at": self._clock(),
+            "requested_by": pending["requested_by"],
+            "requested_at": pending.get("requested_at"),
+        }
+        self._store.set(APPROVED_NS, key, record)
+        self._store.delete(PENDING_NS, key)
         return record
 
     @staticmethod

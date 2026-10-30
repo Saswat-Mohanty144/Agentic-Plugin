@@ -256,10 +256,15 @@ def test_pf_calculate_schema_fingerprint_flow(make_client, bearer, live_env, see
     assert observed.startswith("sha256:")
 
     # 2. Approve observed fingerprint
+    client.post(
+        "/v1/schema/fingerprints/approve",
+        json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": observed},
+        headers=bearer(tenant_id="acme", sub="admin_user_1", roles=["platform_admin"]),
+    )
     appr_resp = client.post(
         "/v1/schema/fingerprints/approve",
         json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": observed},
-        headers=bearer(tenant_id="acme", sub="admin_user", roles=["platform_admin"]),
+        headers=bearer(tenant_id="acme", sub="admin_user_2", roles=["platform_admin"]),
     )
     assert appr_resp.status_code == 200
     assert appr_resp.json()["fingerprint"] == observed
@@ -277,7 +282,12 @@ def test_pf_calculate_schema_fingerprint_flow(make_client, bearer, live_env, see
     client.post(
         "/v1/schema/fingerprints/approve",
         json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": tampered_fp},
-        headers=bearer(tenant_id="acme", sub="admin_user", roles=["platform_admin"]),
+        headers=bearer(tenant_id="acme", sub="admin_user_1", roles=["platform_admin"]),
+    )
+    client.post(
+        "/v1/schema/fingerprints/approve",
+        json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": tampered_fp},
+        headers=bearer(tenant_id="acme", sub="admin_user_2", roles=["platform_admin"]),
     )
     drift_resp = client.post(
         "/v1/payroll/pf/calculate",
@@ -300,7 +310,12 @@ def test_pf_calculate_schema_fingerprint_flow(make_client, bearer, live_env, see
     client.post(
         "/v1/schema/fingerprints/approve",
         json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": observed},
-        headers=bearer(tenant_id="acme", sub="admin_user", roles=["platform_admin"]),
+        headers=bearer(tenant_id="acme", sub="admin_user_1", roles=["platform_admin"]),
+    )
+    client.post(
+        "/v1/schema/fingerprints/approve",
+        json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": observed},
+        headers=bearer(tenant_id="acme", sub="admin_user_2", roles=["platform_admin"]),
     )
 
 
@@ -469,9 +484,14 @@ def test_writeback_propose_approve_verify_rollback_cycle(make_client, bearer, li
     assert emp_frappe["notice_number_of_days"] == 60
 
     # 4. Rollback
-    rb_resp = client.post(
+    rb_req = client.post(
         f"/v1/writeback/proposals/{proposal_id}/rollback",
         headers=bearer(tenant_id="acme", sub="approver_2", roles=["hr_manager"]),
+    )
+    assert rb_req.status_code == 202, rb_req.text
+    rb_resp = client.post(
+        f"/v1/writeback/proposals/{proposal_id}/rollback",
+        headers=bearer(tenant_id="acme", sub="approver_3", roles=["hr_manager"]),
     )
     assert rb_resp.status_code == 200, rb_resp.text
     assert rb_resp.json()["status"] == "ROLLED_BACK"

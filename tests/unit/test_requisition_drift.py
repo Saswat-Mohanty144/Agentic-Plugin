@@ -35,8 +35,13 @@ def _get(make_client, bearer, monkeypatch, rows, **kw):
                                                           headers=bearer(roles=["recruiter"], **kw))
 
 
-def _approve(make_client, bearer, fingerprint, roles=("platform_admin",)):
-    return make_client().post(APPROVE, json={"fingerprint": fingerprint}, headers=bearer(roles=list(roles)))
+def _approve(make_client, bearer, fingerprint, roles=("platform_admin",), sub="admin"):
+    return make_client().post(APPROVE, json={"fingerprint": fingerprint}, headers=bearer(roles=list(roles), sub=sub))
+
+
+def _approve_fully(make_client, bearer, fingerprint, roles=("platform_admin",)):
+    _approve(make_client, bearer, fingerprint, roles=roles, sub="admin1")
+    return _approve(make_client, bearer, fingerprint, roles=roles, sub="admin2")
 
 
 # shape -------------------------------------------------------------------------------------------------------
@@ -60,7 +65,10 @@ def test_first_read_is_flagged_unapproved_and_approval_is_by_schema_admin(make_c
     fp = body["schema"]["fingerprint"]
     assert _approve(make_client, bearer, fp, roles=("recruiter",)).status_code == 403
     assert _approve(make_client, bearer, "sha256:" + "0" * 64).status_code == 409  # not the observed shape
-    assert _approve(make_client, bearer, fp).status_code == 200
+    r1 = _approve(make_client, bearer, fp, sub="admin1")
+    assert r1.status_code == 202 and r1.json()["status"] == "PENDING_CONFIRMATION"
+    r2 = _approve(make_client, bearer, fp, sub="admin2")
+    assert r2.status_code == 200 and r2.json()["status"] == "APPROVED"
     again = _get(make_client, bearer, monkeypatch, [iceipts_row("r-9")]).json()
     assert again["schema"] == {"status": "APPROVED", "fingerprint": fp}
 
@@ -68,7 +76,7 @@ def test_first_read_is_flagged_unapproved_and_approval_is_by_schema_admin(make_c
 def test_new_type_after_approval_is_drift_and_quarantined(make_client, bearer, acme):
     monkeypatch, store = acme
     fp = _get(make_client, bearer, monkeypatch, [iceipts_row()]).json()["schema"]["fingerprint"]
-    _approve(make_client, bearer, fp)
+    _approve_fully(make_client, bearer, fp)
     res = _get(make_client, bearer, monkeypatch, [iceipts_row(position=3)])  # "3" was a string, now an int
     assert res.status_code == 409 and res.json()["error"] == "SCHEMA_DRIFT"
     assert res.json()["changed"] == ["position"] and "requisitions" not in res.json()
@@ -78,7 +86,7 @@ def test_new_type_after_approval_is_drift_and_quarantined(make_client, bearer, a
 def test_vanished_field_after_approval_is_drift(make_client, bearer, acme):
     monkeypatch, _ = acme
     fp = _get(make_client, bearer, monkeypatch, [iceipts_row()]).json()["schema"]["fingerprint"]
-    _approve(make_client, bearer, fp)
+    _approve_fully(make_client, bearer, fp)
     row = iceipts_row()
     del row["jobDescription"]
     res = _get(make_client, bearer, monkeypatch, [row])
@@ -88,7 +96,7 @@ def test_vanished_field_after_approval_is_drift(make_client, bearer, acme):
 def test_nulls_within_an_approved_shape_are_not_drift(make_client, bearer, acme):
     monkeypatch, _ = acme
     fp = _get(make_client, bearer, monkeypatch, [iceipts_row()]).json()["schema"]["fingerprint"]
-    _approve(make_client, bearer, fp)
+    _approve_fully(make_client, bearer, fp)
     res = _get(make_client, bearer, monkeypatch, [iceipts_row(location=None)])
     assert res.status_code == 200 and res.json()["schema"]["status"] == "APPROVED"
 

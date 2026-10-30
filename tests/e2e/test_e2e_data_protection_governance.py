@@ -752,7 +752,8 @@ def test_e2e_schema_fingerprint_quarantine_and_approval_lifecycle(make_client, b
     monkeypatch.setenv("HRMS_PAYROLL_RULES", t_rules.name)
 
     client = make_client()
-    admin_token = bearer(tenant="acme", roles=["platform_admin"])
+    admin_token = bearer(tenant="acme", sub="admin-1", roles=["platform_admin"])
+    admin_token_2 = bearer(tenant="acme", sub="admin-2", roles=["platform_admin"])
     pay_token = bearer(tenant="acme", roles=["payroll_officer"])
 
     # 1. Initially quarantine is empty
@@ -763,10 +764,16 @@ def test_e2e_schema_fingerprint_quarantine_and_approval_lifecycle(make_client, b
     # 2. Approve original baseline fingerprint
     s_orig = slip()
     fp_orig = slip_fingerprint(s_orig)
-    app_resp = client.post(
+    app_req = client.post(
         "/v1/schema/fingerprints/approve",
         json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_orig},
         headers=admin_token,
+    )
+    assert app_req.status_code == 202
+    app_resp = client.post(
+        "/v1/schema/fingerprints/approve",
+        json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_orig},
+        headers=admin_token_2,
     )
     assert app_resp.status_code == 200
 
@@ -799,10 +806,16 @@ def test_e2e_schema_fingerprint_quarantine_and_approval_lifecycle(make_client, b
     assert record["expected_fingerprint"] == fp_orig
 
     # 6. Admin approves observed fingerprint
-    app_drift = client.post(
+    app_drift_req = client.post(
         "/v1/schema/fingerprints/approve",
         json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_drift},
         headers=admin_token,
+    )
+    assert app_drift_req.status_code == 202
+    app_drift = client.post(
+        "/v1/schema/fingerprints/approve",
+        json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_drift},
+        headers=admin_token_2,
     )
     assert app_drift.status_code == 200
 
@@ -856,6 +869,7 @@ def test_e2e_schema_fingerprint_boundaries_and_negatives(make_client, bearer):
 
     # Security: Tenant globex has no MANAGE_SCHEMA -> 403 on quarantine
     payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", valid_fp, "user-1")
+    payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", valid_fp, "user-2")
     globex_q = client.get("/v1/schema/fingerprints/quarantine", headers=bearer(tenant="globex", roles=["hr_manager"]))
     assert globex_q.status_code == 403
 

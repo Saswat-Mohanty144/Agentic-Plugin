@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from hrms_plugin.integrations.frappe import FrappeClient, FrappeError
 from hrms_plugin.integrations.host_registry import HostConfig, HostRegistryError, load_host_registry_from_env
-from hrms_plugin.security.audit import HostAuditGateway
+from hrms_plugin.security.audit import AuditSigningError, HostAuditGateway
 from hrms_plugin.security.rbac import AuthContext
 from hrms_plugin.storage.base import BaseKeyValueStore
 
@@ -164,6 +164,8 @@ class WritebackService:
                 proposal["status"] = "EXPIRED"
                 self._save(proposal)
                 raise WritebackError("EXPIRED")
+            if not self._audit.is_configured():
+                raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED")
             current = await self._call(auth.tenant_id, lambda c: c.get_document(proposal["doctype"], proposal["name"]))
             if current.get("modified") != proposal["base_modified"]:
                 proposal["status"] = "CONFLICT"
@@ -202,6 +204,19 @@ class WritebackService:
                 raise WritebackError("INVALID_STATE", proposal["status"])
             if not proposal.get("after_modified"):
                 raise WritebackError("ROLLBACK_UNAVAILABLE", "the host did not report the post-write version")
+
+            if not proposal.get("rollback_requested_by"):
+                proposal["rollback_requested_by"] = auth.user_id
+                proposal["rollback_requested_at"] = self._clock()
+                self._save(proposal)
+                return {**proposal, "status": "ROLLBACK_PENDING"}
+
+            if proposal.get("rollback_requested_by") == auth.user_id:
+                raise WritebackError("SAME_PERSON", "the confirmer must not be the requester")
+
+            if not self._audit.is_configured():
+                raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED")
+
             current = await self._call(auth.tenant_id, lambda c: c.get_document(proposal["doctype"], proposal["name"]))
             if current.get("modified") != proposal.get("after_modified"):
                 raise WritebackError("ROLLBACK_CONFLICT", "the record changed after our write")

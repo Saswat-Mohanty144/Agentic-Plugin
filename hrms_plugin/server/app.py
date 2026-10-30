@@ -44,7 +44,7 @@ from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import SchemaIntrospector
 from hrms_plugin.schema.synthesizer import MappingSynthesizer
-from hrms_plugin.security.audit import HostAuditGateway
+from hrms_plugin.security.audit import AuditSigningError, HostAuditGateway
 from hrms_plugin.security.http_auth import ApiError, require
 from hrms_plugin.security.jwks_cache import JwksCache, make_httpx_fetcher
 from hrms_plugin.security.pii import PiiEgressBlocked, PiiSession
@@ -211,7 +211,7 @@ class WritebackProposalRequest(BaseModel):
 WRITEBACK_STATUS = {
     "NOT_FOUND": 404, "FIELD_NOT_WRITABLE": 422, "INVALID_VALUE": 422, "NO_CHANGE": 422, "CONFLICT": 409,
     "ROLLBACK_CONFLICT": 409, "ROLLBACK_UNAVAILABLE": 409, "EXPIRED": 409, "INVALID_STATE": 409, "SAME_PERSON": 403,
-    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502, "VENDOR_NOT_SUPPORTED": 409,
+    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502, "VENDOR_NOT_SUPPORTED": 409, "AUDIT_SIGNING_NOT_CONFIGURED": 503,
 }
 
 
@@ -638,7 +638,14 @@ def approve_schema_fingerprint(
     ),
 ):
     record = payroll_service.approve_fingerprint(auth.tenant_id, req.vendor, req.doctype, req.fingerprint, auth.user_id)
-    return {"tenant_id": auth.tenant_id, "vendor": req.vendor, "doctype": req.doctype, **record}
+    if "error" in record:
+        if record["error"] == "SAME_PERSON":
+            raise ApiError(403, {"error": "SAME_PERSON"})
+        raise ApiError(400, record)
+    res = {"tenant_id": auth.tenant_id, "vendor": req.vendor, "doctype": req.doctype, **record}
+    if record.get("status") == "PENDING_CONFIRMATION":
+        return JSONResponse(status_code=202, content=res)
+    return res
 
 
 @router.get("/v1/schema/fingerprints/quarantine")
@@ -663,7 +670,10 @@ async def approve_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH
 
 @router.post("/v1/writeback/proposals/{proposal_id}/rollback")
 async def rollback_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH_MUTATE)):
-    return await writeback_service.rollback(auth, proposal_id)
+    res = await writeback_service.rollback(auth, proposal_id)
+    if res.get("status") == "ROLLBACK_PENDING":
+        return JSONResponse(status_code=202, content=res)
+    return res
 
 
 class ApproveMappingRequest(BaseModel):
@@ -827,8 +837,29 @@ def approve_requisition_shape(req: ShapeApproveRequest, auth: AuthContext = Depe
     observed = _storage.get("observed_shapes", key)
     if observed is None or observed["fingerprint"] != req.fingerprint:
         raise ApiError(409, {"error": "FINGERPRINT_NOT_OBSERVED"})
-    record = {**observed, "approved_by": auth.user_id, "approved_at": time.time()}
+
+    pending = _storage.get("pending_shapes", key)
+    if not pending or pending.get("fingerprint") != req.fingerprint:
+        pending_record = {
+            "fingerprint": req.fingerprint,
+            "requested_by": auth.user_id,
+            "requested_at": time.time(),
+        }
+        _storage.set("pending_shapes", key, pending_record)
+        return JSONResponse(status_code=202, content={"status": "PENDING_CONFIRMATION", **pending_record})
+
+    if pending.get("requested_by") == auth.user_id:
+        raise ApiError(403, {"error": "SAME_PERSON"})
+
+    record = {
+        **observed,
+        "approved_by": auth.user_id,
+        "approved_at": time.time(),
+        "requested_by": pending["requested_by"],
+        "requested_at": pending.get("requested_at"),
+    }
     _storage.set("approved_shapes", key, record)
+    _storage.delete("pending_shapes", key)
     return {"status": "APPROVED", "fingerprint": req.fingerprint}
 
 
@@ -857,6 +888,8 @@ def execute_remediation(
 ):
     """Issue host audit attribution headers for a reviewed remediation. This endpoint writes NOTHING to the host:
     changes are made only through /v1/writeback/proposals, approved by a different person (piece F2, agy D-F2)."""
+    if not audit_gateway.is_configured():
+        raise AuditSigningError("AUDIT_SIGNING_NOT_CONFIGURED")
     # Generate Host Audit Attribution Headers
     headers = audit_gateway.create_attribution_headers(
         tenant_id=auth.tenant_id,
@@ -1160,6 +1193,10 @@ async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JS
     return JSONResponse(status_code=status, content={"error": exc.code, "detail": exc.detail})
 
 
+async def _audit_signing_error_handler(_request: Request, _exc: AuditSigningError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"error": "AUDIT_SIGNING_NOT_CONFIGURED"})
+
+
 async def _llm_not_allowed_handler(_request: Request, _exc: LlmNotAllowed) -> JSONResponse:
     return JSONResponse(status_code=403, content={"error": _exc.code})
 
@@ -1218,6 +1255,7 @@ def create_app(
     application.add_exception_handler(LlmNotAllowed, _llm_not_allowed_handler)
     application.add_exception_handler(LlmBudgetExceeded, _llm_budget_exceeded_handler)
     application.add_exception_handler(WritebackError, _writeback_error_handler)
+    application.add_exception_handler(AuditSigningError, _audit_signing_error_handler)
     application.add_exception_handler(VoiceUpstreamError, _voice_upstream_error_handler)
     application.include_router(router)
     return application
