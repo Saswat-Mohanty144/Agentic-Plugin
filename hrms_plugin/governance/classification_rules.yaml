@@ -1,0 +1,177 @@
+version: 1
+hit_policy: first
+rules:
+  - id: pii_names
+    when:
+      target_in:
+        - full_name
+        - name
+        - employee_name
+        - candidate_name
+        - first_name
+        - middle_name
+        - last_name
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Name directly identifies an individual"
+
+  - id: pii_emails
+    when:
+      target_in:
+        - email
+        - work_email
+        - personal_email
+        - company_email
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Email address directly identifies an individual"
+
+  - id: pii_phones
+    when:
+      target_in:
+        - phone
+        - mobile
+        - phone_number
+        - cell_number
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Phone number directly identifies an individual"
+
+  - id: pii_resumes
+    when:
+      target_in:
+        - resume_text
+        - resume_uri
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Resume text or URI contains sensitive personal background and identifiers"
+
+  - id: pii_person_refs
+    when:
+      target_in:
+        - hiring_manager_ref
+        - employee_ref
+        - assigned_to
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Reference identifier linking directly to a specific person"
+
+  - id: pii_reason
+    when:
+      target_in:
+        - reason
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Free text reason may carry health or sensitive personal details"
+
+  - id: compensation_canonical
+    when:
+      target_in:
+        - basic_salary
+        - gross_salary
+        - net_pay
+        - total_allowances
+        - total_deductions
+    then:
+      data_class: COMPENSATION
+      llm_visible: false
+    why: "Direct compensation or payroll amount"
+
+  - id: compensation_expense_claim_amount
+    when:
+      entity_in:
+        - EXPENSE_CLAIM
+      target_in:
+        - amount
+    then:
+      data_class: COMPENSATION
+      llm_visible: false
+    why: "Expense claim reimbursement constitutes financial compensation"
+
+  - id: public_descriptive
+    when:
+      target_in:
+        - title
+        - location
+        - must_have_skills
+        - nice_to_have_skills
+        - skills
+    then:
+      data_class: PUBLIC
+      llm_visible: true
+    why: "Job and role descriptions intended for public posting and search"
+
+  - id: internal_visible_descriptive
+    when:
+      target_in:
+        - department
+        - designation
+        - status
+        - stage
+        - leave_type
+        - claim_type
+        - asset_type
+        - headcount
+        - currency
+        - month
+        - year
+        - fiscal_year
+        - min_years_experience
+        - max_years_experience
+    then:
+      data_class: INTERNAL
+      llm_visible: true
+    why: "Operational HR metadata safe for LLM context"
+
+  - id: internal_hidden_other
+    when:
+      target_in:
+        - description
+        - years_experience
+        - current_title
+        - requisition_external_id
+        - applied_at
+        - joining_date
+        - start_date
+        - end_date
+        - total_days
+        - punch_time
+        - punch_type
+        - device_id
+        - payslip_url
+        - allocated_days
+        - used_days
+        - remaining_days
+        - claim_date
+        - asset_tag
+        - model
+        - serial_number
+        - request_date
+    then:
+      data_class: INTERNAL
+      llm_visible: false
+    why: "Internal business operational data hidden from LLM by default"
+
+  - id: fallback_identifier
+    when:
+      target_kind_in:
+        - IDENTIFIER
+    then:
+      data_class: PII
+      llm_visible: false
+    why: "Identified as person identifier by key pattern"
+
+  - id: fallback_money
+    when:
+      target_kind_in:
+        - MONEY
+    then:
+      data_class: COMPENSATION
+      llm_visible: false
+    why: "Identified as financial/compensation field by key pattern"

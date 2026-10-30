@@ -600,6 +600,58 @@ def _finalize_synthesis(
             "records_tested": report_probe.records_tested,
             "issues": issues,
         }
+
+        # K1.3: Value cross-check when sample_records are sent
+        cov = getattr(report, "coverage", None)
+        if cov and isinstance(cov.get("fields"), dict):
+            from hrms_plugin.schema.mapping import resolve_path
+            from hrms_plugin.security.pii import detect, normalise
+
+            cov_fields = cov["fields"]
+            for fm in getattr(mapping, "fields", []):
+                target = fm.target
+                field_cov = cov_fields.get(target)
+                if not isinstance(field_cov, dict):
+                    continue
+                cur_sug = field_cov.get("suggested_classification")
+                if isinstance(cur_sug, dict) and cur_sug.get("data_class") == "PII":
+                    continue
+
+                sources = [fm.source] if isinstance(fm.source, str) else list(fm.source or [])
+                detected_kinds = set()
+                for rec in sample_records:
+                    if not isinstance(rec, dict):
+                        continue
+                    for src_path in sources:
+                        if not src_path:
+                            continue
+                        val = resolve_path(rec, src_path)
+                        if val is None:
+                            continue
+                        scalars = []
+                        if isinstance(val, (list, tuple)):
+                            for item in val:
+                                if isinstance(item, (str, int, float, bool)) and not isinstance(item, bool):
+                                    scalars.append(item)
+                        elif isinstance(val, (str, int, float, bool)) and not isinstance(val, bool):
+                            scalars.append(val)
+
+                        for s in scalars:
+                            s_str = str(s).strip()
+                            if not s_str:
+                                continue
+                            for match in detect(normalise(s_str)):
+                                detected_kinds.add(match[0])
+
+                if detected_kinds:
+                    kinds_str = ", ".join(sorted(detected_kinds))
+                    field_cov["suggested_classification"] = {
+                        "data_class": "PII",
+                        "llm_visible": False,
+                        "rule_id": "VALUE_CHECK",
+                        "why": f"sample values look like {kinds_str}",
+                    }
+
     coverage_data = getattr(report, "coverage", None)
     version = mapping_store.propose_mapping(
         auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data, coverage=coverage_data
@@ -730,6 +782,7 @@ class ApproveMappingRequest(BaseModel):
 
     # field -> {"data_class": PII|COMPENSATION|INTERNAL|PUBLIC, "llm_visible": bool}; omitted fields count as PII (QD)
     classification: Dict[str, Any] = Field(default_factory=dict)
+    accept_suggested_classification: bool = False
 
 
 class ManualFieldConfig(BaseModel):
@@ -766,8 +819,16 @@ def approve_mapping_version(
 ):
     """Activate a proposed mapping version; the approver must differ from the proposer (piece G4)."""
     try:
-        row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id,
-                                           classification=req.classification if req else None)
+        accept_suggested = req.accept_suggested_classification if req else False
+        row = mapping_store.approve_version(
+            auth.tenant_id,
+            vendor,
+            entity_type,
+            version,
+            approver=auth.user_id,
+            classification=req.classification if req else None,
+            accept_suggested_classification=accept_suggested,
+        )
     except MappingGovernanceError as exc:
         if exc.code == "REVIEW_REQUIRED":
             raise ApiError(409, {"error": "REVIEW_REQUIRED", "fields": exc.fields}) from None

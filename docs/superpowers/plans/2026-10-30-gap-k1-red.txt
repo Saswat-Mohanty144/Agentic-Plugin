@@ -1,0 +1,1005 @@
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                           [100%]
+=================================== FAILURES ===================================
+_________________________ test_loader_unknown_when_key _________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_when_key0')
+
+    def test_loader_unknown_when_key(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          unknown_when_field: true
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="unknown.*when"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:66: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_when_key0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+_________________________ test_loader_unknown_then_key _________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_then_key0')
+
+    def test_loader_unknown_then_key(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          target_in: [name]
+        then:
+          data_class: PII
+          llm_visible: false
+          extra_then_field: 123
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="unknown.*then"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:85: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_then_key0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+____________________________ test_loader_empty_when ____________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_empty_when0')
+
+    def test_loader_empty_when(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when: {}
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="empty when"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_empty_when0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+___________________________ test_loader_duplicate_id ___________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_duplicate_id0')
+
+    def test_loader_duplicate_id(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: dup_id
+        when:
+          target_in: [name]
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test 1
+      - id: dup_id
+        when:
+          target_in: [email]
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test 2
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="duplicate.*id"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_duplicate_id0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+__________________________ test_loader_unknown_class ___________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_class0')
+
+    def test_loader_unknown_class(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          target_in: [secret_field]
+        then:
+          data_class: TOP_SECRET
+          llm_visible: false
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="unknown.*class"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_class0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+____________________ test_loader_llm_visible_true_with_pii _____________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_llm_visible_true_w0')
+
+    def test_loader_llm_visible_true_with_pii(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          target_in: [name]
+        then:
+          data_class: PII
+          llm_visible: true
+        why: invalid sensitive visibility
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="llm_visible.*PII"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_llm_visible_true_w0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+________________ test_loader_llm_visible_true_with_compensation ________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_llm_visible_true_w1')
+
+    def test_loader_llm_visible_true_with_compensation(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          target_in: [salary]
+        then:
+          data_class: COMPENSATION
+          llm_visible: true
+        why: invalid sensitive visibility
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="llm_visible.*COMPENSATION"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_llm_visible_true_w1/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+________________________ test_loader_unknown_hit_policy ________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_hit_policy0')
+
+    def test_loader_unknown_hit_policy(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: all
+    rules:
+      - id: rule1
+        when:
+          target_in: [name]
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="hit_policy"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_unknown_hit_policy0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+_________________________ test_loader_invalid_version __________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_invalid_version0')
+
+    def test_loader_invalid_version(tmp_path: Path):
+        doc = """
+    version: 2
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          target_in: [name]
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="version"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:217: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_invalid_version0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+______________________ test_loader_invalid_target_kind_in ______________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_invalid_target_kin0')
+
+    def test_loader_invalid_target_kind_in(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: rule1
+        when:
+          target_kind_in: [INVALID_KIND]
+        then:
+          data_class: PII
+          llm_visible: false
+        why: test
+    """
+        p = _write_yaml(tmp_path, doc)
+        with pytest.raises(ClassificationRulesError, match="target_kind_in"):
+>           load_rules(p)
+
+tests/unit/test_gap_k1.py:235: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_loader_invalid_target_kin0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+________________________ test_evaluator_first_hit_order ________________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_evaluator_first_hit_order0')
+
+    def test_evaluator_first_hit_order(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: first_rule
+        when:
+          target_in: [overlap_field]
+        then:
+          data_class: INTERNAL
+          llm_visible: true
+        why: first win
+      - id: second_rule
+        when:
+          target_in: [overlap_field]
+        then:
+          data_class: PUBLIC
+          llm_visible: true
+        why: second ignored
+    """
+        p = _write_yaml(tmp_path, doc)
+>       rules = load_rules(p)
+                ^^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:264: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_evaluator_first_hit_order0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+_______________________ test_evaluator_and_of_conditions _______________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_evaluator_and_of_conditio0')
+
+    def test_evaluator_and_of_conditions(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: employee_status
+        when:
+          entity_in: [EMPLOYEE]
+          target_in: [status]
+        then:
+          data_class: INTERNAL
+          llm_visible: true
+        why: status of employee
+    """
+        p = _write_yaml(tmp_path, doc)
+>       rules = load_rules(p)
+                ^^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:286: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_evaluator_and_of_conditio0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+________________ test_evaluator_entity_in_restricting_target_in ________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_evaluator_entity_in_restr0')
+
+    def test_evaluator_entity_in_restricting_target_in(tmp_path: Path):
+        doc = """
+    version: 1
+    hit_policy: first
+    rules:
+      - id: claim_amount
+        when:
+          entity_in: [EXPENSE_CLAIM]
+          target_in: [amount]
+        then:
+          data_class: COMPENSATION
+          llm_visible: false
+        why: expense reimbursement
+      - id: default_amount
+        when:
+          target_in: [amount]
+        then:
+          data_class: INTERNAL
+          llm_visible: false
+        why: generic amount
+    """
+        p = _write_yaml(tmp_path, doc)
+>       rules = load_rules(p)
+                ^^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:323: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-470/test_evaluator_entity_in_restr0/rules.yaml')
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+___________________ test_evaluator_target_kind_in_fallbacks ____________________
+
+    def test_evaluator_target_kind_in_fallbacks():
+        # Uses shipped rules
+        # "pan_number" is not a canonical target, but identifier_kind recognizes it as PAN -> IDENTIFIER -> PII
+>       res_pan = suggest_classification("pan_number")
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:335: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+target = 'pan_number', entity_type = None
+
+    def suggest_classification(target: str, entity_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+>       raise NotImplementedError("Stub: suggest_classification not implemented yet")
+E       NotImplementedError: Stub: suggest_classification not implemented yet
+
+hrms_plugin/governance/classification_rules.py:30: NotImplementedError
+_____________________ test_evaluator_no_match_returns_none _____________________
+
+    def test_evaluator_no_match_returns_none():
+>       res = suggest_classification("some_totally_arbitrary_unmapped_custom_metric")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:348: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+target = 'some_totally_arbitrary_unmapped_custom_metric', entity_type = None
+
+    def suggest_classification(target: str, entity_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+>       raise NotImplementedError("Stub: suggest_classification not implemented yet")
+E       NotImplementedError: Stub: suggest_classification not implemented yet
+
+hrms_plugin/governance/classification_rules.py:30: NotImplementedError
+____________________ test_shipped_yaml_loads_and_is_cached _____________________
+
+    def test_shipped_yaml_loads_and_is_cached():
+>       rules1 = load_rules()
+                 ^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:358: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = None
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+________________ test_shipped_yaml_covers_all_four_data_classes ________________
+
+    def test_shipped_yaml_covers_all_four_data_classes():
+>       rules = load_rules()
+                ^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:367: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = None
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+_______ test_shipped_yaml_llm_visible_false_for_all_pii_and_compensation _______
+
+    def test_shipped_yaml_llm_visible_false_for_all_pii_and_compensation():
+>       rules = load_rules()
+                ^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:375: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = None
+
+    def load_rules(path: Optional[Path | str] = None) -> ClassificationRules:
+>       raise NotImplementedError("Stub: load_rules not implemented yet")
+E       NotImplementedError: Stub: load_rules not implemented yet
+
+hrms_plugin/governance/classification_rules.py:26: NotImplementedError
+______________ test_shipped_yaml_canonical_model_classifications _______________
+
+    def test_shipped_yaml_canonical_model_classifications():
+        # PII fields
+>       assert suggest_classification("full_name")["data_class"] == "PII"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_k1.py:385: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+target = 'full_name', entity_type = None
+
+    def suggest_classification(target: str, entity_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+>       raise NotImplementedError("Stub: suggest_classification not implemented yet")
+E       NotImplementedError: Stub: suggest_classification not implemented yet
+
+hrms_plugin/governance/classification_rules.py:30: NotImplementedError
+__________ test_synthesize_adds_suggested_classification_to_coverage ___________
+
+    def test_synthesize_adds_suggested_classification_to_coverage():
+        discovered = DiscoveredEntity(
+            name="job_requisition",
+            fields={
+                "id": DiscoveredField(name="id", path="id"),
+                "job_title": DiscoveredField(name="job_title", path="job_title"),
+                "dept": DiscoveredField(name="dept", path="dept"),
+            },
+        )
+        mapping, report = MappingSynthesizer.synthesize(discovered, EntityType.REQUISITION, vendor="frappe")
+        fields_cov = report.coverage["fields"]
+    
+        # title has descriptive suggestion
+        assert "title" in fields_cov
+>       title_sug = fields_cov["title"]["suggested_classification"]
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:442: KeyError
+____________ test_synthesize_value_check_overrides_non_pii_with_pan ____________
+
+make_client = <function make_client.<locals>._make at 0x10ccf5c60>
+bearer = <function bearer.<locals>._headers at 0x10ccf6020>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bb2f0d0>
+
+    def test_synthesize_value_check_overrides_non_pii_with_pan(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        admin = bearer(roles=["platform_admin"], sub="alice")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [
+                {"name": "id"},
+                {"name": "title"},
+                {"name": "dept_pan_leak"},
+            ],
+            "sample_records": [
+                {"id": "REQ-1", "title": "Software Lead", "dept_pan_leak": SAMPLE_PAN},
+            ],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=admin)
+        assert res.status_code == 200, res.text
+        body = res.json()
+    
+        fields_cov = body["coverage"]["fields"]
+        # If dept_pan_leak was mapped to department (which is normally INTERNAL/visible),
+        # the PAN sample value must trigger VALUE_CHECK overriding the non-PII suggestion
+>       dept_sug = fields_cov["department"]["suggested_classification"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:480: KeyError
+_______________ test_synthesize_value_check_overrides_with_email _______________
+
+make_client = <function make_client.<locals>._make at 0x10cd2d940>
+bearer = <function bearer.<locals>._headers at 0x10cd2d760>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ce0d2d0>
+
+    def test_synthesize_value_check_overrides_with_email(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        admin = bearer(roles=["platform_admin"], sub="alice")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [
+                {"name": "id"},
+                {"name": "title"},
+                {"name": "contact_dept"},
+            ],
+            "sample_records": [
+                {"id": "REQ-1", "title": "Developer", "contact_dept": SAMPLE_EMAIL},
+            ],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=admin)
+        assert res.status_code == 200, res.text
+        body = res.json()
+    
+>       dept_sug = body["coverage"]["fields"]["department"]["suggested_classification"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:519: KeyError
+__________ test_synthesize_value_check_not_triggered_by_ordinary_text __________
+
+make_client = <function make_client.<locals>._make at 0x10ce3fc40>
+bearer = <function bearer.<locals>._headers at 0x10ce3ccc0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cdef510>
+
+    def test_synthesize_value_check_not_triggered_by_ordinary_text(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        admin = bearer(roles=["platform_admin"], sub="alice")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [
+                {"name": "id"},
+                {"name": "title"},
+                {"name": "department"},
+            ],
+            "sample_records": [
+                {"id": "REQ-1", "title": "Developer", "department": ORDINARY_TEXT},
+            ],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=admin)
+        assert res.status_code == 200, res.text
+        body = res.json()
+    
+>       dept_sug = body["coverage"]["fields"]["department"]["suggested_classification"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:548: KeyError
+___________ test_review_preserves_value_check_when_source_unchanged ____________
+
+    def test_review_preserves_value_check_when_source_unchanged():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(
+                FieldMap(target="title", source="title"),
+                FieldMap(target="department", source="dept_raw"),
+            ),
+        )
+        cov = {
+            "fields": {
+                "title": {
+                    "status": "NEEDS_REVIEW",
+                    "source": "title",
+                    "suggested_classification": {
+                        "data_class": "PUBLIC",
+                        "llm_visible": True,
+                        "rule_id": "public_descriptive",
+                        "why": "Job title",
+                    },
+                },
+                "department": {
+                    "status": "NEEDS_REVIEW",
+                    "source": "dept_raw",
+                    "suggested_classification": {
+                        "data_class": "PII",
+                        "llm_visible": False,
+                        "rule_id": "VALUE_CHECK",
+                        "why": "sample values look like PAN",
+                    },
+                },
+            },
+            "unused_host_fields": [],
+            "counts": {"matched": 0, "needs_review": 2, "missing": 0, "unused": 0},
+        }
+        v1 = store.propose_mapping("acme", m, proposed_by="alice", coverage=cov)
+    
+        # Reviewer accepts both fields: department source is unchanged ("dept_raw")
+        v2_row = store.review_version(
+            "acme",
+            "frappe",
+            "REQUISITION",
+            v1,
+            reviewer="bob",
+            actions={"accept": ["title", "department"]},
+        )
+        v2_cov = v2_row["coverage"]["fields"]
+    
+        # VALUE_CHECK suggestion must be retained
+>       dept_sug = v2_cov["department"]["suggested_classification"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:609: KeyError
+______________ test_review_drops_value_check_when_source_changed _______________
+
+    def test_review_drops_value_check_when_source_changed():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(FieldMap(target="department", source="dept_pan_leak"),),
+        )
+        cov = {
+            "fields": {
+                "department": {
+                    "status": "NEEDS_REVIEW",
+                    "source": "dept_pan_leak",
+                    "suggested_classification": {
+                        "data_class": "PII",
+                        "llm_visible": False,
+                        "rule_id": "VALUE_CHECK",
+                        "why": "sample values look like PAN",
+                    },
+                },
+            },
+            "unused_host_fields": [],
+            "counts": {"matched": 0, "needs_review": 1, "missing": 0, "unused": 0},
+        }
+        v1 = store.propose_mapping("acme", m, proposed_by="alice", coverage=cov)
+    
+        # Reviewer changes source of department to clean field "dept_clean"
+        v2_row = store.review_version(
+            "acme",
+            "frappe",
+            "REQUISITION",
+            v1,
+            reviewer="bob",
+            actions={"manual": {"department": {"source": "dept_clean"}}},
+        )
+        v2_cov = v2_row["coverage"]["fields"]
+    
+        # Since source changed, VALUE_CHECK is NOT retained; recomputed from rules
+>       dept_sug = v2_cov["department"]["suggested_classification"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:658: KeyError
+______________________ test_approve_accept_suggested_true ______________________
+
+    def test_approve_accept_suggested_true():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(
+                FieldMap(target="title", source="title"),
+                FieldMap(target="department", source="dept"),
+            ),
+        )
+        cov = {
+            "fields": {
+                "title": {
+                    "status": "MATCHED",
+                    "source": "title",
+                    "suggested_classification": {
+                        "data_class": "PUBLIC",
+                        "llm_visible": True,
+                        "rule_id": "public_descriptive",
+                        "why": "Job title",
+                    },
+                },
+                "department": {
+                    "status": "MATCHED",
+                    "source": "dept",
+                    "suggested_classification": {
+                        "data_class": "INTERNAL",
+                        "llm_visible": True,
+                        "rule_id": "internal_visible_descriptive",
+                        "why": "Department",
+                    },
+                },
+            },
+            "unused_host_fields": [],
+            "counts": {"matched": 2, "needs_review": 0, "missing": 0, "unused": 0},
+        }
+        v = store.propose_mapping("acme", m, proposed_by="alice", coverage=cov)
+    
+>       approved = store.approve_version(
+            "acme",
+            "frappe",
+            "REQUISITION",
+            v,
+            approver="bob",
+            accept_suggested_classification=True,
+        )
+E       TypeError: MappingStore.approve_version() got an unexpected keyword argument 'accept_suggested_classification'
+
+tests/unit/test_gap_k1.py:709: TypeError
+________________ test_approve_accept_suggested_false_and_absent ________________
+
+    def test_approve_accept_suggested_false_and_absent():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(FieldMap(target="title", source="title"),),
+        )
+        cov = {
+            "fields": {
+                "title": {
+                    "status": "MATCHED",
+                    "source": "title",
+                    "suggested_classification": {
+                        "data_class": "PUBLIC",
+                        "llm_visible": True,
+                        "rule_id": "public_descriptive",
+                        "why": "Job title",
+                    },
+                },
+            },
+            "unused_host_fields": [],
+            "counts": {"matched": 1, "needs_review": 0, "missing": 0, "unused": 0},
+        }
+        v1 = store.propose_mapping("acme", m, proposed_by="alice", coverage=cov)
+    
+        # False -> defaults to PII, hidden
+>       app1 = store.approve_version(
+            "acme",
+            "frappe",
+            "REQUISITION",
+            v1,
+            approver="bob",
+            accept_suggested_classification=False,
+        )
+E       TypeError: MappingStore.approve_version() got an unexpected keyword argument 'accept_suggested_classification'
+
+tests/unit/test_gap_k1.py:753: TypeError
+__________________ test_approve_explicit_wins_over_suggestion __________________
+
+    def test_approve_explicit_wins_over_suggestion():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(
+                FieldMap(target="title", source="title"),
+                FieldMap(target="department", source="dept"),
+            ),
+        )
+        cov = {
+            "fields": {
+                "title": {
+                    "status": "MATCHED",
+                    "source": "title",
+                    "suggested_classification": {
+                        "data_class": "PUBLIC",
+                        "llm_visible": True,
+                        "rule_id": "public_descriptive",
+                        "why": "Job title",
+                    },
+                },
+                "department": {
+                    "status": "MATCHED",
+                    "source": "dept",
+                    "suggested_classification": {
+                        "data_class": "INTERNAL",
+                        "llm_visible": True,
+                        "rule_id": "internal_visible_descriptive",
+                        "why": "Department",
+                    },
+                },
+            },
+            "unused_host_fields": [],
+            "counts": {"matched": 2, "needs_review": 0, "missing": 0, "unused": 0},
+        }
+        v = store.propose_mapping("acme", m, proposed_by="alice", coverage=cov)
+    
+        # Human explicitly classifies title as INTERNAL/True, overriding the suggestion PUBLIC/True
+        explicit = {"title": {"data_class": "INTERNAL", "llm_visible": True}}
+>       approved = store.approve_version(
+            "acme",
+            "frappe",
+            "REQUISITION",
+            v,
+            approver="bob",
+            classification=explicit,
+            accept_suggested_classification=True,
+        )
+E       TypeError: MappingStore.approve_version() got an unexpected keyword argument 'accept_suggested_classification'
+
+tests/unit/test_gap_k1.py:812: TypeError
+________________ test_approve_field_without_suggestion_defaults ________________
+
+    def test_approve_field_without_suggestion_defaults():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(FieldMap(target="custom_no_rule", source="custom_raw"),),
+        )
+        cov = {
+            "fields": {
+                "custom_no_rule": {
+                    "status": "MATCHED",
+                    "source": "custom_raw",
+                    "suggested_classification": None,
+                },
+            },
+            "unused_host_fields": [],
+            "counts": {"matched": 1, "needs_review": 0, "missing": 0, "unused": 0},
+        }
+        v = store.propose_mapping("acme", m, proposed_by="alice", coverage=cov)
+    
+>       approved = store.approve_version(
+            "acme",
+            "frappe",
+            "REQUISITION",
+            v,
+            approver="bob",
+            accept_suggested_classification=True,
+        )
+E       TypeError: MappingStore.approve_version() got an unexpected keyword argument 'accept_suggested_classification'
+
+tests/unit/test_gap_k1.py:851: TypeError
+___________________ test_http_synthesize_review_approve_flow ___________________
+
+make_client = <function make_client.<locals>._make at 0x10ce3ce00>
+bearer = <function bearer.<locals>._headers at 0x10ce3d620>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ce1e650>
+
+    def test_http_synthesize_review_approve_flow(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+    
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+        carol = bearer(roles=["platform_admin"], sub="carol")
+    
+        # 1. Synthesize with sample records carrying a PAN in department
+        synth_payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [
+                {"name": "id"},
+                {"name": "title"},
+                {"name": "department"},
+            ],
+            "sample_records": [
+                {"id": "REQ-101", "title": "Senior Engineer", "department": SAMPLE_PAN},
+            ],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=synth_payload, headers=alice)
+        assert res.status_code == 200, res.text
+        v1_body = res.json()
+        v1 = v1_body["mapping_version"]
+    
+        # Verify VALUE_CHECK triggered and sample value is NOT in response
+>       dept_sug = v1_body["coverage"]["fields"]["department"]["suggested_classification"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'suggested_classification'
+
+tests/unit/test_gap_k1.py:897: KeyError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_k1.py::test_loader_unknown_when_key - NotImplement...
+FAILED tests/unit/test_gap_k1.py::test_loader_unknown_then_key - NotImplement...
+FAILED tests/unit/test_gap_k1.py::test_loader_empty_when - NotImplementedErro...
+FAILED tests/unit/test_gap_k1.py::test_loader_duplicate_id - NotImplementedEr...
+FAILED tests/unit/test_gap_k1.py::test_loader_unknown_class - NotImplementedE...
+FAILED tests/unit/test_gap_k1.py::test_loader_llm_visible_true_with_pii - Not...
+FAILED tests/unit/test_gap_k1.py::test_loader_llm_visible_true_with_compensation
+FAILED tests/unit/test_gap_k1.py::test_loader_unknown_hit_policy - NotImpleme...
+FAILED tests/unit/test_gap_k1.py::test_loader_invalid_version - NotImplemente...
+FAILED tests/unit/test_gap_k1.py::test_loader_invalid_target_kind_in - NotImp...
+FAILED tests/unit/test_gap_k1.py::test_evaluator_first_hit_order - NotImpleme...
+FAILED tests/unit/test_gap_k1.py::test_evaluator_and_of_conditions - NotImple...
+FAILED tests/unit/test_gap_k1.py::test_evaluator_entity_in_restricting_target_in
+FAILED tests/unit/test_gap_k1.py::test_evaluator_target_kind_in_fallbacks - N...
+FAILED tests/unit/test_gap_k1.py::test_evaluator_no_match_returns_none - NotI...
+FAILED tests/unit/test_gap_k1.py::test_shipped_yaml_loads_and_is_cached - Not...
+FAILED tests/unit/test_gap_k1.py::test_shipped_yaml_covers_all_four_data_classes
+FAILED tests/unit/test_gap_k1.py::test_shipped_yaml_llm_visible_false_for_all_pii_and_compensation
+FAILED tests/unit/test_gap_k1.py::test_shipped_yaml_canonical_model_classifications
+FAILED tests/unit/test_gap_k1.py::test_synthesize_adds_suggested_classification_to_coverage
+FAILED tests/unit/test_gap_k1.py::test_synthesize_value_check_overrides_non_pii_with_pan
+FAILED tests/unit/test_gap_k1.py::test_synthesize_value_check_overrides_with_email
+FAILED tests/unit/test_gap_k1.py::test_synthesize_value_check_not_triggered_by_ordinary_text
+FAILED tests/unit/test_gap_k1.py::test_review_preserves_value_check_when_source_unchanged
+FAILED tests/unit/test_gap_k1.py::test_review_drops_value_check_when_source_changed
+FAILED tests/unit/test_gap_k1.py::test_approve_accept_suggested_true - TypeEr...
+FAILED tests/unit/test_gap_k1.py::test_approve_accept_suggested_false_and_absent
+FAILED tests/unit/test_gap_k1.py::test_approve_explicit_wins_over_suggestion
+FAILED tests/unit/test_gap_k1.py::test_approve_field_without_suggestion_defaults
+FAILED tests/unit/test_gap_k1.py::test_http_synthesize_review_approve_flow - ...
+30 failed in 1.41s

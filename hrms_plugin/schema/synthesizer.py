@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from pydantic import BaseModel, Field
 
+from hrms_plugin.governance.classification_rules import suggest_classification
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import DiscoveredEntity, FieldDataType
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
@@ -55,6 +56,7 @@ def compute_coverage(
     spec: Dict[str, Dict[str, Any]],
     field_mappings: List[SynthesizedFieldMap],
     unused_host_fields: List[str],
+    entity_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compute deterministic coverage report across all canonical targets in the entity spec."""
     fm_by_target = {fm.canonical_target: fm for fm in field_mappings}
@@ -67,6 +69,7 @@ def compute_coverage(
 
     for target in all_targets:
         field_spec = spec.get(target, {})
+        sug = suggest_classification(target, entity_type)
         if target in fm_by_target:
             fm = fm_by_target[target]
             origin = getattr(fm, "origin", "RULE") or "RULE"
@@ -83,6 +86,7 @@ def compute_coverage(
                 "rationale": fm.rationale,
                 "required": field_spec.get("required", False),
                 "accepted_by": None,
+                "suggested_classification": sug,
             }
         else:
             fields_cov[target] = {
@@ -93,6 +97,7 @@ def compute_coverage(
                 "rationale": "",
                 "required": field_spec.get("required", False),
                 "accepted_by": None,
+                "suggested_classification": sug,
             }
 
     counts = {
@@ -721,7 +726,7 @@ class MappingSynthesizer:
             sum(m.confidence for m in synthesized_meta) / len(synthesized_meta) if synthesized_meta else 0.0
         )
 
-        cov = compute_coverage(spec, synthesized_meta, unmapped_host)
+        cov = compute_coverage(spec, synthesized_meta, unmapped_host, entity_type=entity_key)
 
         report = SynthesisReport(
             entity_type=entity_key,
@@ -938,7 +943,9 @@ class MappingSynthesizer:
             spec = CANONICAL_SPECIFICATIONS.get(report.entity_type, {})
             if not spec:
                 spec = {f.target: {"required": f.required} for f in upgraded_mapping.fields}
-            report.coverage = compute_coverage(spec, synthesized_fms, report.unmapped_host_fields)
+            report.coverage = compute_coverage(
+                spec, synthesized_fms, report.unmapped_host_fields, entity_type=report.entity_type
+            )
             return upgraded_mapping, report
         except (LlmNotAllowed, PiiEgressBlocked):
             raise  # governance refusals must surface (agy G-F1)
