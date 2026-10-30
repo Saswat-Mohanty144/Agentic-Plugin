@@ -99,7 +99,7 @@ the HR system, and is not yet proven against hosts other than Frappe HR. See [se
 | Capability | Status | Notes |
 |---|---|---|
 | Chat copilot with tools (`/v1/chat`) | Built | Up to 5 reasoning steps, forced final answer at the limit |
-| Streaming chat (`/v1/chat/stream`) | Built, simpler | One round of tools, then a streamed answer; no 5-step loop |
+| Streaming chat (`/v1/chat/stream`) | Built | Same 5-step loop as `/v1/chat`; the final answer streams |
 | Deterministic HR tools (15) | Built | See [section 15](#15-agent-tools-reference) |
 | Statutory calculations | Built for IN and AE | Other countries are refused with `JURISDICTION_NOT_SUPPORTED` |
 | Labour-law search | Built, small | 10 hand-written citations (IN 5, AE 3, SA 1, US 1), keyword search, no embeddings |
@@ -112,8 +112,10 @@ the HR system, and is not yet proven against hosts other than Frappe HR. See [se
 | Write-back with four-eyes approval and rollback | Built, proven live | Frappe only |
 | Schema introspection and mapping proposals | Built | Approval with per-field data classification |
 | Voice (Sarvam speech-to-text and text-to-speech) | Built | Off unless the tenant opts in and a key is set |
-| Embeddable copilot widget | Built | Does not use streaming yet |
-| MCP adapter | Built as a library | No MCP transport (stdio/HTTP) is wired yet |
+| Embeddable copilot widget | Built | Streams answers; falls back to `/v1/chat` |
+| MCP server | Built | `POST /v1/mcp` (MCP Streamable HTTP, JSON responses) |
+| Signed audit headers on host writes | Built | Ed25519; writes refused without a signing key |
+| Two-person approval | Built | Mapping versions, salary-slip fingerprints, record shapes, write-back and rollback |
 | Evals (offline and gated live) | Built | Live runs need explicit approval |
 | Compliance dashboard / diagnose | Demo only | Off by default; shows sample data when enabled |
 | Requisition "archetypes" | Template only | No AI; pay and benefits left empty for a human |
@@ -282,14 +284,18 @@ Step by step:
    `statutory_citations`, `suggested_actions`, `thought_process`, `tool_calls`, and the flags `truncated` (the model
    hit its output limit), `partial` and `history_trimmed`.
 
-**Streaming (`/v1/chat/stream`).** One model call, then all requested tools run, then the final answer streams token
-by token with tools switched off. Each frame is `data: {json}`; event types are `history_trimmed`, `thinking`,
-`tool_call`, `tool_observation`, `token`, `done`, `intent` and `error`. Policy and budget are checked before the
-stream opens, so those failures arrive as normal HTTP errors.
+**Streaming (`/v1/chat/stream`).** Runs the same loop as `/v1/chat`: up to 5 tool rounds, each reported as
+`tool_call` and `tool_observation` events. When the model answers without tools, that answer is streamed as `token`
+events (no extra AI call). If the step limit is reached, a `partial` event is sent and the final answer is streamed
+with tools switched off. The stream ends with `done` (`finish_reason`, `truncated`), `result` (`statutory_citations`,
+`suggested_actions`, `partial`, `truncated`) and `intent`. Other events: `history_trimmed`, `thinking`, `error`. Each
+frame is `data: {json}`. Policy and budget are checked before the stream opens, so those failures arrive as normal
+HTTP errors.
 
-**Non-agentic mode (`agentic: false`).** Routes by keyword to a fixed specialist with no AI call. *Caution:* this
-older path still fills missing inputs with built-in example values (for example CTC 1,200,000 or a 3.5-year tenure).
-Use the default agentic mode for real decisions. See [section 20](#20-known-gaps-and-open-decisions).
+**Non-agentic mode (`agentic: false`).** Routes by keyword to a fixed specialist with no AI call. A specialist that
+lacks an input never invents one: it answers with `structured_data: {"error": "MISSING_INPUT", "missing": [...]}`,
+confidence 0 and no figures. The only derived values are the currency of the jurisdiction (INR for IN, AED for AE)
+and, for the job-description check, the user's own message as the text.
 
 ---
 
@@ -316,7 +322,12 @@ flowchart TD
   every later message too, even if the call was refused.
 - **Field classification.** When a schema mapping is approved, each field can be classified as PII, COMPENSATION,
   INTERNAL or PUBLIC. Unclassified fields count as PII, and PII or COMPENSATION fields cannot be marked visible to
-  the model. *The classification is stored and validated, but nothing reads it yet.*
+  the model. During chat, the plugin looks up the tenant's active mapping for the record type in the request
+  context (`entity`, for example `Employee` → `EMPLOYEE`, using the tenant's host vendor):
+  - context fields marked `llm_visible: true` have their values shown to the model;
+  - values of fields classified PII are redacted from every message, even when the field name looks harmless;
+  - values of COMPENSATION fields are redacted when the tenant sets `tokenize_compensation`;
+  - all other context values reach tools only, as before.
 - **Introspection.** Schema introspection returns structure only; sample values are stripped from the response.
 - **Voice.** Text to be spoken is scanned and refused if it contains PII. Audio uploads are not scanned; the
   transcript is redacted when it reaches the AI layer.
@@ -469,8 +480,14 @@ flowchart TD
   including status value maps (for example Frappe "Pending" → `PENDING`). Authentication is `frappe_token`
   (`token key:secret`) or `bearer`.
 - **Shape check.** The fingerprint covers which fields are present and their JSON types, not the values. Null values
-  never count as drift. A changed shape stops the read until an admin approves it with
-  `POST /v1/hosts/requisitions/shape/approve` (`MANAGE_SCHEMA`); only the last observed fingerprint can be approved.
+  never count as drift. A changed shape stops the read until it is approved with
+  `POST /v1/hosts/requisitions/shape/approve` (`MANAGE_SCHEMA`). Only the last observed fingerprint can be approved,
+  and approval takes two different people: the first call returns `202 PENDING_CONFIRMATION`, the same person again
+  gets `403 SAME_PERSON`, and a second admin's call approves it.
+- **Tenant mapping override.** An approved tenant mapping for the same vendor (created with the synthesize routes
+  and `vendor: "frappe"` or `"iceipts"`, see [section 12](#12-flow-schema-adaptation-for-a-new-hr-system)) replaces
+  the profile's field rules. Profile fields support `strip`, `lower` and `upper` transforms and `required` (a row
+  missing a required value is listed in `rejected` with `MISSING_VALUE`). Defaults are never applied.
 - **Errors.** Missing host or entity → 409; profile invalid → 500; host failures, inconsistent payloads or too many
   pages → 502.
 
@@ -514,8 +531,10 @@ and the components used, so an auditor can trace every number. Stored results ca
 `VENDOR_NOT_SUPPORTED`, `RULES_NOT_CONFIGURED`, `MAPPING_NOT_APPROVED`, `SCHEMA_DRIFT`, `AMBIGUOUS_SLIPS`,
 `PF_COMPONENT_MISSING`; 502 host or payload problems.
 
-Salary-slip fingerprints are approved with `POST /v1/schema/fingerprints/approve` (`MANAGE_SCHEMA`, recent sign-in);
-quarantined drifts are listed by `GET /v1/schema/fingerprints/quarantine`.
+Salary-slip fingerprints are approved with `POST /v1/schema/fingerprints/approve` (`MANAGE_SCHEMA`, recent sign-in)
+by two different people: the first call returns `202 PENDING_CONFIRMATION`, the second admin's call approves. A
+request for a different fingerprint replaces the pending one. Quarantined drifts are listed by
+`GET /v1/schema/fingerprints/quarantine`.
 
 ---
 
@@ -536,9 +555,11 @@ sequenceDiagram
     S->>H: read record: modified unchanged since proposal?
     S->>H: PUT only the changed fields + audit headers
     S-->>B: EXECUTED
-    Note over B,S: Later, if needed
-    B->>S: POST /proposals/{id}/rollback
-    S->>H: record unchanged since our write? then write back "before" values
+    Note over A,B: Later, if needed (two different people)
+    A->>S: POST /proposals/{id}/rollback
+    S-->>A: 202 ROLLBACK_PENDING (rollback_requested_by)
+    B->>S: POST /proposals/{id}/rollback (recent sign-in)
+    S->>H: record unchanged since our write? then write back "before" values + audit headers
     S-->>B: ROLLED_BACK
 ```
 
@@ -547,13 +568,20 @@ sequenceDiagram
 - If someone changed the record in the host after the proposal, approval fails with `CONFLICT`; rollback fails with
   `ROLLBACK_CONFLICT` if it changed after the write.
 - Approval is idempotent: approving an executed proposal returns it unchanged.
-- Each host write carries audit headers: `X-Plugin-Version`, `X-Agent-Invocation-Id`, `X-Agent-Name`,
-  `X-HITL-Approver-Id`, `X-Tenant-Id`, `X-Reasoning-Hash` (SHA-256 of the change) and `X-Trace-Timestamp`. They are
-  also saved in the proposal record.
+- **Rollback also needs two people.** The first call records who asked (`202 ROLLBACK_PENDING`); the same person
+  again gets `403 SAME_PERSON`; a different authorised user's call performs it.
+- **Signed audit headers.** Each host write carries `X-Plugin-Version`, `X-Agent-Invocation-Id`, `X-Agent-Name`,
+  `X-HITL-Approver-Id`, `X-Tenant-Id`, `X-Reasoning-Hash` (SHA-256 of the change), `X-Trace-Timestamp`,
+  `X-Audit-Key-Id` and `X-Audit-Signature`. The signature is Ed25519 over the other eight headers, written as
+  `Name:value` lines sorted by name and joined with newlines, encoded base64url without padding. The host (or an
+  auditor) checks it with the public key; `hrms_plugin.security.audit.verify_audit_headers` does the same in
+  Python. The headers are also saved in the proposal record.
+- **No key, no write.** Without `HRMS_AUDIT_SIGNING_KEY_FILE` and `HRMS_AUDIT_KEY_ID`, approval, rollback and
+  remediation answer `503 AUDIT_SIGNING_NOT_CONFIGURED` before contacting the host.
 - Error codes: 404 `NOT_FOUND`; 422 `FIELD_NOT_WRITABLE`, `INVALID_VALUE`, `NO_CHANGE`; 409 `CONFLICT`,
   `ROLLBACK_CONFLICT`, `ROLLBACK_UNAVAILABLE`, `EXPIRED`, `INVALID_STATE`, `VENDOR_NOT_SUPPORTED`; 403 `SAME_PERSON`;
-  503 `HOST_NOT_CONFIGURED`; 502 `HOST_ERROR`.
-- `POST /v1/remediate/execute` does **not** write anything. It returns the audit headers for a proposed fix
+  503 `HOST_NOT_CONFIGURED`, `AUDIT_SIGNING_NOT_CONFIGURED`; 502 `HOST_ERROR`.
+- `POST /v1/remediate/execute` does **not** write anything. It returns signed audit headers for a proposed fix
   (`status: ATTRIBUTION_ONLY`); actual changes must go through write-back.
 
 ---
@@ -563,20 +591,28 @@ sequenceDiagram
 Used by a super admin when onboarding a new host or entity type. All routes need `MANAGE_SCHEMA`.
 
 1. **Introspect** (`POST /v1/schema/introspect`). Upload an OpenAPI/Swagger document or sample records. The service
-   lists entities and field types. Sample values are removed from the response.
-2. **Synthesize** (`POST /v1/schema/synthesize`). Matches discovered field names to the canonical model by rules:
-   exact name or synonym (confidence 0.95–1.0), normalised name (0.90), normalised synonym (0.85), substring (0.75).
-   Mapped fields with confidence ≥ 0.8 and a single source become writable back. The report lists average
-   confidence and unmapped fields. The result is saved as a **PROPOSED** version.
+   lists entities and field types. Sample values are removed from the response. When sample records are sent and the
+   tenant already has an ACTIVE mapping for that entity (`vendor` in the request, default `host`), the response also
+   lists `drift`: new fields the mapping does not cover and expected fields that are missing, with severity. Drift
+   reports carry field names, never values.
+2. **Synthesize** (`POST /v1/schema/synthesize`). Body: `domain`, `discovered_fields`, `vendor` (lower-case, default
+   `host`; use the host's vendor, for example `frappe`, for a mapping that should override that vendor's profile) and
+   optional `sample_records` (at most 50). Matches discovered field names to the canonical model by rules: exact name
+   or synonym (confidence 0.95–1.0), normalised name (0.90), normalised synonym (0.85), substring (0.75). Mapped
+   fields with confidence ≥ 0.8 and a single source become writable back. The report lists average confidence and
+   unmapped fields. The result is saved as a **PROPOSED** version.
    Canonical types: requisition, candidate, employee, leave request, leave balance, punch, payslip, expense claim,
    asset, attendance request; others get a spec built on the fly.
-3. **Agentic synthesize** (`POST /v1/schema/synthesize/agentic`). Same, then asks the AI model to match only the
+3. **Shadow probe.** When `sample_records` are sent, the proposed mapping is dry-run against them. The response and
+   the stored version get `probe`: `is_valid`, `quality_score` (1 − 0.25 per error − 0.05 per warning), records tested
+   and issues (severity, field, record index, message; never the record's values).
+4. **Agentic synthesize** (`POST /v1/schema/synthesize/agentic`). Same, then asks the AI model to match only the
    fields rules could not match, sending field names only (tier 1). If the AI call fails, the rule-based result is
    kept.
-4. **Review** (`GET /v1/schema/mappings`, `GET /v1/schema/mappings/{vendor}/{entity_type}`).
-5. **Approve** (`POST .../versions/{version}/approve`, recent sign-in). The approver must not be the proposer
-   (`403 SAME_PERSON`). The body may classify each field (`data_class`, `llm_visible`). The new version becomes
-   **ACTIVE** and the previous one **SUPERSEDED**.
+5. **Review** (`GET /v1/schema/mappings`, `GET /v1/schema/mappings/{vendor}/{entity_type}`).
+6. **Approve** (`POST .../versions/{version}/approve`, recent sign-in). The approver must not be the proposer
+   (`403 SAME_PERSON`). A version whose probe failed cannot be approved (`409 PROBE_FAILED`). The body may classify
+   each field (`data_class`, `llm_visible`). The new version becomes **ACTIVE** and the previous one **SUPERSEDED**.
 
 Field transforms available to mappings: string, strip, lower, upper, int, decimal, datetime, date, list, join_names,
 bool, plus value maps for enumerations.
@@ -623,9 +659,12 @@ Routes: `POST /v1/voice/transcribe`, `/v1/voice/synthesize`, `/v1/voice/turn` (`
   the host origin.
 - **Isolation.** Rendered in Shadow DOM so styles do not leak. All text is escaped before rendering; links must be
   `https`.
-- **Actions.** Chat (`/v1/chat`), push-to-talk voice (`/v1/voice/turn`) and confirmed change proposals
-  (`/v1/writeback/proposals`). It never calls remediation directly.
-- Not yet: streaming display, and showing a notice when voice audio is withheld.
+- **Streaming.** Chat uses `/v1/chat/stream`: tokens appear as they arrive, each tool step is shown ("Using …"), a
+  notice appears if the answer may be incomplete, and citations and suggested actions are rendered from the `result`
+  event. If the browser cannot read a streamed body, or the server returns 404/405, it falls back to `/v1/chat`.
+- **Voice.** Push-to-talk via `/v1/voice/turn`. When the server withholds the audio because the reply contains
+  personal data, the widget shows "Audio withheld: the reply contains personal data".
+- **Actions.** Confirmed change proposals go to `/v1/writeback/proposals`. It never calls remediation directly.
 
 ---
 
@@ -675,15 +714,16 @@ Decree M/51) and US (FLSA). Matching is by keyword weighting.
 | `GET /v1/schema/mappings` | MANAGE_SCHEMA | List mappings and versions |
 | `GET /v1/schema/mappings/{vendor}/{entity_type}` | MANAGE_SCHEMA | Active mapping |
 | `POST /v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve` | MANAGE_SCHEMA, recent sign-in | Approve a mapping version |
-| `POST /v1/schema/fingerprints/approve` | MANAGE_SCHEMA, recent sign-in | Approve a salary-slip shape |
+| `POST /v1/schema/fingerprints/approve` | MANAGE_SCHEMA, recent sign-in | Approve a salary-slip shape (two people: first call `202`) |
 | `GET /v1/schema/fingerprints/quarantine` | MANAGE_SCHEMA | List quarantined drifts |
 | `GET /v1/hosts/requisitions` | MANAGE_RECRUITMENT | Read host requisitions |
-| `POST /v1/hosts/requisitions/shape/approve` | MANAGE_SCHEMA | Approve a requisition shape |
+| `POST /v1/hosts/requisitions/shape/approve` | MANAGE_SCHEMA | Approve a requisition shape (two people: first call `202`) |
 | `POST /v1/payroll/pf/calculate` | VIEW_SALARY | PF calculation |
 | `GET /v1/payroll/pf/results/{employee_id}/{period}` | VIEW_SALARY | Stored PF result |
 | `POST /v1/writeback/proposals` | MUTATE_EMPLOYEE | Propose a host change |
 | `POST /v1/writeback/proposals/{id}/approve` | MUTATE_EMPLOYEE, recent sign-in | Approve and execute |
-| `POST /v1/writeback/proposals/{id}/rollback` | MUTATE_EMPLOYEE, recent sign-in | Undo an executed change |
+| `POST /v1/writeback/proposals/{id}/rollback` | MUTATE_EMPLOYEE, recent sign-in | Undo an executed change (two people: first call `202`) |
+| `POST /v1/mcp` | USE_COPILOT | MCP server for AI clients ([section 16.1](#161-mcp-endpoint)) |
 | `GET /v1/governance/llm-egress` | VIEW_COMPLIANCE | Tenant's AI egress log |
 | `DELETE /v1/governance/llm-egress` | MANAGE_GOVERNANCE, recent sign-in | Delete the tenant's egress log |
 | `POST /v1/remediate/execute` | EXECUTE_REMEDIATION, recent sign-in | Audit headers for a fix (no write) |
@@ -695,16 +735,35 @@ Errors are JSON `{"error": "<CODE>", ...}`. Common codes:
 
 | Status | Codes |
 |---|---|
+| 202 | `PENDING_CONFIRMATION`, `ROLLBACK_PENDING` (status, not error: waiting for a second person) |
+| 400 | `JURISDICTION_REQUIRED`, `UNSUPPORTED_PROTOCOL_VERSION` (MCP) |
 | 401 | `UNAUTHENTICATED`, `REAUTH_REQUIRED` |
-| 403 | `FORBIDDEN`, `TENANT_MISMATCH`, `LLM_NOT_ALLOWED_FOR_TENANT`, `DATA_TIER_NOT_ALLOWED`, `DATA_RESIDENCY_MISMATCH`, `VOICE_NOT_ALLOWED_FOR_TENANT`, `SAME_PERSON` |
+| 403 | `FORBIDDEN`, `TENANT_MISMATCH`, `LLM_NOT_ALLOWED_FOR_TENANT`, `DATA_TIER_NOT_ALLOWED`, `DATA_RESIDENCY_MISMATCH`, `VOICE_NOT_ALLOWED_FOR_TENANT`, `SAME_PERSON`, `ORIGIN_NOT_ALLOWED` |
 | 404 | `NOT_FOUND`, `SLIP_NOT_FOUND` |
-| 409 | `HOST_NOT_CONFIGURED`, `SCHEMA_DRIFT`, `MAPPING_NOT_APPROVED`, `MAPPING_NOT_APPLICABLE`, `CONFLICT`, `INVALID_STATE`, `FINGERPRINT_NOT_OBSERVED` |
+| 409 | `HOST_NOT_CONFIGURED`, `SCHEMA_DRIFT`, `MAPPING_NOT_APPROVED`, `MAPPING_NOT_APPLICABLE`, `PROBE_FAILED`, `CONFLICT`, `INVALID_STATE`, `FINGERPRINT_NOT_OBSERVED` |
 | 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE` |
 | 429 | `RATE_LIMITED`, `LLM_BUDGET_EXHAUSTED` |
 | 502 / 504 | `HOST_ERROR`, `VOICE_UPSTREAM_ERROR`, `VOICE_UPSTREAM_TIMEOUT` |
-| 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED` |
+| 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED`, `AUDIT_SIGNING_NOT_CONFIGURED` |
 
 Set `HRMS_ENABLE_API_DOCS=true` to serve the interactive OpenAPI docs at `/docs`.
+
+### 16.1 MCP endpoint
+
+`POST /v1/mcp` lets an MCP client (for example an AI assistant) call the plugin's tools. It speaks MCP Streamable
+HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message per request (batches are refused).
+
+- **Headers.** `Authorization: Bearer <token>` (same sign-in as every route, permission `USE_COPILOT`),
+  `X-HRMS-Jurisdiction: IN|AE|SA|US` (required), optional `MCP-Protocol-Version` (`2025-06-18` or `2025-03-26`). A
+  browser `Origin`, when present, must be one of the tenants' allowed origins. Rate-limited per tenant.
+- **Methods.** `initialize`, `ping`, `tools/list`, `tools/call`; notifications such as `notifications/initialized`
+  get `202` with no body. `GET /v1/mcp` returns `405`.
+- **Tools.** Named `hrms_<tool>`. Only tools the caller's role permits are listed. Calculators that take amounts typed
+  by a user are not exposed, because an MCP client is itself a model and there is no user message to check the
+  numbers against. `tenant_id` and `jurisdiction` are never accepted as arguments (`SERVER_OWNED_ARGUMENT`); they come
+  from the token and the header.
+- **Results.** `tools/call` returns `content` (the result as JSON text), `structuredContent` (the same object) and
+  `isError`.
 
 ---
 
@@ -724,6 +783,7 @@ Set `HRMS_ENABLE_API_DOCS=true` to serve the interactive OpenAPI docs at `/docs`
 | `LLM_PROVIDER_REGION` | Region of the provider deployment, compared with tenant `region` | none |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `NVIDIA_API_KEY` | Provider credentials | none |
 | `SARVAM_API_KEY` | Voice provider key | voice off |
+| `HRMS_AUDIT_SIGNING_KEY_FILE`, `HRMS_AUDIT_KEY_ID` | Ed25519 private key (PEM) for signing host-write audit headers, and its id | host writes refused |
 | `HRMS_DEMO_ENDPOINTS` | `true` enables demo compliance routes | off |
 | `HRMS_ENABLE_API_DOCS` | `true` serves `/docs`, `/redoc`, `/openapi.json` | off |
 | `HRMS_EVAL_LIVE_APPROVED`, `HRMS_EVAL_TENANT` | Gate for live evals | off |
@@ -825,19 +885,24 @@ exits with code 2.
 
 **Docker** (`deploy/Dockerfile`): two-stage build on `python:3.11-slim`, runs as non-root user 10001, listens on
 8000, data in `/var/lib/hrms`. `deploy/docker-compose.yml` runs the API (requires `HRMS_TENANT_REGISTRY_FILE`, mounted
-read-only) with a `/healthz` health check, and an nginx container serving the widget on port 8080.
+read-only) with a `/healthz` health check, keeps data in the named volume `hrms-data`, passes provider keys and the
+other settings through from the host environment only when they are set, and runs an nginx container serving the
+widget on port 8080.
 
-**Kubernetes** (`deploy/k8s/`): Deployment with 2 replicas (250m CPU / 512 Mi requested, 1 CPU / 1 Gi limit),
-readiness and liveness probes on `/healthz`, tenant registry from a ConfigMap, ClusterIP Service on 8000.
+**Kubernetes** (`deploy/k8s/`): one replica with the `Recreate` strategy, data on the PersistentVolumeClaim
+`hrms-data` (`pvc.yaml`, 1 Gi, ReadWriteOnce), non-root user 10001, no privilege escalation, read-only root file
+system with an in-memory `/tmp`, all Linux capabilities dropped, secrets from the optional Secret
+`hrms-plugin-secrets` (`envFrom`), 250m CPU / 512 Mi requested and 1 CPU / 1 Gi limit, readiness and liveness probes
+on `/healthz`, tenant registry from a ConfigMap, ClusterIP Service on 8000.
 
 Before production, note:
 
-- Neither compose nor k8s mounts a persistent volume for `HRMS_DATA_DIR`, so mappings, approvals, proposals and the
-  egress log are lost when a container restarts.
-- Provider and Sarvam keys are not in the deploy files; supply them as secrets.
-- Rate limits and write-back locks are per process. With several replicas, each enforces its own limit.
-- Some variables in the deploy files (`ENVIRONMENT`, `LOG_LEVEL`, `DEFAULT_JURISDICTION`, `HOST_HRMS_BASE_URL`,
-  `HRMS_VENDOR_PROFILE`, `JWT_SECRET`) are not read by the code.
+- **One replica on purpose.** The store is SQLite (single writer) and rate limits and write-back locks live in the
+  process. Running several replicas needs a shared database and shared limits; that is part of the hosting topology
+  decision (owner).
+- Create the `hrms-plugin-secrets` Secret with the provider key(s), `SARVAM_API_KEY` if voice is used, and mount the
+  audit signing key file.
+- An empty environment variable is treated exactly like an unset one.
 
 **CLI** (`python -m hrms_plugin.cli`):
 
@@ -861,22 +926,22 @@ median tokens and answers citing laws not found in tool output.
 pytest                         # full suite
 pytest --cov=hrms_plugin       # with coverage
 ruff check hrms_plugin tests
-node --test sdk/test/copilot.test.js
+node --test sdk/test/*.test.js
 HRMS_FRAPPE_SANDBOX=1 pytest tests/integration   # live Frappe tests (needs the local sandbox)
 ```
 
 | Folder | What it covers |
 |---|---|
-| `tests/unit` (96 files) | Every module, including positive, negative and boundary cases |
+| `tests/unit` (104 files) | Every module, including positive, negative and boundary cases |
 | `tests/contract` | Vendor payload contracts |
 | `tests/drift` | Schema drift behaviour |
 | `tests/statutory` | Statutory calculation values |
 | `tests/e2e` | API flows, data protection and governance, copilot, route fuzzing |
 | `tests/integration` | Live Frappe HR v15 sandbox |
-| `sdk/test` | Widget core logic (21 tests) and a DOM-level suite |
+| `sdk/test` | Widget core logic, streaming parser and DOM-level behaviour (212 tests) |
 
-Latest full run on `agentic-ai`: **2068 passed, 0 failed, 19 skipped** (live Frappe), line coverage **98.9%**, every
-file ≥ 92%.
+Latest full run on `agentic-ai` (2026-10-30): **2,305 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
+**212 passed**, ruff clean. The last measured line coverage was 98.9% (2026-10-29, before the section-20 fixes).
 
 How quality was established:
 
@@ -887,28 +952,36 @@ How quality was established:
   which were fixed or recorded. Logs and findings are in `docs/superpowers/plans/`.
 
 CI (`.github/workflows/ci.yml`) runs lint and tests on Python 3.11 and 3.12, the widget tests, and a container smoke
-test. It currently triggers on pushes and pull requests to `main` only.
+test, on every branch push and pull request.
 
 ---
 
 ## 20. Known gaps and open decisions
 
-**Gaps in the code:**
+**Fixed on 2026-10-30** (plan and decisions: `docs/superpowers/plans/2026-10-30-readme-gaps-plan.md`; each fix has a
+failing test recorded first and was checked by mutation):
+
+| Former gap | Now |
+|---|---|
+| `agentic: false` path invented inputs | Answers `MISSING_INPUT` and lists what is missing ([section 5](#5-flow-a-chat-question-end-to-end)) |
+| Streaming ran one tool round | Same 5-step loop as `/v1/chat`, with `partial` and `result` events |
+| Field classification not read | Controls which context values the model sees and which are redacted ([section 6](#6-flow-how-personal-data-is-protected)) |
+| Tenant requisition overrides could not be created | Synthesize takes `vendor`; profiles support `strip`/`lower`/`upper` and `required` |
+| Prober and drift interceptor unused | Probe on synthesize (approval blocked if it fails); drift report on introspect |
+| Some approvals were one-person | Rollback, fingerprint and shape approval need two people |
+| Audit headers only hashed | Ed25519-signed; writes refused without a key |
+| No MCP transport | `POST /v1/mcp` ([section 16.1](#161-mcp-endpoint)) |
+| Widget did not stream or show withheld audio | Both done |
+| No persistent volume; unused variables in deploy files | Volume/PVC, hardened pod, unused variables removed |
+| CI on `main` only | Every branch and pull request |
+
+**Remaining gaps:**
 
 | Gap | Effect |
 |---|---|
-| `agentic: false` chat path uses built-in example values when inputs are missing | Can answer with numbers the user never gave; use the default agentic mode |
-| Streaming chat runs one round of tools only | Multi-step questions are better served by `/v1/chat` |
-| Field classification is stored but not read | Approved classifications do not yet change what reaches the model; redaction still applies |
-| Mappings created by the synthesize routes are saved under vendor `host`/`custom`, and use transforms the requisition overlay does not accept | Tenant overrides of requisition mappings cannot be created through the API yet |
-| Shadow prober and drift interceptor in `schema/` are not called by any route | Drift protection works through fingerprints/shapes instead |
-| Rollback, fingerprint approval and shape approval need one person, not two | Only mapping approval and write-back approval are four-eyes |
-| Audit headers contain a hash, not a cryptographic signature | Proves what was sent, not who sent it |
-| MCP adapter has no transport | Not reachable by MCP clients yet |
-| Widget does not stream or show withheld audio | UI only |
-| Labour-law search is keyword-based over 10 citations | Limited coverage |
-| No persistent volume in deploy files; per-process limits | See [section 18](#18-running-and-deploying) |
-| CI runs on `main` only | Tests on `agentic-ai` were run locally |
+| Labour-law search is keyword-based over 10 citations | Limited coverage. More citations need a legally reviewed source (owner: legal reviewer) |
+| Single replica | SQLite and in-process limits; scaling out needs a shared store (hosting topology decision) |
+| MCP endpoint answers in JSON only | No server-sent-event stream; enough for request/response tool calls |
 
 **Waiting on owners (not code decisions):**
 

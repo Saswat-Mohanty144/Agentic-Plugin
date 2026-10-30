@@ -39,3 +39,17 @@ Interpreter: `/Users/satosh/Agentic-Plugin-main/.venv/bin/python`.
 
 Acceptance for every task: its new tests and the previously passing tests in the touched areas pass; `ruff check
 hrms_plugin tests` clean. After merging: full suite, one mutation proof per batch, one review round.
+
+## Review round (2026-10-30) findings and decisions
+
+| ID | Finding | Decision |
+|---|---|---|
+| R1 | Mappings default to vendor `host`, chat resolves the host's real vendor, so classification is silently off | `vendor` on synthesize/introspect defaults to the tenant's `HRMS_HOSTS` vendor when configured, else `host` |
+| R2 | `/v1/mcp` returns host data to an external model client without the tenant's data policy | New tenant policy flag `mcp_enabled` (default false). MCP requires it and `max_data_tier >= 2`, else `403 MCP_NOT_ALLOWED_FOR_TENANT`; every `tools/call` writes an egress row (provider `mcp-client`). Residency cannot be verified for an external client; documented |
+| R3 | Pending two-person requests never expire | 24 h expiry (same as proposals); an expired request counts as absent and the next call starts a new one |
+| R4 | Deploy files never mount the signing key, hosts or rules files | Compose and k8s mount them read-only from a secret/config |
+| R5 | Stream `result` misses citations written in the answer; refusal not handled | Same `_collect_from_text` and refusal handling as `run()` |
+| R6 | MCP origin check uses every tenant's origins | Must be one of the caller tenant's `allowed_origins` |
+| R7 | Introspect 500 on `:` in an entity name | `400 INVALID_KEY` |
+| R8 | Drift flags parent keys of nested source paths | Compare against the top-level segment of each source path |
+| R9 | Currency defaults to AED for SA/US | Derived only for IN (INR) and AE (AED); otherwise required (`MISSING_INPUT`) |
