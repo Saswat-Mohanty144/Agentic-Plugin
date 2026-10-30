@@ -49,14 +49,17 @@ def _load_ci() -> Dict[str, Any]:
     return yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text())
 
 
-def _parse_env_list_or_dict(env_block: Any) -> Dict[str, str]:
+def _parse_env_list_or_dict(env_block: Any) -> Dict[str, Any]:
     if isinstance(env_block, dict):
         return {str(k): str(v) for k, v in env_block.items()}
     result = {}
     for item in env_block or []:
-        if isinstance(item, str) and "=" in item:
-            k, v = item.split("=", 1)
-            result[k.strip()] = v.strip()
+        if isinstance(item, str):
+            if "=" in item:
+                k, v = item.split("=", 1)
+                result[k.strip()] = v.strip()
+            else:
+                result[item.strip()] = None
         elif isinstance(item, dict) and "name" in item:
             result[item["name"]] = item.get("value", "")
     return result
@@ -87,15 +90,20 @@ def test_compose_removed_env_vars_absent():
 def test_compose_optional_pass_through_env_vars():
     compose = _load_compose()
     api = compose["services"]["hrms-plugin-api"]
-    env_vars = _parse_env_list_or_dict(api.get("environment"))
+    raw_env = api.get("environment", [])
+    env_vars = _parse_env_list_or_dict(raw_env)
     # Kept required variables
     assert env_vars.get("PORT") == "8000"
     assert env_vars.get("HRMS_TENANT_REGISTRY") == "/etc/hrms/tenants.yaml"
     assert env_vars.get("HRMS_DATA_DIR") == "/var/lib/hrms"
-    # Pass-through variables must use ${VAR:-}
+    # Compose entries must have no "=${" form
+    assert not any("=${" in str(item) for item in raw_env), "compose entries must have no '=${' form"
+    # Pass-through variables must be bare entries without a value (- VAR)
     for var in OPTIONAL_PASS_THROUGH_VARS:
-        assert var in env_vars, f"missing pass-through variable {var} in compose"
-        assert env_vars[var] == f"${{{var}:-}}", f"pass-through var {var} must use ${{VAR:-}}, got {env_vars[var]}"
+        assert var in raw_env, f"missing bare pass-through variable {var} in compose"
+        assert not any(str(item).startswith(f"{var}=") for item in raw_env), (
+            f"pass-through var {var} must not have value assignment in compose"
+        )
 
 
 def test_k8s_pvc_definition_exists():
@@ -213,11 +221,12 @@ def test_boundary_removed_var_detection():
 
 
 def test_boundary_pass_through_syntax_validation():
-    # Pass-through variables without default fallback (${VAR} without :-) are rejected
-    bad_env = ["LLM_PROVIDER=${LLM_PROVIDER}"]
-    parsed = _parse_env_list_or_dict(bad_env)
-    with pytest.raises(AssertionError, match="must use"):
-        assert parsed["LLM_PROVIDER"] == "${LLM_PROVIDER:-}", "must use ${VAR:-}"
+    # Pass-through variables with ${VAR:-} or = form are rejected
+    bad_items = ["LLM_PROVIDER=${LLM_PROVIDER:-}", "LLM_MODEL=", "OPENAI_API_KEY=${OPENAI_API_KEY}"]
+    for item in bad_items:
+        with pytest.raises(AssertionError):
+            assert "=${" not in item, "compose entries must have no '=${' form"
+            assert "=" not in item, "pass-through var must not have value assignment in compose"
 
 
 def test_boundary_unsafe_pod_security_rejected():

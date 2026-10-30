@@ -155,7 +155,7 @@ def load_registry(path: Union[str, Path]) -> TenantRegistry:
 
 def load_registry_from_env(env: Optional[Mapping[str, str]] = None) -> TenantRegistry:
     env = os.environ if env is None else env
-    path = env.get(REGISTRY_ENV_VAR)
+    path = (env.get(REGISTRY_ENV_VAR) or "").strip()
     if not path:
         raise RegistryError(f"{REGISTRY_ENV_VAR} is not set; the plugin cannot authenticate requests without it")
     return load_registry(path)

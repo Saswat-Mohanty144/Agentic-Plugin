@@ -87,7 +87,8 @@ class HostConfig(BaseModel):
         if self.vendor != "frappe":
             raise HostRegistryError(f"tenant {self.tenant_id!r} is not a frappe host")
         env = os.environ if env is None else env
-        key, secret = env.get(self.api_key_env), env.get(self.api_secret_env)
+        key = (env.get(self.api_key_env) or "").strip() if self.api_key_env else ""
+        secret = (env.get(self.api_secret_env) or "").strip() if self.api_secret_env else ""
         if not key or not secret:
             raise HostRegistryError(f"credentials for tenant {self.tenant_id!r} are not set in the environment")
         return key, secret
@@ -97,7 +98,7 @@ class HostConfig(BaseModel):
         if self.vendor != "iceipts":
             raise HostRegistryError(f"tenant {self.tenant_id!r} is not an iceipts host")
         env = os.environ if env is None else env
-        token = env.get(self.token_env) if self.token_env else None
+        token = (env.get(self.token_env) or "").strip() if self.token_env else ""
         if not token:
             raise HostRegistryError(f"token for tenant {self.tenant_id!r} is not set in the environment")
         return token
@@ -129,7 +130,7 @@ def load_host_registry(path: Union[str, Path]) -> HostRegistry:
 
 def load_host_registry_from_env(env: Optional[Mapping[str, str]] = None) -> HostRegistry:
     env = os.environ if env is None else env
-    path = env.get(HOSTS_ENV_VAR)
+    path = (env.get(HOSTS_ENV_VAR) or "").strip()
     if not path:
         raise HostRegistryError(f"{HOSTS_ENV_VAR} is not set")
     return load_host_registry(path)

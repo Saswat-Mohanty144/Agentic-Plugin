@@ -152,3 +152,695 @@ FAILED tests/unit/test_gap_h_deploy.py::test_k8s_security_context_pod_and_contai
 FAILED tests/unit/test_gap_h_deploy.py::test_k8s_env_and_secrets - AssertionE...
 FAILED tests/unit/test_gap_h_deploy.py::test_ci_triggers_cover_all_branches
 ============================== 9 failed in 0.29s ===============================
+..F...........FFFFFFFFFFFFFFFFFFFFFF                                     [100%]
+=================================== FAILURES ===================================
+_________________ test_compose_optional_pass_through_env_vars __________________
+
+    def test_compose_optional_pass_through_env_vars():
+        compose = _load_compose()
+        api = compose["services"]["hrms-plugin-api"]
+        raw_env = api.get("environment", [])
+        env_vars = _parse_env_list_or_dict(raw_env)
+        # Kept required variables
+        assert env_vars.get("PORT") == "8000"
+        assert env_vars.get("HRMS_TENANT_REGISTRY") == "/etc/hrms/tenants.yaml"
+        assert env_vars.get("HRMS_DATA_DIR") == "/var/lib/hrms"
+        # Compose entries must have no "=${" form
+>       assert not any("=${" in str(item) for item in raw_env), "compose entries must have no '=${' form"
+E       AssertionError: compose entries must have no '=${' form
+E       assert not True
+E        +  where True = any(<generator object test_compose_optional_pass_through_env_vars.<locals>.<genexpr> at 0x109947bc0>)
+
+tests/unit/test_gap_h_deploy.py:100: AssertionError
+_ test_llm_model_empty_and_whitespace_behaves_as_unset[openai-OPENAI_API_KEY-gpt-4o-mini] _
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109a853d0>
+provider = 'openai', key_name = 'OPENAI_API_KEY', default_model = 'gpt-4o-mini'
+
+    @pytest.mark.parametrize(
+        "provider,key_name,default_model",
+        [
+            ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
+            ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+            ("openrouter", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+            ("anthropic", "ANTHROPIC_API_KEY", ANTHROPIC_DEFAULT_MODEL),
+            ("gemini", "GEMINI_API_KEY", "gemini-2.5-flash"),
+            ("nvidia", "NVIDIA_API_KEY", "meta/llama-3.1-70b-instruct"),
+        ],
+    )
+    def test_llm_model_empty_and_whitespace_behaves_as_unset(clean_all_env, provider, key_name, default_model):
+        clean_all_env.setenv("LLM_PROVIDER", provider)
+        clean_all_env.setenv(key_name, "test-key")
+    
+        # Positive case: explicit model override
+        clean_all_env.setenv("LLM_MODEL", "custom-model-id")
+        assert LLMGateway().config.model == "custom-model-id"
+    
+        # Boundary case 1: unset behaves as default
+        clean_all_env.delenv("LLM_MODEL", raising=False)
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 2: empty string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "")
+>       assert LLMGateway().config.model == default_model
+E       AssertionError: assert '' == 'gpt-4o-mini'
+E         
+E         - gpt-4o-mini
+
+tests/unit/test_gap_h_env.py:78: AssertionError
+_ test_llm_model_empty_and_whitespace_behaves_as_unset[groq-GROQ_API_KEY-llama-3.3-70b-versatile] _
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109a85650>
+provider = 'groq', key_name = 'GROQ_API_KEY'
+default_model = 'llama-3.3-70b-versatile'
+
+    @pytest.mark.parametrize(
+        "provider,key_name,default_model",
+        [
+            ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
+            ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+            ("openrouter", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+            ("anthropic", "ANTHROPIC_API_KEY", ANTHROPIC_DEFAULT_MODEL),
+            ("gemini", "GEMINI_API_KEY", "gemini-2.5-flash"),
+            ("nvidia", "NVIDIA_API_KEY", "meta/llama-3.1-70b-instruct"),
+        ],
+    )
+    def test_llm_model_empty_and_whitespace_behaves_as_unset(clean_all_env, provider, key_name, default_model):
+        clean_all_env.setenv("LLM_PROVIDER", provider)
+        clean_all_env.setenv(key_name, "test-key")
+    
+        # Positive case: explicit model override
+        clean_all_env.setenv("LLM_MODEL", "custom-model-id")
+        assert LLMGateway().config.model == "custom-model-id"
+    
+        # Boundary case 1: unset behaves as default
+        clean_all_env.delenv("LLM_MODEL", raising=False)
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 2: empty string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "")
+>       assert LLMGateway().config.model == default_model
+E       AssertionError: assert '' == 'llama-3.3-70b-versatile'
+E         
+E         - llama-3.3-70b-versatile
+
+tests/unit/test_gap_h_env.py:78: AssertionError
+_ test_llm_model_empty_and_whitespace_behaves_as_unset[openrouter-OPENROUTER_API_KEY-meta-llama/llama-3.3-70b-instruct:free] _
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109a84d50>
+provider = 'openrouter', key_name = 'OPENROUTER_API_KEY'
+default_model = 'meta-llama/llama-3.3-70b-instruct:free'
+
+    @pytest.mark.parametrize(
+        "provider,key_name,default_model",
+        [
+            ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
+            ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+            ("openrouter", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+            ("anthropic", "ANTHROPIC_API_KEY", ANTHROPIC_DEFAULT_MODEL),
+            ("gemini", "GEMINI_API_KEY", "gemini-2.5-flash"),
+            ("nvidia", "NVIDIA_API_KEY", "meta/llama-3.1-70b-instruct"),
+        ],
+    )
+    def test_llm_model_empty_and_whitespace_behaves_as_unset(clean_all_env, provider, key_name, default_model):
+        clean_all_env.setenv("LLM_PROVIDER", provider)
+        clean_all_env.setenv(key_name, "test-key")
+    
+        # Positive case: explicit model override
+        clean_all_env.setenv("LLM_MODEL", "custom-model-id")
+        assert LLMGateway().config.model == "custom-model-id"
+    
+        # Boundary case 1: unset behaves as default
+        clean_all_env.delenv("LLM_MODEL", raising=False)
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 2: empty string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "")
+>       assert LLMGateway().config.model == default_model
+E       AssertionError: assert '' == 'meta-llama/l...instruct:free'
+E         
+E         - meta-llama/llama-3.3-70b-instruct:free
+
+tests/unit/test_gap_h_env.py:78: AssertionError
+_ test_llm_model_empty_and_whitespace_behaves_as_unset[anthropic-ANTHROPIC_API_KEY-claude-opus-5-5] _
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109af4410>
+provider = 'anthropic', key_name = 'ANTHROPIC_API_KEY'
+default_model = 'claude-opus-5-5'
+
+    @pytest.mark.parametrize(
+        "provider,key_name,default_model",
+        [
+            ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
+            ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+            ("openrouter", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+            ("anthropic", "ANTHROPIC_API_KEY", ANTHROPIC_DEFAULT_MODEL),
+            ("gemini", "GEMINI_API_KEY", "gemini-2.5-flash"),
+            ("nvidia", "NVIDIA_API_KEY", "meta/llama-3.1-70b-instruct"),
+        ],
+    )
+    def test_llm_model_empty_and_whitespace_behaves_as_unset(clean_all_env, provider, key_name, default_model):
+        clean_all_env.setenv("LLM_PROVIDER", provider)
+        clean_all_env.setenv(key_name, "test-key")
+    
+        # Positive case: explicit model override
+        clean_all_env.setenv("LLM_MODEL", "custom-model-id")
+        assert LLMGateway().config.model == "custom-model-id"
+    
+        # Boundary case 1: unset behaves as default
+        clean_all_env.delenv("LLM_MODEL", raising=False)
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 2: empty string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "")
+>       assert LLMGateway().config.model == default_model
+E       AssertionError: assert '' == 'claude-opus-5-5'
+E         
+E         - claude-opus-5-5
+
+tests/unit/test_gap_h_env.py:78: AssertionError
+_ test_llm_model_empty_and_whitespace_behaves_as_unset[gemini-GEMINI_API_KEY-gemini-2.5-flash] _
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109af6890>
+provider = 'gemini', key_name = 'GEMINI_API_KEY'
+default_model = 'gemini-2.5-flash'
+
+    @pytest.mark.parametrize(
+        "provider,key_name,default_model",
+        [
+            ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
+            ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+            ("openrouter", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+            ("anthropic", "ANTHROPIC_API_KEY", ANTHROPIC_DEFAULT_MODEL),
+            ("gemini", "GEMINI_API_KEY", "gemini-2.5-flash"),
+            ("nvidia", "NVIDIA_API_KEY", "meta/llama-3.1-70b-instruct"),
+        ],
+    )
+    def test_llm_model_empty_and_whitespace_behaves_as_unset(clean_all_env, provider, key_name, default_model):
+        clean_all_env.setenv("LLM_PROVIDER", provider)
+        clean_all_env.setenv(key_name, "test-key")
+    
+        # Positive case: explicit model override
+        clean_all_env.setenv("LLM_MODEL", "custom-model-id")
+        assert LLMGateway().config.model == "custom-model-id"
+    
+        # Boundary case 1: unset behaves as default
+        clean_all_env.delenv("LLM_MODEL", raising=False)
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 2: empty string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "")
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 3: whitespace string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "   ")
+>       assert LLMGateway().config.model == default_model
+E       AssertionError: assert '   ' == 'gemini-2.5-flash'
+E         
+E         Strings contain only whitespace, escaping them using repr()
+E         - 'gemini-2.5-flash'
+E         + '   '
+
+tests/unit/test_gap_h_env.py:82: AssertionError
+_ test_llm_model_empty_and_whitespace_behaves_as_unset[nvidia-NVIDIA_API_KEY-meta/llama-3.1-70b-instruct] _
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109c0cbd0>
+provider = 'nvidia', key_name = 'NVIDIA_API_KEY'
+default_model = 'meta/llama-3.1-70b-instruct'
+
+    @pytest.mark.parametrize(
+        "provider,key_name,default_model",
+        [
+            ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
+            ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
+            ("openrouter", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+            ("anthropic", "ANTHROPIC_API_KEY", ANTHROPIC_DEFAULT_MODEL),
+            ("gemini", "GEMINI_API_KEY", "gemini-2.5-flash"),
+            ("nvidia", "NVIDIA_API_KEY", "meta/llama-3.1-70b-instruct"),
+        ],
+    )
+    def test_llm_model_empty_and_whitespace_behaves_as_unset(clean_all_env, provider, key_name, default_model):
+        clean_all_env.setenv("LLM_PROVIDER", provider)
+        clean_all_env.setenv(key_name, "test-key")
+    
+        # Positive case: explicit model override
+        clean_all_env.setenv("LLM_MODEL", "custom-model-id")
+        assert LLMGateway().config.model == "custom-model-id"
+    
+        # Boundary case 1: unset behaves as default
+        clean_all_env.delenv("LLM_MODEL", raising=False)
+        assert LLMGateway().config.model == default_model
+    
+        # Boundary case 2: empty string behaves as unset (default)
+        clean_all_env.setenv("LLM_MODEL", "")
+>       assert LLMGateway().config.model == default_model
+E       AssertionError: assert '' == 'meta/llama-3.1-70b-instruct'
+E         
+E         - meta/llama-3.1-70b-instruct
+
+tests/unit/test_gap_h_env.py:78: AssertionError
+___________ test_llm_provider_empty_and_whitespace_behaves_as_unset ____________
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109bb0350>
+
+    def test_llm_provider_empty_and_whitespace_behaves_as_unset(clean_all_env):
+        # Empty or whitespace provider with no keys must fail loud
+        clean_all_env.setenv("LLM_PROVIDER", "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        clean_all_env.setenv("LLM_PROVIDER", "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'no LLM provider configured'
+E         Actual message: "unknown LLM_PROVIDER '   '"
+
+tests/unit/test_gap_h_env.py:92: AssertionError
+____________ test_llm_effort_empty_and_whitespace_behaves_as_unset _____________
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109b42c50>
+
+    def test_llm_effort_empty_and_whitespace_behaves_as_unset(clean_all_env):
+        clean_all_env.setenv("LLM_PROVIDER", "anthropic")
+        clean_all_env.setenv("ANTHROPIC_API_KEY", "test-key")
+    
+        # Unset defaults to medium
+        clean_all_env.delenv("LLM_EFFORT", raising=False)
+        assert LLMGateway().config.effort == "medium"
+    
+        # Empty string defaults to medium
+        clean_all_env.setenv("LLM_EFFORT", "")
+>       assert LLMGateway().config.effort == "medium"
+               ^^^^^^^^^^^^
+
+tests/unit/test_gap_h_env.py:121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+hrms_plugin/ai/llm.py:817: in __init__
+    self.config = config or self._resolve_config_from_env()
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <hrms_plugin.ai.llm.LLMGateway object at 0x109af4510>
+
+    def _resolve_config_from_env(self) -> LLMConfig:
+        """Autodetect active LLM provider from environment variables."""
+        provider_env = os.getenv("LLM_PROVIDER", "").lower()
+        known = {"", "fake", "openai", "groq", "openrouter", "anthropic", "gemini", "google", "nvidia"}
+        if provider_env not in known:
+            raise LLMNotConfigured(f"unknown LLM_PROVIDER {provider_env!r}")
+        if provider_env == "fake":
+            return LLMConfig(provider=LLMProvider.FAKE, model="fake-agentic-v1")
+    
+        if provider_env == "openai" or (not provider_env and os.getenv("OPENAI_API_KEY")):
+            return LLMConfig(
+                provider=LLMProvider.OPENAI,
+                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+                api_key=os.getenv("OPENAI_API_KEY"),
+                base_url=os.getenv("OPENAI_BASE_URL"),
+            )
+        elif provider_env == "groq" or (not provider_env and os.getenv("GROQ_API_KEY")):
+            return LLMConfig(
+                provider=LLMProvider.GROQ,
+                model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
+                api_key=os.getenv("GROQ_API_KEY"),
+            )
+        elif provider_env == "openrouter" or (not provider_env and os.getenv("OPENROUTER_API_KEY")):
+            return LLMConfig(
+                provider=LLMProvider.OPENROUTER,
+                model=os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+            )
+        elif provider_env == "anthropic" or (not provider_env and os.getenv("ANTHROPIC_API_KEY")):
+            effort = os.getenv("LLM_EFFORT", "medium")
+            if effort not in EFFORT_LEVELS:
+>               raise LLMNotConfigured(f"LLM_EFFORT must be one of {EFFORT_LEVELS}, got {effort!r}")
+E               hrms_plugin.ai.llm.LLMNotConfigured: LLM_EFFORT must be one of ('low', 'medium', 'high', 'xhigh', 'max'), got ''
+
+hrms_plugin/ai/llm.py:992: LLMNotConfigured
+________ test_llm_provider_region_empty_and_whitespace_behaves_as_unset ________
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109b05650>
+
+    def test_llm_provider_region_empty_and_whitespace_behaves_as_unset(clean_all_env):
+        clean_all_env.setenv("LLM_PROVIDER", "fake")
+    
+        # Unset is None
+        clean_all_env.delenv("LLM_PROVIDER_REGION", raising=False)
+        assert LLMGateway().provider_region is None
+    
+        # Empty string is None
+        clean_all_env.setenv("LLM_PROVIDER_REGION", "")
+        assert LLMGateway().provider_region is None
+    
+        # Whitespace is None
+        clean_all_env.setenv("LLM_PROVIDER_REGION", "   ")
+>       assert LLMGateway().provider_region is None
+E       AssertionError: assert '   ' is None
+E        +  where '   ' = <hrms_plugin.ai.llm.LLMGateway object at 0x109af7010>.provider_region
+E        +    where <hrms_plugin.ai.llm.LLMGateway object at 0x109af7010> = LLMGateway()
+
+tests/unit/test_gap_h_env.py:150: AssertionError
+__________ test_openai_base_url_empty_and_whitespace_behaves_as_unset __________
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109bb3dd0>
+
+    def test_openai_base_url_empty_and_whitespace_behaves_as_unset(clean_all_env):
+        clean_all_env.setenv("LLM_PROVIDER", "openai")
+        clean_all_env.setenv("OPENAI_API_KEY", "test-key")
+    
+        # Unset base_url leaves config None and client default
+        clean_all_env.delenv("OPENAI_BASE_URL", raising=False)
+        gw = LLMGateway()
+        assert gw.config.base_url is None
+        assert gw.client.base_url == "https://api.openai.com/v1"
+    
+        # Empty string base_url leaves config None and client default
+        clean_all_env.setenv("OPENAI_BASE_URL", "")
+        gw = LLMGateway()
+>       assert gw.config.base_url is None
+E       AssertionError: assert '' is None
+E        +  where '' = LLMConfig(provider=<LLMProvider.OPENAI: 'openai'>, model='gpt-4o-mini', api_key='test-key', base_url='', temperature=0.2, max_tokens=4096, effort='medium', timeout_seconds=45.0).base_url
+E        +    where LLMConfig(provider=<LLMProvider.OPENAI: 'openai'>, model='gpt-4o-mini', api_key='test-key', base_url='', temperature=0.2, max_tokens=4096, effort='medium', timeout_seconds=45.0) = <hrms_plugin.ai.llm.LLMGateway object at 0x109bb02d0>.config
+
+tests/unit/test_gap_h_env.py:170: AssertionError
+___ test_provider_keys_empty_and_whitespace_behave_as_unset[OPENAI_API_KEY] ____
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109b9ca10>
+key_name = 'OPENAI_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+____ test_provider_keys_empty_and_whitespace_behave_as_unset[GROQ_API_KEY] _____
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109c12a50>
+key_name = 'GROQ_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+_ test_provider_keys_empty_and_whitespace_behave_as_unset[OPENROUTER_API_KEY] __
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109ab8cd0>
+key_name = 'OPENROUTER_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+__ test_provider_keys_empty_and_whitespace_behave_as_unset[ANTHROPIC_API_KEY] __
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109b9e990>
+key_name = 'ANTHROPIC_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+___ test_provider_keys_empty_and_whitespace_behave_as_unset[GEMINI_API_KEY] ____
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109c12250>
+key_name = 'GEMINI_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+___ test_provider_keys_empty_and_whitespace_behave_as_unset[GOOGLE_API_KEY] ____
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109c70390>
+key_name = 'GOOGLE_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+___ test_provider_keys_empty_and_whitespace_behave_as_unset[NVIDIA_API_KEY] ____
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109b9ee90>
+key_name = 'NVIDIA_API_KEY'
+
+    @pytest.mark.parametrize(
+        "key_name",
+        [
+            "OPENAI_API_KEY",
+            "GROQ_API_KEY",
+            "OPENROUTER_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "NVIDIA_API_KEY",
+        ],
+    )
+    def test_provider_keys_empty_and_whitespace_behave_as_unset(clean_all_env, key_name):
+        # Empty key does not autodetect provider
+        clean_all_env.setenv(key_name, "")
+        with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+            LLMGateway()
+    
+        # Whitespace key does not autodetect provider
+        clean_all_env.setenv(key_name, "   ")
+>       with pytest.raises(LLMNotConfigured, match="no LLM provider configured"):
+E       Failed: DID NOT RAISE LLMNotConfigured
+
+tests/unit/test_gap_h_env.py:205: Failed
+__________ test_sarvam_api_key_empty_and_whitespace_behaves_as_unset ___________
+
+    def test_sarvam_api_key_empty_and_whitespace_behaves_as_unset():
+        # Unset
+        assert voice_agent_from_env({}).api_key is None
+    
+        # Empty string
+        assert voice_agent_from_env({"SARVAM_API_KEY": ""}).api_key is None
+    
+        # Whitespace
+>       assert voice_agent_from_env({"SARVAM_API_KEY": "   "}).api_key is None
+E       AssertionError: assert '   ' is None
+E        +  where '   ' = <hrms_plugin.agents.voice.VoiceAgent object at 0x109b9d590>.api_key
+E        +    where <hrms_plugin.agents.voice.VoiceAgent object at 0x109b9d590> = voice_agent_from_env({'SARVAM_API_KEY': '   '})
+
+tests/unit/test_gap_h_env.py:225: AssertionError
+____________ test_hrms_hosts_empty_and_whitespace_behaves_as_unset _____________
+
+    def test_hrms_hosts_empty_and_whitespace_behaves_as_unset():
+        # Unset
+        with pytest.raises(HostRegistryError, match="HRMS_HOSTS is not set"):
+            load_host_registry_from_env({})
+    
+        # Empty string
+        with pytest.raises(HostRegistryError, match="HRMS_HOSTS is not set"):
+            load_host_registry_from_env({"HRMS_HOSTS": ""})
+    
+        # Whitespace
+>       with pytest.raises(HostRegistryError, match="HRMS_HOSTS is not set"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'HRMS_HOSTS is not set'
+E         Actual message: "invalid host registry    : [Errno 2] No such file or directory: '   '"
+
+tests/unit/test_gap_h_env.py:241: AssertionError
+________ test_hrms_payroll_rules_empty_and_whitespace_behaves_as_unset _________
+
+    def test_hrms_payroll_rules_empty_and_whitespace_behaves_as_unset():
+        # Unset
+        with pytest.raises(RulesError, match="HRMS_PAYROLL_RULES is not set"):
+            load_payroll_rules_from_env({})
+    
+        # Empty string
+        with pytest.raises(RulesError, match="HRMS_PAYROLL_RULES is not set"):
+            load_payroll_rules_from_env({"HRMS_PAYROLL_RULES": ""})
+    
+        # Whitespace
+>       with pytest.raises(RulesError, match="HRMS_PAYROLL_RULES is not set"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'HRMS_PAYROLL_RULES is not set'
+E         Actual message: "cannot read payroll rules    : [Errno 2] No such file or directory: '   '"
+
+tests/unit/test_gap_h_env.py:285: AssertionError
+_______ test_hrms_tenant_registry_empty_and_whitespace_behaves_as_unset ________
+
+    def test_hrms_tenant_registry_empty_and_whitespace_behaves_as_unset():
+        # Unset
+        with pytest.raises(RegistryError, match="HRMS_TENANT_REGISTRY is not set"):
+            load_registry_from_env({})
+    
+        # Empty string
+        with pytest.raises(RegistryError, match="HRMS_TENANT_REGISTRY is not set"):
+            load_registry_from_env({"HRMS_TENANT_REGISTRY": ""})
+    
+        # Whitespace
+>       with pytest.raises(RegistryError, match="HRMS_TENANT_REGISTRY is not set"):
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'HRMS_TENANT_REGISTRY is not set'
+E         Actual message: "cannot read tenant registry    : [Errno 2] No such file or directory: '   '"
+
+tests/unit/test_gap_h_env.py:299: AssertionError
+___________ test_hrms_data_dir_empty_and_whitespace_behaves_as_unset ___________
+
+clean_all_env = <_pytest.monkeypatch.MonkeyPatch object at 0x109b04190>
+
+    def test_hrms_data_dir_empty_and_whitespace_behaves_as_unset(clean_all_env):
+        clean_all_env.setenv("LLM_PROVIDER", "fake")
+    
+        # When unset, defaults to .hrms_data
+        clean_all_env.delenv("HRMS_DATA_DIR", raising=False)
+        gw1 = LLMGateway()
+        assert ".hrms_data" in str(gw1.egress_log._store.db_path)
+    
+        # When empty string, must also default to .hrms_data, not empty relative path
+        clean_all_env.setenv("HRMS_DATA_DIR", "")
+        gw2 = LLMGateway()
+>       assert ".hrms_data" in str(gw2.egress_log._store.db_path)
+E       AssertionError: assert '.hrms_data' in 'plugin_storage.db'
+E        +  where 'plugin_storage.db' = str(PosixPath('plugin_storage.db'))
+E        +    where PosixPath('plugin_storage.db') = <hrms_plugin.storage.sqlite_store.SqliteKeyValueStore object at 0x109b24690>.db_path
+E        +      where <hrms_plugin.storage.sqlite_store.SqliteKeyValueStore object at 0x109b24690> = <hrms_plugin.governance.egress_log.EgressLog object at 0x109b26310>._store
+E        +        where <hrms_plugin.governance.egress_log.EgressLog object at 0x109b26310> = <hrms_plugin.ai.llm.LLMGateway object at 0x109b3ce90>.egress_log
+
+tests/unit/test_gap_h_env.py:314: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_h_deploy.py::test_compose_optional_pass_through_env_vars
+FAILED tests/unit/test_gap_h_env.py::test_llm_model_empty_and_whitespace_behaves_as_unset[openai-OPENAI_API_KEY-gpt-4o-mini]
+FAILED tests/unit/test_gap_h_env.py::test_llm_model_empty_and_whitespace_behaves_as_unset[groq-GROQ_API_KEY-llama-3.3-70b-versatile]
+FAILED tests/unit/test_gap_h_env.py::test_llm_model_empty_and_whitespace_behaves_as_unset[openrouter-OPENROUTER_API_KEY-meta-llama/llama-3.3-70b-instruct:free]
+FAILED tests/unit/test_gap_h_env.py::test_llm_model_empty_and_whitespace_behaves_as_unset[anthropic-ANTHROPIC_API_KEY-claude-opus-5-5]
+FAILED tests/unit/test_gap_h_env.py::test_llm_model_empty_and_whitespace_behaves_as_unset[gemini-GEMINI_API_KEY-gemini-2.5-flash]
+FAILED tests/unit/test_gap_h_env.py::test_llm_model_empty_and_whitespace_behaves_as_unset[nvidia-NVIDIA_API_KEY-meta/llama-3.1-70b-instruct]
+FAILED tests/unit/test_gap_h_env.py::test_llm_provider_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_llm_effort_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_llm_provider_region_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_openai_base_url_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[OPENAI_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[GROQ_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[OPENROUTER_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[ANTHROPIC_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[GEMINI_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[GOOGLE_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_provider_keys_empty_and_whitespace_behave_as_unset[NVIDIA_API_KEY]
+FAILED tests/unit/test_gap_h_env.py::test_sarvam_api_key_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_hrms_hosts_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_hrms_payroll_rules_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_hrms_tenant_registry_empty_and_whitespace_behaves_as_unset
+FAILED tests/unit/test_gap_h_env.py::test_hrms_data_dir_empty_and_whitespace_behaves_as_unset
+23 failed, 13 passed in 1.47s

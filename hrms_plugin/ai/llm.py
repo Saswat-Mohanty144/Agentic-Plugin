@@ -821,13 +821,15 @@ class LLMGateway:
             from hrms_plugin.governance.llm_policy import env_policy_resolver
             from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
 
-            data_dir = os.environ.get("HRMS_DATA_DIR", ".hrms_data")
+            data_dir = (os.environ.get("HRMS_DATA_DIR") or "").strip() or ".hrms_data"
             egress_log = egress_log or EgressLog(SqliteKeyValueStore(os.path.join(data_dir, "plugin_storage.db")))
             policy_resolver = policy_resolver or env_policy_resolver()
         self.egress_log = egress_log
         self.policy_resolver = policy_resolver
         # Region of the provider endpoint, set by the deployment; checked against a tenant's residency rule (QF).
-        self.provider_region: Optional[str] = (os.environ.get("LLM_PROVIDER_REGION") or None) if from_env else None
+        self.provider_region: Optional[str] = (
+            ((os.environ.get("LLM_PROVIDER_REGION") or "").strip() or None) if from_env else None
+        )
 
     def _task_options(self, task_class: "TaskClass") -> Dict[str, Any]:
         """Per-call output controls the client understands (#9): a token cap, or effort for Anthropic."""
@@ -960,56 +962,69 @@ class LLMGateway:
 
     def _resolve_config_from_env(self) -> LLMConfig:
         """Autodetect active LLM provider from environment variables."""
-        provider_env = os.getenv("LLM_PROVIDER", "").lower()
+
+        def _env(name: str) -> Optional[str]:
+            val = (os.getenv(name) or "").strip()
+            return val if val else None
+
+        provider_env = (_env("LLM_PROVIDER") or "").lower()
         known = {"", "fake", "openai", "groq", "openrouter", "anthropic", "gemini", "google", "nvidia"}
         if provider_env not in known:
             raise LLMNotConfigured(f"unknown LLM_PROVIDER {provider_env!r}")
         if provider_env == "fake":
             return LLMConfig(provider=LLMProvider.FAKE, model="fake-agentic-v1")
 
-        if provider_env == "openai" or (not provider_env and os.getenv("OPENAI_API_KEY")):
+        model = _env("LLM_MODEL")
+        openai_key = _env("OPENAI_API_KEY")
+        base_url = _env("OPENAI_BASE_URL")
+        groq_key = _env("GROQ_API_KEY")
+        openrouter_key = _env("OPENROUTER_API_KEY")
+        anthropic_key = _env("ANTHROPIC_API_KEY")
+        gemini_key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
+        google_model = _env("GOOGLE_MODEL")
+        nvidia_key = _env("NVIDIA_API_KEY")
+
+        if provider_env == "openai" or (not provider_env and openai_key):
             return LLMConfig(
                 provider=LLMProvider.OPENAI,
-                model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
-                api_key=os.getenv("OPENAI_API_KEY"),
-                base_url=os.getenv("OPENAI_BASE_URL"),
+                model=model or "gpt-4o-mini",
+                api_key=openai_key,
+                base_url=base_url,
             )
-        elif provider_env == "groq" or (not provider_env and os.getenv("GROQ_API_KEY")):
+        elif provider_env == "groq" or (not provider_env and groq_key):
             return LLMConfig(
                 provider=LLMProvider.GROQ,
-                model=os.getenv("LLM_MODEL", "llama-3.3-70b-versatile"),
-                api_key=os.getenv("GROQ_API_KEY"),
+                model=model or "llama-3.3-70b-versatile",
+                api_key=groq_key,
             )
-        elif provider_env == "openrouter" or (not provider_env and os.getenv("OPENROUTER_API_KEY")):
+        elif provider_env == "openrouter" or (not provider_env and openrouter_key):
             return LLMConfig(
                 provider=LLMProvider.OPENROUTER,
-                model=os.getenv("LLM_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
-                api_key=os.getenv("OPENROUTER_API_KEY"),
+                model=model or "meta-llama/llama-3.3-70b-instruct:free",
+                api_key=openrouter_key,
             )
-        elif provider_env == "anthropic" or (not provider_env and os.getenv("ANTHROPIC_API_KEY")):
-            effort = os.getenv("LLM_EFFORT", "medium")
+        elif provider_env == "anthropic" or (not provider_env and anthropic_key):
+            effort = _env("LLM_EFFORT") or "medium"
             if effort not in EFFORT_LEVELS:
                 raise LLMNotConfigured(f"LLM_EFFORT must be one of {EFFORT_LEVELS}, got {effort!r}")
             return LLMConfig(
                 provider=LLMProvider.ANTHROPIC,
-                model=os.getenv("LLM_MODEL", ANTHROPIC_DEFAULT_MODEL),
-                api_key=os.getenv("ANTHROPIC_API_KEY"),
+                model=model or ANTHROPIC_DEFAULT_MODEL,
+                api_key=anthropic_key,
                 max_tokens=ANTHROPIC_MAX_TOKENS,
                 effort=effort,
             )
-        elif provider_env in ("gemini", "google") or (
-            not provider_env and (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-        ):
+        elif provider_env in ("gemini", "google") or (not provider_env and gemini_key):
             return LLMConfig(
                 provider=LLMProvider.GEMINI,
-                model=os.getenv("LLM_MODEL") or os.getenv("GOOGLE_MODEL") or "gemini-2.5-flash",
-                api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
+                model=model or google_model or "gemini-2.5-flash",
+                api_key=gemini_key,
             )
-        elif provider_env == "nvidia" or (not provider_env and os.getenv("NVIDIA_API_KEY")):
+        elif provider_env == "nvidia" or (not provider_env and nvidia_key):
             return LLMConfig(
                 provider=LLMProvider.NVIDIA,
-                model=os.getenv("LLM_MODEL", "meta/llama-3.1-70b-instruct"),
-                api_key=os.getenv("NVIDIA_API_KEY"),
+                model=model or "meta/llama-3.1-70b-instruct",
+                api_key=nvidia_key,
             )
         raise LLMNotConfigured(
             "no LLM provider configured: set LLM_PROVIDER (or a provider API key); use LLM_PROVIDER=fake only for tests"

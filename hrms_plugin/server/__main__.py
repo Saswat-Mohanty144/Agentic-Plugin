@@ -39,7 +39,7 @@ def main(env: Optional[Mapping[str, str]] = None) -> int:
         print(f"Invalid PORT {raw_port!r}: must be an integer between 1 and 65535", file=sys.stderr)
         return 2
     try:
-        _ensure_data_dir(env.get("HRMS_DATA_DIR", ".hrms_data"))
+        _ensure_data_dir((env.get("HRMS_DATA_DIR") or "").strip() or ".hrms_data")
     except (ValueError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
