@@ -1,0 +1,364 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+______________________ test_coverage_structure_and_counts ______________________
+
+    def test_coverage_structure_and_counts():
+        discovered = _make_discovered_with_substring()
+        mapping, report = MappingSynthesizer.synthesize(discovered, EntityType.REQUISITION, vendor="frappe")
+    
+>       assert hasattr(report, "coverage")
+E       AssertionError: assert False
+E        +  where False = hasattr(SynthesisReport(entity_type='REQUISITION', vendor='frappe', id_path='id', field_mappings=[SynthesizedFieldMap(canonica...perience', 'max_years_experience', 'hiring_manager_ref'], unmapped_host_fields=['id', 'unused_one'], writeback_count=1), 'coverage')
+
+tests/unit/test_gap_v1.py:41: AssertionError
+_______________ test_coverage_boundary_confidence_and_llm_origin _______________
+
+    def test_coverage_boundary_confidence_and_llm_origin():
+        # Boundary: confidence exactly 0.8 vs 0.79 with RULE origin
+        rule_80 = SynthesizedFieldMap(
+            canonical_target="title",
+            host_source_path="pos_title",
+            transform="strip",
+            confidence=0.8,
+            rationale="Rule match",
+            origin="RULE",
+            is_required=True,
+        )
+        rule_79 = SynthesizedFieldMap(
+            canonical_target="title",
+            host_source_path="pos_title",
+            transform="strip",
+            confidence=0.79,
+            rationale="Rule match",
+            origin="RULE",
+            is_required=True,
+        )
+        # LLM origin at 0.95 confidence must still be NEEDS_REVIEW
+        llm_95 = SynthesizedFieldMap(
+            canonical_target="title",
+            host_source_path="pos_title",
+            transform="strip",
+            confidence=0.95,
+            rationale="LLM match",
+            origin="LLM",
+            is_required=True,
+        )
+    
+        from hrms_plugin.schema.synthesizer import compute_coverage
+    
+        spec = {"title": {"required": True}}
+>       cov_80 = compute_coverage(spec, [rule_80], [])
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v1.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spec = {'title': {'required': True}}
+field_mappings = [SynthesizedFieldMap(canonical_target='title', host_source_path='pos_title', transform='strip', confidence=0.8, rationale='Rule match', enum_translation={}, is_required=True)]
+unused_host_fields = []
+
+    def compute_coverage(
+        spec: Dict[str, Dict[str, Any]],
+        field_mappings: List[SynthesizedFieldMap],
+        unused_host_fields: List[str],
+    ) -> Dict[str, Any]:
+>       raise NotImplementedError("compute_coverage not yet implemented")
+E       NotImplementedError: compute_coverage not yet implemented
+
+hrms_plugin/schema/synthesizer.py:33: NotImplementedError
+__________________ test_coverage_never_contains_sample_values __________________
+
+    def test_coverage_never_contains_sample_values():
+        discovered = DiscoveredEntity(
+            name="Employee",
+            fields={
+                "full_name": DiscoveredField(name="full_name", path="full_name", sample_values=["Secret Name 123"]),
+                "work_email": DiscoveredField(name="work_email", path="work_email", sample_values=["secret@example.com"]),
+            },
+        )
+        mapping, report = MappingSynthesizer.synthesize(discovered, EntityType.EMPLOYEE, vendor="zoho")
+>       raw_cov = str(report.coverage)
+                      ^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v1.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = SynthesisReport(entity_type='EMPLOYEE', vendor='zoho', id_path='full_name', field_mappings=[SynthesizedFieldMap(canoni...d_canonical_fields=['joining_date', 'department', 'designation', 'status'], unmapped_host_fields=[], writeback_count=2)
+item = 'coverage'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'SynthesisReport' object has no attribute 'coverage'
+
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/pydantic/main.py:1105: AttributeError
+_________ test_http_synthesize_includes_coverage_and_persists_in_store _________
+
+make_client = <function make_client.<locals>._make at 0x10bbaf6a0>
+bearer = <function bearer.<locals>._headers at 0x10bbaf880>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bb67350>
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bb67190>
+
+    def test_http_synthesize_includes_coverage_and_persists_in_store(make_client, bearer, monkeypatch, mem_store):
+        monkeypatch.setattr(app_module, "mapping_store", mem_store)
+        client = make_client()
+        admin = bearer(roles=["platform_admin"], sub="alice")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [
+                {"name": "id"},
+                {"name": "title_role"},
+                {"name": "department"},
+                {"name": "extra_unused"},
+            ],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=admin)
+        assert res.status_code == 200, res.text
+        body = res.json()
+>       assert "coverage" in body
+E       AssertionError: assert 'coverage' in {'entity_type': 'REQUISITION', 'vendor': 'frappe', 'id_path': 'id', 'field_mappings': [{'canonical_target': 'title', '...canonical_target': 'department', 'host_source_path': 'department', 'transform': 'strip', 'confidence': 1.0, ...}], ...}
+
+tests/unit/test_gap_v1.py:161: AssertionError
+_____________ test_approve_refuses_when_needs_review_fields_remain _____________
+
+make_client = <function make_client.<locals>._make at 0x10bb06ac0>
+bearer = <function bearer.<locals>._headers at 0x10bb07880>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bbf1190>
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bbf1350>
+
+    def test_approve_refuses_when_needs_review_fields_remain(make_client, bearer, monkeypatch, mem_store):
+        monkeypatch.setattr(app_module, "mapping_store", mem_store)
+        client = make_client()
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title_role"}, {"name": "department"}],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=alice)
+        assert res.status_code == 200
+        version = res.json()["mapping_version"]
+    
+        # Bob attempts to approve a version that has NEEDS_REVIEW fields -> 409 REVIEW_REQUIRED
+        approve_url = f"/v1/schema/mappings/frappe/REQUISITION/versions/{version}/approve"
+        app_res = client.post(approve_url, headers=bob)
+>       assert app_res.status_code == 409, app_res.text
+E       AssertionError: {"version":1,"vendor":"frappe","entity_type":"REQUISITION","status":"ACTIVE","proposed_by":"alice","proposed_at":1793356305.2304251,"approved_by":"bob","approved_at":1793356305.235998,"classification":{"title":{"data_class":"PII","llm_visible":false},"department":{"data_class":"PII","llm_visible":false}}}
+E       assert 200 == 409
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_v1.py:194: AssertionError
+_______________ test_approve_store_method_raises_review_required _______________
+
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bc18610>
+
+    def test_approve_store_method_raises_review_required(mem_store):
+        discovered = _make_discovered_with_substring()
+        mapping, report = MappingSynthesizer.synthesize(discovered, EntityType.REQUISITION, vendor="frappe")
+>       v = mem_store.propose_mapping("acme", mapping, proposed_by="alice", coverage=report.coverage)
+                                                                                     ^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v1.py:204: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = SynthesisReport(entity_type='REQUISITION', vendor='frappe', id_path='id', field_mappings=[SynthesizedFieldMap(canonica...perience', 'max_years_experience', 'hiring_manager_ref'], unmapped_host_fields=['id', 'unused_one'], writeback_count=1)
+item = 'coverage'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'SynthesisReport' object has no attribute 'coverage'
+
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/pydantic/main.py:1105: AttributeError
+_____________________ test_reject_version_store_lifecycle ______________________
+
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bc1a050>
+
+    def test_reject_version_store_lifecycle(mem_store):
+        m = EntityMapping(vendor="frappe", entity_type="REQUISITION", id_path="id")
+        v = mem_store.propose_mapping("acme", m, proposed_by="alice")
+    
+>       row = mem_store.reject_version(
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+            "acme", "frappe", "REQUISITION", v, rejected_by="bob", reason="Schema changed in production"
+        )
+E       AttributeError: 'MappingStore' object has no attribute 'reject_version'
+
+tests/unit/test_gap_v1.py:219: AttributeError
+________________________ test_http_reject_version_flow _________________________
+
+make_client = <function make_client.<locals>._make at 0x10bb06ac0>
+bearer = <function bearer.<locals>._headers at 0x10bb46200>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bcd8c50>
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bcd8890>
+
+    def test_http_reject_version_flow(make_client, bearer, monkeypatch, mem_store):
+        monkeypatch.setattr(app_module, "mapping_store", mem_store)
+        client = make_client()
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "department"}],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=alice)
+        v = res.json()["mapping_version"]
+    
+        reject_url = f"/v1/schema/mappings/frappe/REQUISITION/versions/{v}/reject"
+    
+        # Auth & freshness check
+>       assert client.post(reject_url, headers={}, json={"reason": "bad"}).status_code == 401
+E       AssertionError: assert 404 == 401
+E        +  where 404 = <Response [404 Not Found]>.status_code
+E        +    where <Response [404 Not Found]> = post('/v1/schema/mappings/frappe/REQUISITION/versions/1/reject', headers={}, json={'reason': 'bad'})
+E        +      where post = <starlette.testclient.TestClient object at 0x10bcd89d0>.post
+
+tests/unit/test_gap_v1.py:250: AssertionError
+________________________ test_review_validation_errors _________________________
+
+make_client = <function make_client.<locals>._make at 0x10bb46160>
+bearer = <function bearer.<locals>._headers at 0x10bc33a60>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bc45010>
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bc45a10>
+
+    def test_review_validation_errors(make_client, bearer, monkeypatch, mem_store):
+        monkeypatch.setattr(app_module, "mapping_store", mem_store)
+        client = make_client()
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title_role"}, {"name": "department"}],
+            "vendor": "frappe",
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=alice)
+        v = res.json()["mapping_version"]
+        review_url = f"/v1/schema/mappings/frappe/REQUISITION/versions/{v}/review"
+    
+        # Problem 1: Target in more than one list (accept and reject)
+        r1 = client.post(review_url, json={"accept": ["title"], "reject": ["title"]}, headers=bob)
+>       assert r1.status_code == 422
+E       assert 404 == 422
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_v1.py:286: AssertionError
+___________ test_review_successful_lifecycle_and_four_eyes_approval ____________
+
+make_client = <function make_client.<locals>._make at 0x10bb46480>
+bearer = <function bearer.<locals>._headers at 0x10bb46a20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bcccd90>
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x10bccc950>
+
+    def test_review_successful_lifecycle_and_four_eyes_approval(make_client, bearer, monkeypatch, mem_store):
+        monkeypatch.setattr(app_module, "mapping_store", mem_store)
+        client = make_client()
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+        carol = bearer(roles=["platform_admin"], sub="carol")
+    
+        # Alice proposes synthesized mapping with probe data
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [
+                {"name": "id"},
+                {"name": "title_role"},
+                {"name": "department"},
+                {"name": "extra_desc"},
+            ],
+            "sample_records": [{"id": "REQ-1", "title_role": "Lead", "department": "Eng"}],
+            "vendor": "frappe",
+        }
+        synth_res = client.post("/v1/schema/synthesize", json=payload, headers=alice)
+        assert synth_res.status_code == 200
+        v1 = synth_res.json()["mapping_version"]
+        assert "probe" in synth_res.json()
+    
+        # Bob reviews v1:
+        # - accept "title" (moves from NEEDS_REVIEW to MATCHED with accepted_by="bob")
+        # - reject "department" (removed from mapping, becomes MISSING)
+        # - manual "description" with source "extra_desc" (origin MANUAL, status MATCHED, confidence null)
+        review_body = {
+            "accept": ["title"],
+            "reject": ["department"],
+            "manual": {"description": {"source": "extra_desc", "transform": "strip"}},
+        }
+        rev_res = client.post(
+            f"/v1/schema/mappings/frappe/REQUISITION/versions/{v1}/review",
+            json=review_body,
+            headers=bob,
+        )
+>       assert rev_res.status_code == 200, rev_res.text
+E       AssertionError: {"detail":"Not Found"}
+E       assert 404 == 200
+E        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/unit/test_gap_v1.py:351: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_v1.py::test_coverage_structure_and_counts - Assert...
+FAILED tests/unit/test_gap_v1.py::test_coverage_boundary_confidence_and_llm_origin
+FAILED tests/unit/test_gap_v1.py::test_coverage_never_contains_sample_values
+FAILED tests/unit/test_gap_v1.py::test_http_synthesize_includes_coverage_and_persists_in_store
+FAILED tests/unit/test_gap_v1.py::test_approve_refuses_when_needs_review_fields_remain
+FAILED tests/unit/test_gap_v1.py::test_approve_store_method_raises_review_required
+FAILED tests/unit/test_gap_v1.py::test_reject_version_store_lifecycle - Attri...
+FAILED tests/unit/test_gap_v1.py::test_http_reject_version_flow - AssertionEr...
+FAILED tests/unit/test_gap_v1.py::test_review_validation_errors - assert 404 ...
+FAILED tests/unit/test_gap_v1.py::test_review_successful_lifecycle_and_four_eyes_approval
+10 failed in 1.36s

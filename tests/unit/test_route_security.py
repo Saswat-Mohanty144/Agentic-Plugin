@@ -30,6 +30,8 @@ EXPECTED = {
     ("POST", "/v1/hosts/requisitions/shape/approve"): P.MANAGE_SCHEMA,
     ("DELETE", "/v1/governance/llm-egress"): P.MANAGE_GOVERNANCE,
     ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve"): P.MANAGE_SCHEMA,
+    ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/review"): P.MANAGE_SCHEMA,
+    ("POST", "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/reject"): P.MANAGE_SCHEMA,
     ("POST", "/v1/writeback/proposals/{proposal_id}/approve"): P.MUTATE_EMPLOYEE,
     ("POST", "/v1/writeback/proposals/{proposal_id}/rollback"): P.MUTATE_EMPLOYEE,
     ("GET", "/v1/compliance/diagnose"): P.VIEW_COMPLIANCE,
@@ -46,6 +48,12 @@ CONCRETE = {
     "/v1/writeback/proposals/{proposal_id}/rollback": "/v1/writeback/proposals/p1/rollback",
     "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve": (
         "/v1/schema/mappings/zoho/EMPLOYEE/versions/1/approve"
+    ),
+    "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/review": (
+        "/v1/schema/mappings/zoho/EMPLOYEE/versions/1/review"
+    ),
+    "/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/reject": (
+        "/v1/schema/mappings/zoho/EMPLOYEE/versions/1/reject"
     ),
 }
 # Role in the fixture registry that LACKS / HOLDS each permission.

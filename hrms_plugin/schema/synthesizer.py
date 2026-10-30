@@ -22,6 +22,7 @@ __all__ = [
     "SynthesizedFieldMap",
     "SynthesisReport",
     "MappingSynthesizer",
+    "compute_coverage",
 ]
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ class SynthesizedFieldMap(BaseModel):
     rationale: str = ""
     enum_translation: Dict[str, str] = Field(default_factory=dict)
     is_required: bool = False
+    origin: str = "RULE"
 
 
 class SynthesisReport(BaseModel):
@@ -46,6 +48,65 @@ class SynthesisReport(BaseModel):
     unmapped_canonical_fields: List[str] = Field(default_factory=list)
     unmapped_host_fields: List[str] = Field(default_factory=list)
     writeback_count: int = 0
+    coverage: Dict[str, Any] = Field(default_factory=dict)
+
+
+def compute_coverage(
+    spec: Dict[str, Dict[str, Any]],
+    field_mappings: List[SynthesizedFieldMap],
+    unused_host_fields: List[str],
+) -> Dict[str, Any]:
+    """Compute deterministic coverage report across all canonical targets in the entity spec."""
+    fm_by_target = {fm.canonical_target: fm for fm in field_mappings}
+    fields_cov: Dict[str, Dict[str, Any]] = {}
+
+    all_targets = list(spec.keys())
+    for fm in field_mappings:
+        if fm.canonical_target not in spec and fm.canonical_target not in all_targets:
+            all_targets.append(fm.canonical_target)
+
+    for target in all_targets:
+        field_spec = spec.get(target, {})
+        if target in fm_by_target:
+            fm = fm_by_target[target]
+            origin = getattr(fm, "origin", "RULE") or "RULE"
+            conf = fm.confidence
+            if origin == "RULE" and conf is not None and conf >= 0.8:
+                status = "MATCHED"
+            else:
+                status = "NEEDS_REVIEW"
+            fields_cov[target] = {
+                "status": status,
+                "source": fm.host_source_path,
+                "confidence": conf,
+                "origin": origin,
+                "rationale": fm.rationale,
+                "required": field_spec.get("required", False),
+                "accepted_by": None,
+            }
+        else:
+            fields_cov[target] = {
+                "status": "MISSING",
+                "source": None,
+                "confidence": None,
+                "origin": None,
+                "rationale": "",
+                "required": field_spec.get("required", False),
+                "accepted_by": None,
+            }
+
+    counts = {
+        "matched": sum(1 for f in fields_cov.values() if f["status"] == "MATCHED"),
+        "needs_review": sum(1 for f in fields_cov.values() if f["status"] == "NEEDS_REVIEW"),
+        "missing": sum(1 for f in fields_cov.values() if f["status"] == "MISSING"),
+        "unused": len(unused_host_fields),
+    }
+
+    return {
+        "fields": fields_cov,
+        "unused_host_fields": list(unused_host_fields),
+        "counts": counts,
+    }
 
 
 CANONICAL_SPECIFICATIONS: Dict[str, Dict[str, Dict[str, Any]]] = {
@@ -660,6 +721,8 @@ class MappingSynthesizer:
             sum(m.confidence for m in synthesized_meta) / len(synthesized_meta) if synthesized_meta else 0.0
         )
 
+        cov = compute_coverage(spec, synthesized_meta, unmapped_host)
+
         report = SynthesisReport(
             entity_type=entity_key,
             vendor=vendor,
@@ -669,6 +732,7 @@ class MappingSynthesizer:
             unmapped_canonical_fields=unmapped_canonical,
             unmapped_host_fields=unmapped_host,
             writeback_count=len(writeback),
+            coverage=cov,
         )
 
         mapping = EntityMapping(
@@ -861,6 +925,7 @@ class MappingSynthesizer:
                                 transform="string",
                                 confidence=conf,
                                 rationale=rat,
+                                origin="LLM",
                             )
                         )
                         report.unmapped_canonical_fields.remove(can_field)
@@ -870,6 +935,10 @@ class MappingSynthesizer:
             upgraded_mapping = dataclasses.replace(mapping, fields=tuple(new_field_maps))
             report.field_mappings = synthesized_fms
             report.average_confidence = sum(f.confidence for f in synthesized_fms) / max(1, len(synthesized_fms))
+            spec = CANONICAL_SPECIFICATIONS.get(report.entity_type, {})
+            if not spec:
+                spec = {f.target: {"required": f.required} for f in upgraded_mapping.fields}
+            report.coverage = compute_coverage(spec, synthesized_fms, report.unmapped_host_fields)
             return upgraded_mapping, report
         except (LlmNotAllowed, PiiEgressBlocked):
             raise  # governance refusals must surface (agy G-F1)

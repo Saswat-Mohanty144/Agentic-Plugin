@@ -600,7 +600,10 @@ def _finalize_synthesis(
             "records_tested": report_probe.records_tested,
             "issues": issues,
         }
-    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data)
+    coverage_data = getattr(report, "coverage", None)
+    version = mapping_store.propose_mapping(
+        auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data, coverage=coverage_data
+    )
     res = {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
     if probe_data is not None:
         res["probe"] = probe_data
@@ -729,6 +732,28 @@ class ApproveMappingRequest(BaseModel):
     classification: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ManualFieldConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(min_length=1)
+    transform: Optional[str] = None
+    values: Optional[Dict[str, str]] = None
+
+
+class ReviewMappingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    accept: List[str] = Field(default_factory=list)
+    reject: List[str] = Field(default_factory=list)
+    manual: Dict[str, ManualFieldConfig] = Field(default_factory=dict)
+
+
+class RejectMappingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1)
+
+
 @router.post("/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve")
 def approve_mapping_version(
     vendor: str,
@@ -744,9 +769,70 @@ def approve_mapping_version(
         row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id,
                                            classification=req.classification if req else None)
     except MappingGovernanceError as exc:
+        if exc.code == "REVIEW_REQUIRED":
+            raise ApiError(409, {"error": "REVIEW_REQUIRED", "fields": exc.fields}) from None
         status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409, "PROBE_FAILED": 409,
                   "CLASSIFICATION_UNKNOWN_FIELD": 422, "INVALID_CLASSIFICATION": 422,
                   "SENSITIVE_FIELD_LLM_VISIBLE": 422}.get(exc.code, 400)
+        raise ApiError(status, {"error": exc.code}) from None
+    return {k: v for k, v in row.items() if k != "mapping"}
+
+
+@router.post("/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/review")
+def review_mapping_version(
+    vendor: str,
+    entity_type: str,
+    version: int,
+    req: ReviewMappingRequest,
+    auth: AuthContext = Depends(
+        require(Permission.MANAGE_SCHEMA, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
+):
+    """Review and revise a proposed schema mapping; creates a new PROPOSED version and marks old REVISED."""
+    try:
+        actions = {
+            "accept": req.accept,
+            "reject": req.reject,
+            "manual": {k: v.model_dump() for k, v in req.manual.items()},
+        }
+        row = mapping_store.review_version(
+            auth.tenant_id,
+            vendor,
+            entity_type,
+            version,
+            reviewer=auth.user_id,
+            actions=actions,
+        )
+    except MappingGovernanceError as exc:
+        if exc.code == "REVIEW_INVALID":
+            raise ApiError(422, {"error": "REVIEW_INVALID", "problems": exc.problems}) from None
+        status = {"NOT_FOUND": 404, "INVALID_STATE": 409}.get(exc.code, 400)
+        raise ApiError(status, {"error": exc.code}) from None
+    return {k: v for k, v in row.items() if k != "mapping"}
+
+
+@router.post("/v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/reject")
+def reject_mapping_version(
+    vendor: str,
+    entity_type: str,
+    version: int,
+    req: RejectMappingRequest,
+    auth: AuthContext = Depends(
+        require(Permission.MANAGE_SCHEMA, max_token_age_seconds=REMEDIATION_MAX_TOKEN_AGE_SECONDS)
+    ),
+):
+    """Reject a proposed schema mapping version."""
+    try:
+        row = mapping_store.reject_version(
+            auth.tenant_id,
+            vendor,
+            entity_type,
+            version,
+            rejected_by=auth.user_id,
+            reason=req.reason,
+        )
+    except MappingGovernanceError as exc:
+        status = {"NOT_FOUND": 404, "INVALID_STATE": 409}.get(exc.code, 400)
         raise ApiError(status, {"error": exc.code}) from None
     return {k: v for k, v in row.items() if k != "mapping"}
 

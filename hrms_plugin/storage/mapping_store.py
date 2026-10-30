@@ -67,10 +67,18 @@ def entity_mapping_from_dict(data: Dict[str, Any]) -> EntityMapping:
 
 
 class MappingGovernanceError(Exception):
-    def __init__(self, code: str, detail: str = ""):
+    def __init__(
+        self,
+        code: str,
+        detail: str = "",
+        fields: Optional[List[str]] = None,
+        problems: Optional[List[str]] = None,
+    ):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
+        self.fields = fields or []
+        self.problems = problems or []
 
 
 DATA_CLASSES = ("PII", "COMPENSATION", "INTERNAL", "PUBLIC")
@@ -169,16 +177,67 @@ class MappingStore:
         key = f"{self._make_key(tenant_id, vendor, entity_type)}:{row['version']:06d}"
         self.backend.set(self.VERSIONS_NAMESPACE, key, row)
 
+    @classmethod
+    def _default_coverage(cls, mapping: EntityMapping) -> Dict[str, Any]:
+        from hrms_plugin.schema.synthesizer import CANONICAL_SPECIFICATIONS
+
+        spec = CANONICAL_SPECIFICATIONS.get(mapping.entity_type, {})
+        fields_cov: Dict[str, Dict[str, Any]] = {}
+        mapped_targets = {f.target: f for f in mapping.fields}
+        all_targets = list(spec.keys())
+        for t in mapped_targets:
+            if t not in all_targets:
+                all_targets.append(t)
+
+        for target in all_targets:
+            field_spec = spec.get(target, {})
+            if target in mapped_targets:
+                fm = mapped_targets[target]
+                source_str = " + ".join(fm.source) if isinstance(fm.source, (list, tuple)) else (fm.source or "")
+                fields_cov[target] = {
+                    "status": "MATCHED",
+                    "source": source_str,
+                    "confidence": 1.0,
+                    "origin": "RULE",
+                    "rationale": "Direct mapping",
+                    "required": bool(fm.required or field_spec.get("required", False)),
+                    "accepted_by": None,
+                }
+            else:
+                fields_cov[target] = {
+                    "status": "MISSING",
+                    "source": None,
+                    "confidence": None,
+                    "origin": None,
+                    "rationale": "",
+                    "required": bool(field_spec.get("required", False)),
+                    "accepted_by": None,
+                }
+        counts = {
+            "matched": sum(1 for f in fields_cov.values() if f["status"] == "MATCHED"),
+            "needs_review": 0,
+            "missing": sum(1 for f in fields_cov.values() if f["status"] == "MISSING"),
+            "unused": 0,
+        }
+        return {
+            "fields": fields_cov,
+            "unused_host_fields": [],
+            "counts": counts,
+        }
+
     def propose_mapping(self, tenant_id: str, mapping: EntityMapping, proposed_by: str,
-                        probe: Optional[Dict[str, Any]] = None) -> int:
+                        probe: Optional[Dict[str, Any]] = None,
+                        coverage: Optional[Dict[str, Any]] = None) -> int:
         with self._lock:  # version allocation must be atomic within the process (agy G-F7)
-            return self._propose_locked(tenant_id, mapping, proposed_by, probe)
+            return self._propose_locked(tenant_id, mapping, proposed_by, probe, coverage)
 
     def _propose_locked(self, tenant_id: str, mapping: EntityMapping, proposed_by: str,
-                        probe: Optional[Dict[str, Any]] = None) -> int:
+                        probe: Optional[Dict[str, Any]] = None,
+                        coverage: Optional[Dict[str, Any]] = None) -> int:
         existing = self._versions(tenant_id, mapping.vendor, mapping.entity_type)
         version = max(existing, default=0) + 1
         _tenant, vendor, entity = self._make_key(tenant_id, mapping.vendor, mapping.entity_type).split(":")
+        cov = coverage if coverage is not None else self._default_coverage(mapping)
         row: Dict[str, Any] = {
             "version": version,
             "vendor": vendor,
@@ -187,6 +246,7 @@ class MappingStore:
             "proposed_by": proposed_by,
             "proposed_at": time.time(),
             "mapping": entity_mapping_to_dict(mapping),
+            "coverage": cov,
         }
         if probe is not None:
             row["probe"] = probe
@@ -212,6 +272,17 @@ class MappingStore:
             raise MappingGovernanceError("SAME_PERSON", "the approver must not be the proposer")
         if row.get("probe") and row["probe"].get("is_valid") is False:
             raise MappingGovernanceError("PROBE_FAILED", "stored probe is invalid")
+        needs_review = [
+            target
+            for target, info in sorted(row.get("coverage", {}).get("fields", {}).items())
+            if isinstance(info, dict) and info.get("status") == "NEEDS_REVIEW"
+        ]
+        if needs_review:
+            raise MappingGovernanceError(
+                "REVIEW_REQUIRED",
+                detail=f"needs review on fields: {','.join(needs_review)}",
+                fields=needs_review,
+            )
         classified = classify_fields(row["mapping"], classification)  # validated before anything changes
         for other in versions.values():
             if other["status"] == "ACTIVE":
@@ -221,6 +292,260 @@ class MappingStore:
         self._put_version(tenant_id, vendor, entity_type, row)
         self.backend.set(self.NAMESPACE, self._make_key(tenant_id, vendor, entity_type), row["mapping"])
         return row
+
+    def reject_version(
+        self,
+        tenant_id: str,
+        vendor: str,
+        entity_type: str | EntityType,
+        version: int,
+        rejected_by: str,
+        reason: str,
+    ) -> Dict[str, Any]:
+        with self._lock:
+            return self._reject_locked(tenant_id, vendor, entity_type, version, rejected_by, reason)
+
+    def _reject_locked(
+        self,
+        tenant_id: str,
+        vendor: str,
+        entity_type: str | EntityType,
+        version: int,
+        rejected_by: str,
+        reason: str,
+    ) -> Dict[str, Any]:
+        versions = self._versions(tenant_id, vendor, entity_type)
+        row = versions.get(version)
+        if row is None:
+            raise MappingGovernanceError("NOT_FOUND", f"version {version}")
+        if row["status"] != "PROPOSED":
+            raise MappingGovernanceError("INVALID_STATE", row["status"])
+        row.update(
+            status="REJECTED",
+            reason=reason,
+            rejected_by=rejected_by,
+            rejected_at=time.time(),
+        )
+        self._put_version(tenant_id, vendor, entity_type, row)
+        return row
+
+    def review_version(
+        self,
+        tenant_id: str,
+        vendor: str,
+        entity_type: str | EntityType,
+        version: int,
+        reviewer: str,
+        actions: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        with self._lock:
+            return self._review_locked(tenant_id, vendor, entity_type, version, reviewer, actions)
+
+    def _review_locked(
+        self,
+        tenant_id: str,
+        vendor: str,
+        entity_type: str | EntityType,
+        version: int,
+        reviewer: str,
+        actions: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        from hrms_plugin.schema.mapping import TRANSFORMS
+        from hrms_plugin.schema.synthesizer import CANONICAL_SPECIFICATIONS
+
+        versions = self._versions(tenant_id, vendor, entity_type)
+        old_row = versions.get(version)
+        if old_row is None:
+            raise MappingGovernanceError("NOT_FOUND", f"version {version}")
+        if old_row["status"] != "PROPOSED":
+            raise MappingGovernanceError("INVALID_STATE", old_row["status"])
+
+        accept_targets = list(actions.get("accept") or [])
+        reject_targets = list(actions.get("reject") or [])
+        manual_dict = dict(actions.get("manual") or {})
+        manual_targets = list(manual_dict.keys())
+
+        ent_str = entity_type.value if isinstance(entity_type, EntityType) else str(entity_type).upper()
+        spec = CANONICAL_SPECIFICATIONS.get(ent_str, {})
+        old_cov = old_row.get("coverage") or self._default_coverage(entity_mapping_from_dict(old_row["mapping"]))
+        old_cov_fields = dict(old_cov.get("fields", {}))
+
+        known_targets = set(spec.keys()) | set(old_cov_fields.keys())
+        problems: List[str] = []
+
+        # 1. Target in more than one list
+        counts_by_target: Dict[str, int] = {}
+        for t in accept_targets:
+            counts_by_target[t] = counts_by_target.get(t, 0) + 1
+        for t in reject_targets:
+            counts_by_target[t] = counts_by_target.get(t, 0) + 1
+        for t in manual_targets:
+            counts_by_target[t] = counts_by_target.get(t, 0) + 1
+        for t, c in sorted(counts_by_target.items()):
+            if c > 1:
+                problems.append(f"Target appears in multiple lists: {t}")
+
+        # 2. Unknown target
+        all_mentioned = set(counts_by_target.keys())
+        for t in sorted(all_mentioned):
+            if t not in known_targets:
+                problems.append(f"Unknown target: {t}")
+
+        # 3. Target not currently mapped in accept
+        old_mapping = entity_mapping_from_dict(old_row["mapping"])
+        mapped_targets = {f.target for f in old_mapping.fields}
+        for t in sorted(accept_targets):
+            if t in known_targets and t not in mapped_targets:
+                problems.append(f"Target not currently mapped cannot be accepted: {t}")
+
+        # 4. Invalid transform in manual
+        for t, m_cfg in sorted(manual_dict.items()):
+            if isinstance(m_cfg, dict):
+                tr = m_cfg.get("transform")
+                if tr is not None and tr not in TRANSFORMS:
+                    problems.append(f"Invalid transform for target {t}: {tr}")
+
+        if problems:
+            raise MappingGovernanceError("REVIEW_INVALID", detail="; ".join(problems), problems=problems)
+
+        # Allocate new version number
+        new_version = max(versions, default=0) + 1
+
+        # Mark old version REVISED with revised_into
+        old_row["status"] = "REVISED"
+        old_row["revised_into"] = new_version
+        self._put_version(tenant_id, vendor, entity_type, old_row)
+
+        # Build new EntityMapping
+        new_field_maps: Dict[str, FieldMap] = {f.target: f for f in old_mapping.fields}
+        for t in reject_targets:
+            new_field_maps.pop(t, None)
+
+        for t, m_cfg in manual_dict.items():
+            field_spec = spec.get(t, {})
+            source = m_cfg.get("source") if isinstance(m_cfg, dict) else str(m_cfg)
+            transform = m_cfg.get("transform") or "string" if isinstance(m_cfg, dict) else "string"
+            values = dict(m_cfg.get("values") or {}) if isinstance(m_cfg, dict) else {}
+            new_field_maps[t] = FieldMap(
+                target=t,
+                source=source,
+                transform=transform,
+                default=field_spec.get("default"),
+                required=field_spec.get("required", False),
+                values=values,
+            )
+
+        new_writeback = dict(old_mapping.writeback or {})
+        for t in reject_targets:
+            new_writeback.pop(t, None)
+
+        new_mapping = EntityMapping(
+            vendor=old_mapping.vendor,
+            entity_type=old_mapping.entity_type,
+            id_path=old_mapping.id_path,
+            version_path=old_mapping.version_path,
+            collection_path=old_mapping.collection_path,
+            writeback=new_writeback,
+            fields=tuple(new_field_maps.values()),
+        )
+
+        # Build new coverage
+        new_cov_fields: Dict[str, Dict[str, Any]] = {}
+        all_final_targets = sorted(known_targets | set(new_field_maps.keys()))
+
+        for t in all_final_targets:
+            field_spec = spec.get(t, {})
+            if t in reject_targets:
+                new_cov_fields[t] = {
+                    "status": "MISSING",
+                    "source": None,
+                    "confidence": None,
+                    "origin": None,
+                    "rationale": "Rejected in review",
+                    "required": field_spec.get("required", False),
+                    "accepted_by": None,
+                }
+            elif t in manual_dict:
+                m_cfg = manual_dict[t]
+                src = m_cfg.get("source") if isinstance(m_cfg, dict) else str(m_cfg)
+                new_cov_fields[t] = {
+                    "status": "MATCHED",
+                    "source": src,
+                    "confidence": None,
+                    "origin": "MANUAL",
+                    "rationale": "Manual configuration",
+                    "required": field_spec.get("required", False),
+                    "accepted_by": None,
+                }
+            elif t in accept_targets:
+                old_f = old_cov_fields.get(t, {})
+                new_cov_fields[t] = {
+                    "status": "MATCHED",
+                    "source": old_f.get("source"),
+                    "confidence": old_f.get("confidence"),
+                    "origin": old_f.get("origin"),
+                    "rationale": old_f.get("rationale", ""),
+                    "required": old_f.get("required", False),
+                    "accepted_by": reviewer,
+                }
+            elif t in old_cov_fields:
+                new_cov_fields[t] = dict(old_cov_fields[t])
+            else:
+                new_cov_fields[t] = {
+                    "status": "MISSING",
+                    "source": None,
+                    "confidence": None,
+                    "origin": None,
+                    "rationale": "",
+                    "required": field_spec.get("required", False),
+                    "accepted_by": None,
+                }
+
+        # Track unused host fields
+        all_host_fields = set(old_cov.get("unused_host_fields", []))
+        for f in old_mapping.fields:
+            if isinstance(f.source, str):
+                all_host_fields.add(f.source)
+            elif isinstance(f.source, (list, tuple)):
+                all_host_fields.update(f.source)
+        for m_cfg in manual_dict.values():
+            if isinstance(m_cfg, dict) and "source" in m_cfg:
+                all_host_fields.add(m_cfg["source"])
+
+        new_used_sources = set()
+        for f in new_mapping.fields:
+            if isinstance(f.source, str):
+                new_used_sources.add(f.source)
+            elif isinstance(f.source, (list, tuple)):
+                new_used_sources.update(f.source)
+
+        new_unused = sorted(all_host_fields - new_used_sources)
+
+        new_counts = {
+            "matched": sum(1 for f in new_cov_fields.values() if f["status"] == "MATCHED"),
+            "needs_review": sum(1 for f in new_cov_fields.values() if f["status"] == "NEEDS_REVIEW"),
+            "missing": sum(1 for f in new_cov_fields.values() if f["status"] == "MISSING"),
+            "unused": len(new_unused),
+        }
+        new_cov = {
+            "fields": new_cov_fields,
+            "unused_host_fields": new_unused,
+            "counts": new_counts,
+        }
+
+        # The probe (if stored) is not carried to the revision (it no longer describes the mapping)
+        new_row: Dict[str, Any] = {
+            "version": new_version,
+            "vendor": vendor,
+            "entity_type": ent_str,
+            "status": "PROPOSED",
+            "proposed_by": reviewer,
+            "proposed_at": time.time(),
+            "mapping": entity_mapping_to_dict(new_mapping),
+            "coverage": new_cov,
+        }
+        self._put_version(tenant_id, vendor, entity_type, new_row)
+        return new_row
 
     def active_version(self, tenant_id: str, vendor: str,
                        entity_type: str | EntityType) -> Optional[Tuple[int, EntityMapping]]:
