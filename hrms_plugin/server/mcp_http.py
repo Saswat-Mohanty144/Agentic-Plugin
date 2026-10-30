@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -46,9 +47,12 @@ async def mcp_post(
     if proto_version is not None and proto_version not in ("2025-06-18", "2025-03-26"):
         raise ApiError(400, {"error": "UNSUPPORTED_PROTOCOL_VERSION"})
 
+    tenant = next((t for t in request.app.state.registry.tenants if t.tenant_id == auth.tenant_id), None)
     origin = request.headers.get("origin")
-    if origin is not None and origin not in request.app.state.registry.all_origins():
-        raise ApiError(403, {"error": "ORIGIN_NOT_ALLOWED"})
+    if origin is not None:
+        allowed = tenant.allowed_origins if tenant else ()
+        if origin not in allowed:
+            raise ApiError(403, {"error": "ORIGIN_NOT_ALLOWED"})
 
     jurisdiction = request.headers.get("x-hrms-jurisdiction")
     if not jurisdiction or jurisdiction not in JURISDICTIONS:
@@ -94,6 +98,11 @@ async def mcp_post(
     if method == "ping":
         return _rpc_ok(req_id, {})
 
+    if method in ("tools/list", "tools/call"):
+        policy = tenant.llm_policy if tenant else None
+        if not policy or not policy.mcp_enabled or policy.max_data_tier < 2:
+            raise ApiError(403, {"error": "MCP_NOT_ALLOWED_FOR_TENANT"})
+
     if method == "tools/list":
         server = HrmsMcpServer(auth=auth, jurisdiction=jurisdiction)
         tools = [
@@ -115,14 +124,43 @@ async def mcp_post(
         elif not isinstance(arguments, dict):
             return _rpc_error(req_id, -32602, "Invalid params: arguments must be an object")
 
+        egress_log = getattr(request.app.state, "egress_log", None)
+        if egress_log is None:
+            try:
+                from hrms_plugin.server.app import egress_log as default_egress_log
+                egress_log = default_egress_log
+            except Exception:
+                egress_log = None
+
+        key = None
+        if egress_log is not None:
+            payload_sha256 = "sha256:" + hashlib.sha256(
+                json.dumps(arguments, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            key = egress_log.record(
+                tenant_id=auth.tenant_id,
+                provider="mcp-client",
+                model=name,
+                payload_sha256=payload_sha256,
+                redacted_kinds={},
+                status="SENT",
+            )
+
         server = HrmsMcpServer(auth=auth, jurisdiction=jurisdiction)
-        output = await server.call_tool(name, arguments)
-        safe_output = json.loads(json.dumps(output, default=str))
-        is_error = bool(output.get("success") is False or "error" in output)
-        return _rpc_ok(req_id, {
-            "content": [{"type": "text", "text": json.dumps(safe_output)}],
-            "structuredContent": safe_output,
-            "isError": is_error,
-        })
+        try:
+            output = await server.call_tool(name, arguments)
+            safe_output = json.loads(json.dumps(output, default=str))
+            is_error = bool(output.get("success") is False or "error" in output)
+            if egress_log is not None and key is not None:
+                egress_log.update(key, status="FAILED" if is_error else "COMPLETED")
+            return _rpc_ok(req_id, {
+                "content": [{"type": "text", "text": json.dumps(safe_output)}],
+                "structuredContent": safe_output,
+                "isError": is_error,
+            })
+        except Exception:
+            if egress_log is not None and key is not None:
+                egress_log.update(key, status="FAILED")
+            raise
 
     return _rpc_error(req_id, -32601, f"Method not found: {method}")

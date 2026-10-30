@@ -24,6 +24,7 @@ tenants:
   llm_policy:
     allowed_providers:
     - fake
+    mcp_enabled: true
     tokenize_compensation: false
     max_data_tier: 2
     voice_providers:
@@ -48,6 +49,7 @@ tenants:
   llm_policy:
     allowed_providers:
     - fake
+    mcp_enabled: false
     tokenize_compensation: false
     max_data_tier: 2
 - tenant_id: initech

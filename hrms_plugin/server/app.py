@@ -130,6 +130,22 @@ def make_classification_resolver(
     return classification_for
 
 
+def _resolve_vendor(tenant_id: str, vendor: Optional[str]) -> str:
+    """Use explicit vendor if provided, else tenant's host vendor from HRMS_HOSTS, else 'host'."""
+    if vendor:
+        return vendor
+    if os.environ.get("HRMS_HOSTS"):
+        try:
+            from hrms_plugin.integrations.host_registry import load_host_registry_from_env
+
+            host = load_host_registry_from_env().for_tenant(tenant_id)
+            if host and host.vendor:
+                return host.vendor
+        except Exception:
+            pass
+    return "host"
+
+
 classification_for = make_classification_resolver(mapping_store)
 supervisor.classification_for = classification_for
 
@@ -206,13 +222,13 @@ class VoiceTurnRequest(BaseModel):
 class IntrospectRequest(BaseModel):
     swagger_dict: Optional[Dict[str, Any]] = None
     sample_records: Optional[Dict[str, List[Dict[str, Any]]]] = None
-    vendor: str = Field(default="host", pattern=r"^[a-z0-9_-]{1,32}$")
+    vendor: Optional[str] = Field(default=None, pattern=r"^[a-z0-9_-]{1,32}$")
 
 
 class SynthesizeRequest(BaseModel):
     domain: str = "EMPLOYEE"
     discovered_fields: List[Dict[str, Any]]
-    vendor: str = Field(default="host", pattern=r"^[a-z0-9_-]{1,32}$")
+    vendor: Optional[str] = Field(default=None, pattern=r"^[a-z0-9_-]{1,32}$")
     sample_records: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=50)
 
 
@@ -483,6 +499,7 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
     elif req.sample_records:
         from hrms_plugin.schema.drift import SchemaDriftInterceptor
 
+        vendor = _resolve_vendor(auth.tenant_id, req.vendor)
         entities = {}
         drift_events = []
         interceptor = SchemaDriftInterceptor()
@@ -491,7 +508,10 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
             # Structure only (Q3): sample values, and "enums" inferred from them, are data and never leave.
             entities[entity_name] = discovered_ent.model_dump(
                 exclude={"raw_sample": True, "fields": {"__all__": {"sample_values", "enum_values"}}})
-            active_res = mapping_store.active_version(auth.tenant_id, req.vendor, entity_name)
+            try:
+                active_res = mapping_store.active_version(auth.tenant_id, vendor, entity_name)
+            except MappingGovernanceError as exc:
+                raise ApiError(400, {"error": exc.code}) from None
             if active_res is not None:
                 _, active_mapping = active_res
                 try:
@@ -595,10 +615,11 @@ def synthesize_mapping(
     """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
     domain_enum = _entity_type(req.domain)
     discovered = _prepare_synthesis_discovered(domain_enum.value, req)
+    vendor = _resolve_vendor(auth.tenant_id, req.vendor)
     mapping, report = synthesizer.synthesize(
         discovered=discovered,
         canonical_type=domain_enum,
-        vendor=req.vendor,
+        vendor=vendor,
     )
     return _finalize_synthesis(auth, mapping, report, req.sample_records)
 
@@ -617,12 +638,13 @@ async def synthesize_mapping_agentic(
         gateway = request.app.state.supervisor.get_orchestrator().llm_gateway
     except AttributeError:
         raise LLMNotConfigured("no application LLM gateway") from None
+    vendor = _resolve_vendor(auth.tenant_id, req.vendor)
     mapping, report = await synthesizer.synthesize_agentic(
         discovered=discovered,
         canonical_type=domain_enum,
         tenant_id=auth.tenant_id,
         llm_gateway=gateway,
-        vendor=req.vendor,
+        vendor=vendor,
     )
     return _finalize_synthesis(auth, mapping, report, req.sample_records)
 
@@ -847,9 +869,20 @@ class ShapeApproveRequest(BaseModel):
 
 
 @router.post("/v1/hosts/requisitions/shape/approve")
-def approve_requisition_shape(req: ShapeApproveRequest, auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA))):
+def approve_requisition_shape(
+    req: ShapeApproveRequest,
+    request: Request,
+    auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
+):
     """Approve the requisition payload shape last observed for this tenant's host (QE)."""
     from hrms_plugin.integrations.host_registry import HostRegistryError, load_host_registry_from_env
+
+    clock = (
+        getattr(request.app.state, "clock", time.time)
+        if hasattr(request, "app") and hasattr(request.app, "state")
+        else time.time
+    )
+    now = clock()
 
     try:
         host = load_host_registry_from_env().for_tenant(auth.tenant_id)
@@ -863,11 +896,13 @@ def approve_requisition_shape(req: ShapeApproveRequest, auth: AuthContext = Depe
         raise ApiError(409, {"error": "FINGERPRINT_NOT_OBSERVED"})
 
     pending = _storage.get("pending_shapes", key)
-    if not pending or pending.get("fingerprint") != req.fingerprint:
+    requested_at = pending.get("requested_at") if pending else None
+    is_expired = requested_at is not None and (now > requested_at + 24 * 3600)
+    if not pending or pending.get("fingerprint") != req.fingerprint or is_expired:
         pending_record = {
             "fingerprint": req.fingerprint,
             "requested_by": auth.user_id,
-            "requested_at": time.time(),
+            "requested_at": now,
         }
         _storage.set("pending_shapes", key, pending_record)
         return JSONResponse(status_code=202, content={"status": "PENDING_CONFIRMATION", **pending_record})
@@ -878,7 +913,7 @@ def approve_requisition_shape(req: ShapeApproveRequest, auth: AuthContext = Depe
     record = {
         **observed,
         "approved_by": auth.user_id,
-        "approved_at": time.time(),
+        "approved_at": now,
         "requested_by": pending["requested_by"],
         "requested_at": pending.get("requested_at"),
     }
@@ -1265,6 +1300,7 @@ def create_app(
     application.state.demo_endpoints = env.get("HRMS_DEMO_ENDPOINTS") == "true"
     application.state.clock = clock
     application.state.supervisor = supervisor_agent or supervisor
+    application.state.egress_log = egress_log
     application.add_middleware(
         CORSMiddleware,
         allow_origins=registry.all_origins(),

@@ -1,0 +1,559 @@
+FF.F.FFFFFFFFF                                                           [100%]
+=================================== FAILURES ===================================
+________ test_r1_synthesize_and_introspect_vendor_optional_and_pattern _________
+
+    def test_r1_synthesize_and_introspect_vendor_optional_and_pattern():
+        """vendor field is Optional[str] defaulting to None; non-empty values are validated."""
+        # SynthesizeRequest: default is None
+        req_syn = SynthesizeRequest(domain="EMPLOYEE", discovered_fields=[{"name": "full_name"}])
+>       assert req_syn.vendor is None
+E       AssertionError: assert 'host' is None
+E        +  where 'host' = SynthesizeRequest(domain='EMPLOYEE', discovered_fields=[{'name': 'full_name'}], vendor='host', sample_records=None).vendor
+
+tests/unit/test_gap_r1.py:59: AssertionError
+___ test_r1_synthesize_without_vendor_uses_host_vendor_and_resolves_in_chat ____
+
+make_client = <function make_client.<locals>._make at 0x112f031a0>
+bearer = <function bearer.<locals>._headers at 0x112f823e0>
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-385/test_r1_synthesize_without_ven0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112e65f10>
+
+    def test_r1_synthesize_without_vendor_uses_host_vendor_and_resolves_in_chat(
+        make_client, bearer, tmp_path, monkeypatch
+    ):
+        """Synthesize without vendor adopts tenant host vendor; classification resolver finds it."""
+        hosts_cfg = {
+            "tenants": [
+                {
+                    "tenant_id": "acme",
+                    "vendor": "frappe",
+                    "base_url": "https://hr.acme.test",
+                    "api_key_env": "ACME_KEY",
+                    "api_secret_env": "ACME_SECRET",
+                    "timeout_seconds": 10,
+                }
+            ]
+        }
+        hosts_file = tmp_path / "hosts.yaml"
+        hosts_file.write_text(yaml.safe_dump(hosts_cfg))
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_file))
+    
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+    
+        # Synthesize request without vendor
+        payload = {
+            "domain": "EMPLOYEE",
+            "discovered_fields": [{"name": "employee_name"}, {"name": "department"}],
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=alice)
+        assert res.status_code == 200, res.text
+        body = res.json()
+>       assert body["vendor"] == "frappe"
+E       AssertionError: assert 'host' == 'frappe'
+E         
+E         - frappe
+E         + host
+
+tests/unit/test_gap_r1.py:118: AssertionError
+_________________ test_r2_llm_policy_mcp_enabled_default_false _________________
+
+    def test_r2_llm_policy_mcp_enabled_default_false():
+        """LlmPolicy gains mcp_enabled: bool = False."""
+        pol = LlmPolicy(allowed_providers=["fake"])
+>       assert pol.mcp_enabled is False
+               ^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_r1.py:167: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = LlmPolicy(allowed_providers=('fake',), tokenize_compensation=False, daily_token_budget=None, voice_providers=(), requests_per_minute=None, max_data_tier=1, region=None, egress_retention_days=None)
+item = 'mcp_enabled'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'LlmPolicy' object has no attribute 'mcp_enabled'
+
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/pydantic/main.py:1105: AttributeError
+_______________ test_r2_mcp_tools_list_and_call_gated_by_policy ________________
+
+make_client = <function make_client.<locals>._make at 0x11311e480>
+bearer = <function bearer.<locals>._headers at 0x11311cf40>
+keys = TestKeys(rsa=<cryptography.hazmat.bindings._rust.openssl.rsa.RSAPrivateKey object at 0x10ed90d50>, ec=<cryptography.ha...ject at 0x111bfaed0>, initech_rsa=<cryptography.hazmat.bindings._rust.openssl.rsa.RSAPrivateKey object at 0x111bfb010>)
+
+    def test_r2_mcp_tools_list_and_call_gated_by_policy(make_client, bearer, keys):
+        """tools/list and tools/call require tenant policy, mcp_enabled=True, max_data_tier>=2."""
+        client = make_client()
+    
+        # 1. globex tenant has mcp_enabled=False -> 403 MCP_NOT_ALLOWED_FOR_TENANT
+        globex_headers = _headers(bearer(tenant="globex", roles=["staff"]), jurisdiction="IN")
+        res_list = client.post("/v1/mcp", json=_rpc_req("tools/list"), headers=globex_headers)
+>       assert res_list.status_code == 403
+E       assert 200 == 403
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_r1.py:200: AssertionError
+___________________ test_r2_mcp_tools_call_writes_egress_log ___________________
+
+make_client = <function make_client.<locals>._make at 0x11311c220>
+bearer = <function bearer.<locals>._headers at 0x11311d1c0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112fe2b50>
+
+    def test_r2_mcp_tools_call_writes_egress_log(make_client, bearer, monkeypatch):
+        """Every tools/call writes an egress row: provider 'mcp-client', model=tool name, payload hash, status."""
+        client = make_client()
+        egress_store = MemoryKeyValueStore()
+        from hrms_plugin.governance.egress_log import EgressLog
+        log = EgressLog(egress_store)
+        monkeypatch.setattr(app_module, "egress_log", log)
+        if hasattr(client.app.state, "egress_log"):
+            client.app.state.egress_log = log
+    
+        acme_headers = _headers(bearer(tenant="acme", roles=["staff"]), jurisdiction="IN")
+        args = {"query": "maternity benefit", "jurisdiction": "IN"}
+        res_call = client.post(
+            "/v1/mcp",
+            json=_rpc_req("tools/call", {"name": "search_legal_kb", "arguments": args}),
+            headers=acme_headers,
+        )
+        assert res_call.status_code == 200
+    
+        # Verify egress log entry
+        rows = log.list("acme")
+>       assert len(rows) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+tests/unit/test_gap_r1.py:259: AssertionError
+____________________ test_r3_rollback_24h_expiry_boundaries ____________________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-385/test_r3_rollback_24h_expiry_bo0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11310a890>
+
+    @pytest.mark.asyncio
+    async def test_r3_rollback_24h_expiry_boundaries(tmp_path, monkeypatch):
+        """Writeback rollback 24 h expiry: valid at 24 h; expired at >24 h counts as absent (202 new)."""
+        hosts_cfg = {
+            "tenants": [
+                {
+                    "tenant_id": "acme",
+                    "vendor": "frappe",
+                    "base_url": "https://hr.acme.test",
+                    "api_key_env": "ACME_KEY",
+                    "api_secret_env": "ACME_SECRET",
+                    "timeout_seconds": 10,
+                    "writable_fields": {"Employee": {"notice_number_of_days": "int"}},
+                }
+            ]
+        }
+        hosts_file = tmp_path / "hosts.yaml"
+        hosts_file.write_text(yaml.safe_dump(hosts_cfg))
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_file))
+        monkeypatch.setenv("ACME_KEY", "k")
+        monkeypatch.setenv("ACME_SECRET", "s")
+    
+        clock = FakeClock(1_000_000.0)
+        fake_doc = StatefulFrappeDoc()
+        transport = httpx.MockTransport(fake_doc.handler)
+        client_factory = lambda host, key, secret: FrappeClient(
+            host, key, secret, transport=transport
+        )
+    
+        store = MemoryKeyValueStore()
+        svc = WritebackService(store=store, client_factory=client_factory, clock=clock)
+    
+        proposer = AuthContext(user_id="alice", tenant_id="acme", roles=frozenset({UserRole.HR_ADMIN}))
+        approver = AuthContext(user_id="bob", tenant_id="acme", roles=frozenset({UserRole.HR_ADMIN}))
+        confirmer = AuthContext(user_id="charlie", tenant_id="acme", roles=frozenset({UserRole.HR_ADMIN}))
+    
+        # Propose and approve
+>       p = await svc.propose(proposer, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_r1.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+hrms_plugin/writeback/service.py:128: in propose
+    document = await self._call(auth.tenant_id, lambda c: c.get_document(doctype, name))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hrms_plugin/writeback/service.py:97: in _call
+    client = self._client_factory(host, key, secret)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+host = HostConfig(tenant_id='acme', vendor='frappe', base_url='https://hr.acme.test', api_key_env='ACME_KEY', api_secret_env=...ken_env=None, service_user_id=None, timeout_seconds=10, writable_fields={'Employee': {'notice_number_of_days': 'int'}})
+key = 'k', secret = 's'
+
+>   client_factory = lambda host, key, secret: FrappeClient(
+        host, key, secret, transport=transport
+    )
+E   TypeError: FrappeClient.__init__() got an unexpected keyword argument 'transport'
+
+tests/unit/test_gap_r1.py:348: TypeError
+__________________ test_r3_fingerprint_24h_expiry_boundaries ___________________
+
+    def test_r3_fingerprint_24h_expiry_boundaries():
+        """Payroll fingerprint approve 24 h expiry: valid at 24 h; expired at >24 h counts as absent."""
+        store = MemoryKeyValueStore()
+        clock = FakeClock(1_000_000.0)
+        svc = PayrollService(store=store, clock=clock)
+    
+        fp = "sha256:" + "a" * 64
+        # 1. User A requests at t0
+        r1 = svc.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "user-A")
+        assert r1["status"] == "PENDING_CONFIRMATION"
+    
+        # Same user at t0 + 10s -> SAME_PERSON
+        clock.advance(10.0)
+        assert svc.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "user-A") == {"error": "SAME_PERSON"}
+    
+        # Exactly 24h (total 86400s) -> User B can approve
+        clock.advance(86400.0 - 10.0)
+        r_app = svc.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "user-B")
+        assert r_app["status"] == "APPROVED"
+    
+        # 2. Expiry test on a second fingerprint
+        fp2 = "sha256:" + "b" * 64
+        svc.approve_fingerprint("acme", "frappe", "Salary Slip", fp2, "user-A")
+        # Advance past 24h
+        clock.advance(86401.0)
+    
+        # User A requests again: expired counts as absent, records new request
+        r_re = svc.approve_fingerprint("acme", "frappe", "Salary Slip", fp2, "user-A")
+>       assert r_re["status"] == "PENDING_CONFIRMATION"
+               ^^^^^^^^^^^^^^
+E       KeyError: 'status'
+
+tests/unit/test_gap_r1.py:422: KeyError
+_____________________ test_r3_shape_24h_expiry_boundaries ______________________
+
+make_client = <function make_client.<locals>._make at 0x112ffb920>
+bearer = <function bearer.<locals>._headers at 0x11311c360>
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-385/test_r3_shape_24h_expiry_bound0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1132ac410>
+
+    def test_r3_shape_24h_expiry_boundaries(make_client, bearer, tmp_path, monkeypatch):
+        """Requisition shape approve 24 h expiry: valid at 24 h; expired at >24 h counts as absent."""
+        hosts_cfg = {
+            "tenants": [
+                {
+                    "tenant_id": "acme",
+                    "vendor": "frappe",
+                    "base_url": "https://hr.acme.test",
+                    "api_key_env": "ACME_KEY",
+                    "api_secret_env": "ACME_SECRET",
+                    "timeout_seconds": 10,
+                }
+            ]
+        }
+        hosts_file = tmp_path / "hosts.yaml"
+        hosts_file.write_text(yaml.safe_dump(hosts_cfg))
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_file))
+    
+        store = MemoryKeyValueStore()
+        monkeypatch.setattr(app_module, "_storage", store)
+        clock = FakeClock(1_000_000.0)
+        monkeypatch.setattr(time, "time", clock)
+    
+        client = make_client()
+        if hasattr(client.app.state, "clock"):
+            client.app.state.clock = clock
+    
+        alice = bearer(roles=["platform_admin"], sub="alice")
+        bob = bearer(roles=["platform_admin"], sub="bob")
+    
+        fp = "sha256:" + "c" * 64
+        store.set("observed_shapes", "acme:frappe", {"fingerprint": fp, "observed_at": clock()})
+    
+        # Alice requests at t0 -> 202 PENDING_CONFIRMATION
+        res1 = client.post("/v1/hosts/requisitions/shape/approve", json={"fingerprint": fp}, headers=alice)
+>       assert res1.status_code == 202
+E       assert 409 == 202
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+tests/unit/test_gap_r1.py:467: AssertionError
+_________ test_r6_mcp_origin_check_uses_caller_tenant_allowed_origins __________
+
+make_client = <function make_client.<locals>._make at 0x112ffa5c0>
+bearer = <function bearer.<locals>._headers at 0x112ffa700>
+
+    def test_r6_mcp_origin_check_uses_caller_tenant_allowed_origins(make_client, bearer):
+        """Origin must be in caller tenant's allowed_origins, not union across tenants."""
+        client = make_client()
+        # acme has allowed_origin https://hr.acme.test
+        # globex has allowed_origin https://hr.globex.test
+        acme_token = bearer(tenant="acme", roles=["staff"])
+    
+        # 1. acme token with globex origin -> 403 ORIGIN_NOT_ALLOWED
+        res_cross = client.post(
+            "/v1/mcp",
+            json=_rpc_req("ping"),
+            headers=_headers(acme_token, jurisdiction="IN", origin="https://hr.globex.test"),
+        )
+>       assert res_cross.status_code == 403
+E       assert 200 == 403
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_r1.py:514: AssertionError
+_____ test_r7_introspect_with_colon_in_entity_name_returns_400_invalid_key _____
+
+make_client = <function make_client.<locals>._make at 0x112ffb9c0>
+bearer = <function bearer.<locals>._headers at 0x11311c9a0>
+
+    def test_r7_introspect_with_colon_in_entity_name_returns_400_invalid_key(make_client, bearer):
+        """POST /v1/schema/introspect with ':' in entity name returns 400 INVALID_KEY."""
+        client = make_client()
+        auth = bearer(roles=["platform_admin"])
+        payload = {
+            "sample_records": {
+                "Employee:Draft": [{"name": "Jane", "dept": "HR"}],
+            }
+        }
+>       res = client.post("/v1/schema/introspect", json=payload, headers=auth)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_r1.py:560: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:1203: in post
+    return self.request(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:518: in request
+    return super().request(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:796: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:993: in send
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:987: in send
+    response.read()
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:877: in read
+    self._content = b"".join(self.iter_bytes())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:893: in iter_bytes
+    for raw_bytes in self.iter_raw():
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:948: in iter_raw
+    for raw_stream_bytes in self.stream:
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:143: in __iter__
+    yield from self._stream
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:384: in iter_body
+    exit_stack.close()
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:609: in close
+    self.__exit__(None, None, None)
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:601: in __exit__
+    raise exc_details[1]
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:586: in __exit__
+    if cb(*exc_details):
+       ^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:399: in close_app
+    raise exception
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:366: in run_app
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/applications.py:1194: in __call__
+    await super().__call__(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py:91: in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py:149: in simple_response
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/routing.py:683: in __call__
+    await self.middleware_stack(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:2811: in app
+    await route.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1839: in handle
+    await self.original_router.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:2894: in handle
+    await included_router._handle_selected(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1865: in _handle_selected
+    await original_route.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1328: in handle
+    await effective_context.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:166: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:152: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:745: in app
+    raw_response = await run_endpoint_function(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:374: in run_endpoint_function
+    return await run_in_threadpool(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/concurrency.py:34: in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/anyio/to_thread.py:65: in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py:2706: in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py:1100: in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/telemetry/_api.py:244: in _run_sync_endpoint
+    return function(**arguments)
+           ^^^^^^^^^^^^^^^^^^^^^
+hrms_plugin/server/app.py:494: in introspect_schema
+    active_res = mapping_store.active_version(auth.tenant_id, req.vendor, entity_name)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hrms_plugin/storage/mapping_store.py:228: in active_version
+    active = [r for r in self._versions(tenant_id, vendor, entity_type).values() if r["status"] == "ACTIVE"]
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hrms_plugin/storage/mapping_store.py:161: in _versions
+    prefix = self._make_key(tenant_id, vendor, entity_type) + ":"
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+tenant_id = 'acme', vendor = 'host', entity_type = 'Employee:Draft'
+
+    @staticmethod
+    def _make_key(tenant_id: str, vendor: str, entity_type: str | EntityType) -> str:
+        ent = entity_type.value if isinstance(entity_type, EntityType) else str(entity_type).upper()
+        if any(":" in part for part in (tenant_id, vendor, ent)):
+>           raise MappingGovernanceError("INVALID_KEY", "tenant, vendor and entity type must not contain ':'")
+E           hrms_plugin.storage.mapping_store.MappingGovernanceError: INVALID_KEY: tenant, vendor and entity type must not contain ':'
+
+hrms_plugin/storage/mapping_store.py:112: MappingGovernanceError
+_____ test_r9_supervisor_onboarding_currency_derivation_and_missing_input ______
+
+    def test_r9_supervisor_onboarding_currency_derivation_and_missing_input():
+        """Currency is derived only for IN (INR) and AE (AED); SA and US require currency."""
+        sup = SupervisorAgent()
+    
+        # 1. India: currency omitted -> derived as INR, succeeds
+        res_in = sup.process_message(
+            message="Evaluate offer letter for candidate",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN_USER,
+            context={"candidate_name": "Deepak", "job_title": "Developer", "annual_salary": 1200000.0},
+        )
+        assert res_in.confidence_score > 0.0
+        assert res_in.structured_data.get("currency") == "INR"
+    
+        # 2. UAE: currency omitted -> derived as AED, succeeds
+        res_ae = sup.process_message(
+            message="Evaluate offer letter for candidate",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN_USER,
+            context={"candidate_name": "Tariq", "job_title": "Developer", "annual_salary": 240000.0},
+        )
+        assert res_ae.confidence_score > 0.0
+        assert res_ae.structured_data.get("currency") == "AED"
+    
+        # 3. Saudi Arabia without currency -> MISSING_INPUT with currency
+        res_sa_missing = sup.process_message(
+            message="Evaluate offer letter for candidate",
+            jurisdiction=Jurisdiction.SAUDI_ARABIA,
+            auth=ADMIN_USER,
+            context={"candidate_name": "Omar", "job_title": "Developer", "annual_salary": 180000.0},
+        )
+>       assert res_sa_missing.confidence_score == 0.0
+E       AssertionError: assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.ONBOARDING: 'ONBOARDING'>, routed_agent='OnboardingAgent', reply_text='Offer evaluati...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_r1.py:601: AssertionError
+___ test_r9_supervisor_travel_expense_currency_derivation_and_missing_input ____
+
+    def test_r9_supervisor_travel_expense_currency_derivation_and_missing_input():
+        """Travel expense currency derived for IN/AE; SA and US require currency."""
+        sup = SupervisorAgent()
+        base_ctx = {
+            "claim_id": "CLM-100",
+            "employee_id": "EMP-01",
+            "expenses": [{"id": "E1", "category": "MEAL", "amount": 100.0, "has_receipt": True}],
+            "tier": "STANDARD",
+            "has_approved_travel_request": True,
+        }
+    
+        # 1. India: currency omitted -> derived as INR, succeeds
+        res_in = sup.process_message(
+            message="Audit travel expense claim",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN_USER,
+            context=base_ctx,
+        )
+        assert res_in.confidence_score > 0.0
+        assert res_in.structured_data.get("currency") == "INR"
+    
+        # 2. UAE: currency omitted -> derived as AED, succeeds
+        res_ae = sup.process_message(
+            message="Audit travel expense claim",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN_USER,
+            context=base_ctx,
+        )
+        assert res_ae.confidence_score > 0.0
+        assert res_ae.structured_data.get("currency") == "AED"
+    
+        # 3. Saudi Arabia without currency -> MISSING_INPUT with currency
+        res_sa_missing = sup.process_message(
+            message="Audit travel expense claim",
+            jurisdiction=Jurisdiction.SAUDI_ARABIA,
+            auth=ADMIN_USER,
+            context=base_ctx,
+        )
+>       assert res_sa_missing.confidence_score == 0.0
+E       AssertionError: assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.TRAVEL_EXPENSE: 'TRAVEL_EXPENSE'>, routed_agent='TravelExpenseAgent', reply_text='Exp...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_r1.py:685: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_r1.py::test_r1_synthesize_and_introspect_vendor_optional_and_pattern
+FAILED tests/unit/test_gap_r1.py::test_r1_synthesize_without_vendor_uses_host_vendor_and_resolves_in_chat
+FAILED tests/unit/test_gap_r1.py::test_r2_llm_policy_mcp_enabled_default_false
+FAILED tests/unit/test_gap_r1.py::test_r2_mcp_tools_list_and_call_gated_by_policy
+FAILED tests/unit/test_gap_r1.py::test_r2_mcp_tools_call_writes_egress_log - ...
+FAILED tests/unit/test_gap_r1.py::test_r3_rollback_24h_expiry_boundaries - Ty...
+FAILED tests/unit/test_gap_r1.py::test_r3_fingerprint_24h_expiry_boundaries
+FAILED tests/unit/test_gap_r1.py::test_r3_shape_24h_expiry_boundaries - asser...
+FAILED tests/unit/test_gap_r1.py::test_r6_mcp_origin_check_uses_caller_tenant_allowed_origins
+FAILED tests/unit/test_gap_r1.py::test_r7_introspect_with_colon_in_entity_name_returns_400_invalid_key
+FAILED tests/unit/test_gap_r1.py::test_r9_supervisor_onboarding_currency_derivation_and_missing_input
+FAILED tests/unit/test_gap_r1.py::test_r9_supervisor_travel_expense_currency_derivation_and_missing_input
+12 failed, 2 passed in 1.87s

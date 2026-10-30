@@ -205,7 +205,9 @@ class WritebackService:
             if not proposal.get("after_modified"):
                 raise WritebackError("ROLLBACK_UNAVAILABLE", "the host did not report the post-write version")
 
-            if not proposal.get("rollback_requested_by"):
+            requested_at = proposal.get("rollback_requested_at")
+            is_expired = requested_at is not None and (self._clock() > requested_at + PROPOSAL_TTL_SECONDS)
+            if not proposal.get("rollback_requested_by") or is_expired:
                 proposal["rollback_requested_by"] = auth.user_id
                 proposal["rollback_requested_at"] = self._clock()
                 self._save(proposal)

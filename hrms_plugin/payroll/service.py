@@ -53,7 +53,9 @@ class PayrollService:
     ) -> Dict[str, Any]:
         key = self._key(tenant_id, vendor, doctype)
         pending = self._store.get(PENDING_NS, key)
-        if not pending or pending.get("fingerprint") != fingerprint:
+        requested_at = pending.get("requested_at") if pending else None
+        is_expired = requested_at is not None and (self._clock() > requested_at + 24 * 3600)
+        if not pending or pending.get("fingerprint") != fingerprint or is_expired:
             record = {
                 "status": "PENDING_CONFIRMATION",
                 "fingerprint": fingerprint,

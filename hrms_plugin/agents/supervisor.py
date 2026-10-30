@@ -511,12 +511,20 @@ class SupervisorAgent:
                 salary_val = ctx.get("annual_salary") if ctx.get("annual_salary") is not None else ctx.get("salary")
                 if salary_val is None:
                     missing.append("annual_salary")
+                currency_val = ctx.get("currency")
+                if currency_val is None:
+                    if jur in (Jurisdiction.INDIA, "IN"):
+                        currency_val = "INR"
+                    elif jur in (Jurisdiction.UAE, "AE"):
+                        currency_val = "AED"
+                    else:
+                        missing.append("currency")
                 if missing:
                     return _missing_input_response(intent, "OnboardingAgent", missing)
                 cand_name = str(ctx["candidate_name"])
                 title = str(ctx["job_title"])
                 salary = float(salary_val)
-                currency = str(ctx.get("currency", "INR" if jur == Jurisdiction.INDIA else "AED"))
+                currency = str(currency_val)
                 b_min = ctx.get("band_min")
                 b_max = ctx.get("band_max")
                 offer_res = self.onboarding_agent.evaluate_offer(
@@ -679,12 +687,20 @@ class SupervisorAgent:
                 missing.append("tier")
             if ctx.get("has_approved_travel_request") is None:
                 missing.append("has_approved_travel_request")
+            cur_code = ctx.get("currency")
+            if cur_code is None:
+                if jur in (Jurisdiction.INDIA, "IN"):
+                    cur_code = "INR"
+                elif jur in (Jurisdiction.UAE, "AE"):
+                    cur_code = "AED"
+                else:
+                    missing.append("currency")
             if missing:
                 return _missing_input_response(intent, "TravelExpenseAgent", missing)
             claim_id = str(ctx["claim_id"])
             emp_id = str(ctx["employee_id"])
             expenses = ctx["expenses"]
-            cur_code = str(ctx.get("currency", "INR" if jur == Jurisdiction.INDIA else "AED"))
+            cur_code = str(cur_code)
             tier = str(ctx["tier"])
             has_pre_auth = bool(ctx["has_approved_travel_request"])
             exp_res = self.travel_agent.audit_claim(
