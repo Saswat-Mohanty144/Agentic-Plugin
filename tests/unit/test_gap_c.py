@@ -69,14 +69,19 @@ def _setup_active_mapping(
 ) -> int:
     m = _sample_mapping(vendor=vendor, entity_type=entity_type)
     v = store.propose_mapping(tenant_id, m, proposed_by="alice")
+    rev = store.review_version(
+        tenant_id, vendor, entity_type, v, reviewer="alice",
+        actions={"accept": [f.target for f in m.fields]},
+    )
+    v_app = rev["version"]
     cls_dict = classification or {
         "department": {"data_class": "INTERNAL", "llm_visible": True},
         "badge_code": {"data_class": "PII", "llm_visible": False},
         "annual_bonus": {"data_class": "COMPENSATION", "llm_visible": False},
         "employee_id": {"data_class": "PII", "llm_visible": False},
     }
-    store.approve_version(tenant_id, vendor, entity_type, v, approver="bob", classification=cls_dict)
-    return v
+    store.approve_version(tenant_id, vendor, entity_type, v_app, approver="bob", classification=cls_dict)
+    return v_app
 
 
 # 1. MappingStore.active_classification -------------------------------------------------------------
@@ -127,13 +132,21 @@ def test_active_classification_returns_latest_active_version():
     store = MappingStore(backend=MemoryKeyValueStore())
     m = _sample_mapping()
     v1 = store.propose_mapping("acme", m, "alice")
+    rev1 = store.review_version(
+        "acme", "frappe", "EMPLOYEE", v1, reviewer="alice",
+        actions={"accept": [f.target for f in m.fields]},
+    )
     store.approve_version(
-        "acme", "frappe", "EMPLOYEE", v1, "bob",
+        "acme", "frappe", "EMPLOYEE", rev1["version"], "bob",
         classification={"department": {"data_class": "INTERNAL", "llm_visible": False}},
     )
     v2 = store.propose_mapping("acme", m, "charlie")
+    rev2 = store.review_version(
+        "acme", "frappe", "EMPLOYEE", v2, reviewer="charlie",
+        actions={"accept": [f.target for f in m.fields]},
+    )
     store.approve_version(
-        "acme", "frappe", "EMPLOYEE", v2, "dana",
+        "acme", "frappe", "EMPLOYEE", rev2["version"], "dana",
         classification={"department": {"data_class": "INTERNAL", "llm_visible": True}},
     )
     res = store.active_classification("acme", "frappe", "EMPLOYEE")

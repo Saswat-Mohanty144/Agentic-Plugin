@@ -82,9 +82,13 @@ def test_mapping_store_persistence():
             writeback={"full_name": "worker.legal_name"},
         )
 
-        # Mappings only become active through propose -> approve by a different person (piece G4).
+        # Mappings only become active through propose -> review/accept -> approve by a different person (piece G4).
         version = mapping_store.propose_mapping("tenant_123", mapping, proposed_by="admin-a")
-        mapping_store.approve_version("tenant_123", "workday", EntityType.EMPLOYEE, version, approver="admin-b")
+        rev = mapping_store.review_version(
+            "tenant_123", "workday", EntityType.EMPLOYEE, version, reviewer="admin-a",
+            actions={"accept": ["full_name"]},
+        )
+        mapping_store.approve_version("tenant_123", "workday", EntityType.EMPLOYEE, rev["version"], approver="admin-b")
 
         # Reopen on fresh instance
         reopened_store = MappingStore(SqliteKeyValueStore(db_path))

@@ -69,15 +69,21 @@ def test_faithful_transforms_and_required_are_accepted():
 def test_only_an_approved_version_is_active():
     store = MappingStore(backend=MemoryKeyValueStore())
     assert store.active_version("acme", "iceipts", "REQUISITION") is None
-    v1 = store.propose_mapping("acme", mapping(FieldMap(target="department", source="companyName")), "alice")
+    m1 = mapping(FieldMap(target="department", source="companyName"))
+    v1 = store.propose_mapping("acme", m1, "alice")
     assert store.active_version("acme", "iceipts", "REQUISITION") is None  # proposed only
-    store.approve_version("acme", "iceipts", "REQUISITION", v1, "bob")
+    rev1 = store.review_version("acme", "iceipts", "REQUISITION", v1, "alice", actions={"accept": ["department"]})
+    v1_app = rev1["version"]
+    store.approve_version("acme", "iceipts", "REQUISITION", v1_app, "bob")
     version, active = store.active_version("acme", "iceipts", "REQUISITION")
-    assert version == v1 and active.fields[0].source == "companyName"
-    v2 = store.propose_mapping("acme", mapping(FieldMap(target="department", source="location")), "alice")
-    assert store.active_version("acme", "iceipts", "REQUISITION")[0] == v1  # pending v2 changes nothing
-    store.approve_version("acme", "iceipts", "REQUISITION", v2, "bob")
-    assert store.active_version("acme", "iceipts", "REQUISITION")[0] == v2
+    assert version == v1_app and active.fields[0].source == "companyName"
+    m2 = mapping(FieldMap(target="department", source="location"))
+    v2 = store.propose_mapping("acme", m2, "alice")
+    assert store.active_version("acme", "iceipts", "REQUISITION")[0] == v1_app  # pending v2 changes nothing
+    rev2 = store.review_version("acme", "iceipts", "REQUISITION", v2, "alice", actions={"accept": ["department"]})
+    v2_app = rev2["version"]
+    store.approve_version("acme", "iceipts", "REQUISITION", v2_app, "bob")
+    assert store.active_version("acme", "iceipts", "REQUISITION")[0] == v2_app
     assert store.active_version("globex", "iceipts", "REQUISITION") is None
 
 
@@ -108,15 +114,20 @@ def test_route_without_tenant_mapping_uses_the_vendor_profile(make_client, beare
 
 def test_route_applies_the_approved_tenant_override(make_client, bearer, acme_iceipts):
     monkeypatch, store = acme_iceipts
-    v = store.propose_mapping("acme", mapping(
+    m = mapping(
         FieldMap(target="department", source="companyName"),
-        FieldMap(target="status", source="status", values={"APPROVED": "OPEN", "ARCHIVED": "CLOSED"})), "alice")
-    store.approve_version("acme", "iceipts", "REQUISITION", v, "bob")
+        FieldMap(target="status", source="status", values={"APPROVED": "OPEN", "ARCHIVED": "CLOSED"}))
+    v = store.propose_mapping("acme", m, "alice")
+    rev = store.review_version(
+        "acme", "iceipts", "REQUISITION", v, "alice", actions={"accept": ["department", "status"]}
+    )
+    v_app = rev["version"]
+    store.approve_version("acme", "iceipts", "REQUISITION", v_app, "bob")
     rows = [iceipts_row(department={"name": "Eng"}), iceipts_row("r-2", status="ARCHIVED")]
     body = _get(make_client, bearer, monkeypatch, rows).json()
     assert [(r["department"], r["status"]) for r in body["requisitions"]] == [("Globex", "OPEN"),
                                                                              ("Globex", "CLOSED")]
-    assert body["mapping"] == {"layer": "TENANT_OVERRIDE", "version": v, "fields": ["department", "status"]}
+    assert body["mapping"] == {"layer": "TENANT_OVERRIDE", "version": v_app, "fields": ["department", "status"]}
 
 
 def test_route_ignores_a_pending_proposal(make_client, bearer, acme_iceipts):
@@ -128,8 +139,11 @@ def test_route_ignores_a_pending_proposal(make_client, bearer, acme_iceipts):
 
 def test_route_refuses_an_approved_mapping_it_cannot_apply(make_client, bearer, acme_iceipts):
     monkeypatch, store = acme_iceipts
-    v = store.propose_mapping("acme", mapping(FieldMap(target="title", source="title", transform="decimal")), "alice")
-    store.approve_version("acme", "iceipts", "REQUISITION", v, "bob")
+    m = mapping(FieldMap(target="title", source="title", transform="decimal"))
+    v = store.propose_mapping("acme", m, "alice")
+    rev = store.review_version("acme", "iceipts", "REQUISITION", v, "alice", actions={"accept": ["title"]})
+    v_app = rev["version"]
+    store.approve_version("acme", "iceipts", "REQUISITION", v_app, "bob")
     res = _get(make_client, bearer, monkeypatch, [iceipts_row()])
     assert res.status_code == 409 and res.json()["error"] == "MAPPING_NOT_APPLICABLE"
-    assert res.json()["field"] == "title" and res.json()["version"] == v
+    assert res.json()["field"] == "title" and res.json()["version"] == v_app

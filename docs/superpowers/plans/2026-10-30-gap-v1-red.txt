@@ -362,3 +362,80 @@ FAILED tests/unit/test_gap_v1.py::test_http_reject_version_flow - AssertionEr...
 FAILED tests/unit/test_gap_v1.py::test_review_validation_errors - assert 404 ...
 FAILED tests/unit/test_gap_v1.py::test_review_successful_lifecycle_and_four_eyes_approval
 10 failed in 1.36s
+FFF.                                                                     [100%]
+=================================== FAILURES ===================================
+_____ test_default_coverage_mapped_fields_needs_review_without_confidence ______
+
+    def test_default_coverage_mapped_fields_needs_review_without_confidence():
+        """Directly proposed mapping without synthesis coverage marks mapped fields NEEDS_REVIEW with null confidence."""
+        mapping = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(
+                FieldMap(target="title", source="job_title", required=True),
+                FieldMap(target="department", source="dept"),
+            ),
+        )
+        cov = MappingStore._default_coverage(mapping)
+        fields = cov["fields"]
+    
+        # Mapped field 'title' must be NEEDS_REVIEW, confidence None, origin None, rationale 'proposed without a synthesis report'
+>       assert fields["title"]["status"] == "NEEDS_REVIEW"
+E       AssertionError: assert 'MATCHED' == 'NEEDS_REVIEW'
+E         
+E         - NEEDS_REVIEW
+E         + MATCHED
+
+tests/unit/test_gap_v1.py:435: AssertionError
+_____________________ test_default_coverage_boundary_cases _____________________
+
+    def test_default_coverage_boundary_cases():
+        """Boundary: empty mapping has 0 needs_review; non-canonical targets get NEEDS_REVIEW; compound sources joined."""
+        # Boundary 1: Empty mapping (0 fields)
+        empty_mapping = EntityMapping(vendor="frappe", entity_type="REQUISITION", id_path="id", fields=())
+        empty_cov = MappingStore._default_coverage(empty_mapping)
+        assert empty_cov["counts"]["matched"] == 0
+        assert empty_cov["counts"]["needs_review"] == 0
+        assert empty_cov["counts"]["missing"] == len(CANONICAL_SPECIFICATIONS["REQUISITION"])
+    
+        # Boundary 2: Non-canonical target field and compound source
+        custom_mapping = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(
+                FieldMap(target="custom_field", source=("col_a", "col_b")),
+            ),
+        )
+        custom_cov = MappingStore._default_coverage(custom_mapping)
+>       assert custom_cov["fields"]["custom_field"]["status"] == "NEEDS_REVIEW"
+E       AssertionError: assert 'MATCHED' == 'NEEDS_REVIEW'
+E         
+E         - NEEDS_REVIEW
+E         + MATCHED
+
+tests/unit/test_gap_v1.py:485: AssertionError
+______ test_directly_proposed_mapping_fails_approval_with_review_required ______
+
+mem_store = <hrms_plugin.storage.mapping_store.MappingStore object at 0x11365f810>
+
+    def test_directly_proposed_mapping_fails_approval_with_review_required(mem_store):
+        """Proposing a mapping directly uses _default_coverage so approval fails with REVIEW_REQUIRED."""
+        mapping = EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="id",
+            fields=(FieldMap(target="title", source="job_title"),),
+        )
+        version = mem_store.propose_mapping("acme", mapping, proposed_by="alice")
+    
+>       with pytest.raises(MappingGovernanceError) as exc_info:
+E       Failed: DID NOT RAISE MappingGovernanceError
+
+tests/unit/test_gap_v1.py:502: Failed
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_v1.py::test_default_coverage_mapped_fields_needs_review_without_confidence
+FAILED tests/unit/test_gap_v1.py::test_default_coverage_boundary_cases - Asse...
+FAILED tests/unit/test_gap_v1.py::test_directly_proposed_mapping_fails_approval_with_review_required
+3 failed, 1 passed, 11 deselected in 0.86s

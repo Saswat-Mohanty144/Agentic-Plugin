@@ -195,11 +195,11 @@ class MappingStore:
                 fm = mapped_targets[target]
                 source_str = " + ".join(fm.source) if isinstance(fm.source, (list, tuple)) else (fm.source or "")
                 fields_cov[target] = {
-                    "status": "MATCHED",
+                    "status": "NEEDS_REVIEW",
                     "source": source_str,
-                    "confidence": 1.0,
-                    "origin": "RULE",
-                    "rationale": "Direct mapping",
+                    "confidence": None,
+                    "origin": None,
+                    "rationale": "proposed without a synthesis report",
                     "required": bool(fm.required or field_spec.get("required", False)),
                     "accepted_by": None,
                 }
@@ -215,7 +215,7 @@ class MappingStore:
                 }
         counts = {
             "matched": sum(1 for f in fields_cov.values() if f["status"] == "MATCHED"),
-            "needs_review": 0,
+            "needs_review": sum(1 for f in fields_cov.values() if f["status"] == "NEEDS_REVIEW"),
             "missing": sum(1 for f in fields_cov.values() if f["status"] == "MISSING"),
             "unused": 0,
         }

@@ -134,8 +134,23 @@ def test_overlay_refuses_invalid_transforms_defaults_and_types():
 def test_mapping_store_propose_and_approve_probe_lifecycle():
     store = MappingStore(backend=MemoryKeyValueStore())
     probe_ok = {"is_valid": True, "quality_score": 1.0, "records_tested": 2, "issues": []}
+    coverage_ok = {
+        "fields": {
+            "title": {
+                "status": "MATCHED",
+                "source": "title",
+                "confidence": 1.0,
+                "origin": "RULE",
+                "rationale": "Exact match",
+                "required": True,
+                "accepted_by": None,
+            }
+        },
+        "unused_host_fields": [],
+        "counts": {"matched": 1, "needs_review": 0, "missing": 0, "unused": 0},
+    }
     fm = FieldMap(target="title", source="title")
-    v1 = store.propose_mapping("acme", _mapping("iceipts", fm), "alice", probe=probe_ok)
+    v1 = store.propose_mapping("acme", _mapping("iceipts", fm), "alice", probe=probe_ok, coverage=coverage_ok)
     versions = store.list_versions("acme")
     assert versions[0]["probe"] == probe_ok
 
@@ -145,7 +160,8 @@ def test_mapping_store_propose_and_approve_probe_lifecycle():
 
     v2 = store.propose_mapping("acme", _mapping("iceipts", fm), "alice")
     assert "probe" not in store.list_versions("acme")[1]
-    assert store.approve_version("acme", "iceipts", "REQUISITION", v2, "bob")["status"] == "ACTIVE"
+    rev2 = store.review_version("acme", "iceipts", "REQUISITION", v2, "alice", actions={"accept": ["title"]})
+    assert store.approve_version("acme", "iceipts", "REQUISITION", rev2["version"], "bob")["status"] == "ACTIVE"
 
 
 def test_mapping_store_approve_fails_when_probe_invalid():
@@ -259,7 +275,8 @@ def test_introspect_schema_with_sample_records_detects_drift(make_client, bearer
         id_path="name",
         fields=(FieldMap(target="title", source="designation"), FieldMap(target="department", source="department")),
     ), "alice")
-    store.approve_version("acme", "frappe", "REQUISITION", v, "bob")
+    rev = store.review_version("acme", "frappe", "REQUISITION", v, "alice", actions={"accept": ["title", "department"]})
+    store.approve_version("acme", "frappe", "REQUISITION", rev["version"], "bob")
 
     # Introspect with sample records containing an unmapped field
     samples = {

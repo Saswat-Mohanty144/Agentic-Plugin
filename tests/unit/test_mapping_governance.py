@@ -22,6 +22,13 @@ def mapping(extra_field="work_email"):
     return m
 
 
+def _review_and_accept(store, tenant_id, vendor, entity_type, version, m, reviewer="a"):
+    rev = store.review_version(
+        tenant_id, vendor, entity_type, version, reviewer, actions={"accept": [f.target for f in m.fields]}
+    )
+    return rev["version"]
+
+
 @pytest.fixture
 def store():
     return MappingStore(backend=MemoryKeyValueStore())
@@ -34,10 +41,12 @@ def test_proposal_is_not_active(store):
 
 
 def test_approval_by_another_person_activates(store):
-    v = store.propose_mapping("acme", mapping(), proposed_by="a")
-    store.approve_version("acme", "zoho", "EMPLOYEE", v, approver="b")
+    m = mapping()
+    v = store.propose_mapping("acme", m, proposed_by="a")
+    v_app = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
+    store.approve_version("acme", "zoho", "EMPLOYEE", v_app, approver="b")
     assert store.load_mapping("acme", "zoho", "EMPLOYEE") is not None
-    assert store.list_versions("acme")[0]["status"] == "ACTIVE"
+    assert any(row["version"] == v_app and row["status"] == "ACTIVE" for row in store.list_versions("acme"))
 
 
 def test_self_approval_refused(store):
@@ -48,28 +57,38 @@ def test_self_approval_refused(store):
 
 
 def test_second_approval_supersedes_previous(store):
-    v1 = store.propose_mapping("acme", mapping(), proposed_by="a")
-    store.approve_version("acme", "zoho", "EMPLOYEE", v1, approver="b")
-    v2 = store.propose_mapping("acme", mapping("emp_mail"), proposed_by="a")
-    assert v2 == 2
-    store.approve_version("acme", "zoho", "EMPLOYEE", v2, approver="b")
+    m1 = mapping()
+    v1 = store.propose_mapping("acme", m1, proposed_by="a")
+    v1_app = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v1, m1)
+    store.approve_version("acme", "zoho", "EMPLOYEE", v1_app, approver="b")
+    m2 = mapping("emp_mail")
+    v2 = store.propose_mapping("acme", m2, proposed_by="a")
+    v2_app = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v2, m2)
+    store.approve_version("acme", "zoho", "EMPLOYEE", v2_app, approver="b")
     statuses = {r["version"]: r["status"] for r in store.list_versions("acme")}
-    assert statuses == {1: "SUPERSEDED", 2: "ACTIVE"}
+    assert statuses[v1_app] == "SUPERSEDED"
+    assert statuses[v2_app] == "ACTIVE"
 
 
 def test_approving_active_version_is_idempotent(store):
-    v = store.propose_mapping("acme", mapping(), proposed_by="a")
-    first = store.approve_version("acme", "zoho", "EMPLOYEE", v, approver="b")
-    assert store.approve_version("acme", "zoho", "EMPLOYEE", v, approver="c") == first
+    m = mapping()
+    v = store.propose_mapping("acme", m, proposed_by="a")
+    v_app = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
+    first = store.approve_version("acme", "zoho", "EMPLOYEE", v_app, approver="b")
+    assert store.approve_version("acme", "zoho", "EMPLOYEE", v_app, approver="c") == first
 
 
 def test_superseded_version_cannot_be_reactivated_without_new_proposal(store):
-    v1 = store.propose_mapping("acme", mapping(), proposed_by="a")
-    store.approve_version("acme", "zoho", "EMPLOYEE", v1, approver="b")
-    v2 = store.propose_mapping("acme", mapping("emp_mail"), proposed_by="a")
-    store.approve_version("acme", "zoho", "EMPLOYEE", v2, approver="b")
+    m1 = mapping()
+    v1 = store.propose_mapping("acme", m1, proposed_by="a")
+    v1_app = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v1, m1)
+    store.approve_version("acme", "zoho", "EMPLOYEE", v1_app, approver="b")
+    m2 = mapping("emp_mail")
+    v2 = store.propose_mapping("acme", m2, proposed_by="a")
+    v2_app = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v2, m2)
+    store.approve_version("acme", "zoho", "EMPLOYEE", v2_app, approver="b")
     with pytest.raises(MappingGovernanceError) as info:
-        store.approve_version("acme", "zoho", "EMPLOYEE", v1, approver="b")
+        store.approve_version("acme", "zoho", "EMPLOYEE", v1_app, approver="b")
     assert info.value.code == "INVALID_STATE"
 
 

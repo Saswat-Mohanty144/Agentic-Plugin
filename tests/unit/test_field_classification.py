@@ -27,6 +27,11 @@ def _targets(m):
     return [f.target for f in m.fields]
 
 
+def _review_and_accept(store, tenant_id, vendor, entity_type, version, m, reviewer="alice"):
+    rev = store.review_version(tenant_id, vendor, entity_type, version, reviewer, actions={"accept": _targets(m)})
+    return rev["version"]
+
+
 @pytest.fixture
 def store():
     return MappingStore(backend=MemoryKeyValueStore())
@@ -49,6 +54,7 @@ def test_introspect_returns_structure_without_sample_values(make_client, bearer)
 def test_unclassified_fields_are_recorded_as_pii_not_visible(store):
     m = mapping()
     v = store.propose_mapping("acme", m, "alice")
+    v = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
     row = store.approve_version("acme", "zoho", "EMPLOYEE", v, "bob")
     assert row["classification"] == {t: {"data_class": "PII", "llm_visible": False} for t in _targets(m)}
 
@@ -57,6 +63,7 @@ def test_explicit_classification_is_stored(store):
     m = mapping()
     first, second = _targets(m)[:2]
     v = store.propose_mapping("acme", m, "alice")
+    v = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
     row = store.approve_version("acme", "zoho", "EMPLOYEE", v, "bob", classification={
         first: {"data_class": "INTERNAL", "llm_visible": True}})
     assert row["classification"][first] == {"data_class": "INTERNAL", "llm_visible": True}
@@ -73,13 +80,16 @@ def test_explicit_classification_is_stored(store):
 def test_invalid_classification_refused_and_nothing_activated(store, entry, code):
     m = mapping()
     v = store.propose_mapping("acme", m, "alice")
+    v = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
     with pytest.raises(MappingGovernanceError) as exc:
         store.approve_version("acme", "zoho", "EMPLOYEE", v, "bob", classification={_targets(m)[0]: entry})
     assert exc.value.code == code and store.active_version("acme", "zoho", "EMPLOYEE") is None
 
 
 def test_classifying_an_unmapped_field_is_refused(store):
-    v = store.propose_mapping("acme", mapping(), "alice")
+    m = mapping()
+    v = store.propose_mapping("acme", m, "alice")
+    v = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
     with pytest.raises(MappingGovernanceError) as exc:
         store.approve_version("acme", "zoho", "EMPLOYEE", v, "bob",
                               classification={"not_a_field": {"data_class": "PUBLIC", "llm_visible": True}})
@@ -90,6 +100,7 @@ def test_classifying_an_unmapped_field_is_refused(store):
 def test_non_sensitive_classes_may_be_visible(store, data_class):
     m = mapping()
     v = store.propose_mapping("acme", m, "alice")
+    v = _review_and_accept(store, "acme", "zoho", "EMPLOYEE", v, m)
     row = store.approve_version("acme", "zoho", "EMPLOYEE", v, "bob",
                                 classification={_targets(m)[0]: {"data_class": data_class, "llm_visible": True}})
     assert row["status"] == "ACTIVE"
@@ -101,9 +112,16 @@ def test_http_approve_with_classification(make_client, bearer, monkeypatch):
     monkeypatch.setattr(app_module, "mapping_store", store)
     m = mapping()
     v = store.propose_mapping("acme", m, "alice")
-    target = _targets(m)[0]
     client = make_client()
-    url = f"/v1/schema/mappings/zoho/EMPLOYEE/versions/{v}/approve"
+    rev_res = client.post(
+        f"/v1/schema/mappings/zoho/EMPLOYEE/versions/{v}/review",
+        json={"accept": _targets(m)},
+        headers=bearer(roles=["platform_admin"], sub="alice"),
+    )
+    assert rev_res.status_code == 200
+    v2 = rev_res.json()["version"]
+    target = _targets(m)[0]
+    url = f"/v1/schema/mappings/zoho/EMPLOYEE/versions/{v2}/approve"
     bad = client.post(url, json={"classification": {target: {"data_class": "PII", "llm_visible": True}}},
                       headers=bearer(roles=["platform_admin"], sub="bob"))
     assert bad.status_code == 422 and bad.json()["error"] == "SENSITIVE_FIELD_LLM_VISIBLE"
@@ -111,14 +129,24 @@ def test_http_approve_with_classification(make_client, bearer, monkeypatch):
                      headers=bearer(roles=["platform_admin"], sub="bob"))
     assert ok.status_code == 200 and ok.json()["classification"][target]["data_class"] == "PUBLIC"
     listing = client.get("/v1/schema/mappings", headers=bearer(roles=["platform_admin"])).json()
-    assert listing["versions"][0]["classification"][target]["llm_visible"] is True
+    active_row = next(r for r in listing["versions"] if r["version"] == v2)
+    assert active_row["classification"][target]["llm_visible"] is True
 
 
 def test_http_approve_without_body_defaults_to_pii(make_client, bearer, monkeypatch):
     store = MappingStore(backend=MemoryKeyValueStore())
     monkeypatch.setattr(app_module, "mapping_store", store)
-    v = store.propose_mapping("acme", mapping(), "alice")
-    res = make_client().post(f"/v1/schema/mappings/zoho/EMPLOYEE/versions/{v}/approve",
-                             headers=bearer(roles=["platform_admin"], sub="bob"))
+    m = mapping()
+    v = store.propose_mapping("acme", m, "alice")
+    client = make_client()
+    rev_res = client.post(
+        f"/v1/schema/mappings/zoho/EMPLOYEE/versions/{v}/review",
+        json={"accept": _targets(m)},
+        headers=bearer(roles=["platform_admin"], sub="alice"),
+    )
+    assert rev_res.status_code == 200
+    v2 = rev_res.json()["version"]
+    res = client.post(f"/v1/schema/mappings/zoho/EMPLOYEE/versions/{v2}/approve",
+                      headers=bearer(roles=["platform_admin"], sub="bob"))
     assert res.status_code == 200
     assert {c["data_class"] for c in res.json()["classification"].values()} == {"PII"}

@@ -4,8 +4,8 @@ import pytest
 
 from hrms_plugin.schema.canonical import EntityType
 from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
-from hrms_plugin.schema.mapping import EntityMapping
-from hrms_plugin.schema.synthesizer import MappingSynthesizer, SynthesizedFieldMap
+from hrms_plugin.schema.mapping import EntityMapping, FieldMap
+from hrms_plugin.schema.synthesizer import CANONICAL_SPECIFICATIONS, MappingSynthesizer, SynthesizedFieldMap
 from hrms_plugin.server import app as app_module
 from hrms_plugin.storage.mapping_store import MappingGovernanceError, MappingStore
 from tests.support.auth import NOW
@@ -412,3 +412,168 @@ def test_review_successful_lifecycle_and_four_eyes_approval(make_client, bearer,
     )
     assert app_active_rev.status_code == 409
     assert app_active_rev.json()["error"] == "INVALID_STATE"
+
+
+# 6. Default Coverage & Follow-up Tests (Task v1 review finding) ------------------------------------------------
+
+
+def test_default_coverage_mapped_fields_needs_review_without_confidence():
+    """Directly proposed mapping without synthesis coverage marks mapped fields NEEDS_REVIEW with null confidence."""
+    mapping = EntityMapping(
+        vendor="frappe",
+        entity_type="REQUISITION",
+        id_path="id",
+        fields=(
+            FieldMap(target="title", source="job_title", required=True),
+            FieldMap(target="department", source="dept"),
+        ),
+    )
+    cov = MappingStore._default_coverage(mapping)
+    fields = cov["fields"]
+
+    # Mapped field 'title' must be NEEDS_REVIEW, confidence None, origin None,
+    # rationale 'proposed without a synthesis report'
+    assert fields["title"]["status"] == "NEEDS_REVIEW"
+    assert fields["title"]["source"] == "job_title"
+    assert fields["title"]["confidence"] is None
+    assert fields["title"]["origin"] is None
+    assert fields["title"]["rationale"] == "proposed without a synthesis report"
+    assert fields["title"]["required"] is True
+    assert fields["title"]["accepted_by"] is None
+
+    # Mapped field 'department' must be NEEDS_REVIEW with same properties
+    assert fields["department"]["status"] == "NEEDS_REVIEW"
+    assert fields["department"]["source"] == "dept"
+    assert fields["department"]["confidence"] is None
+    assert fields["department"]["origin"] is None
+    assert fields["department"]["rationale"] == "proposed without a synthesis report"
+
+    # Unmapped canonical field 'description' remains MISSING
+    assert fields["description"]["status"] == "MISSING"
+    assert fields["description"]["source"] is None
+    assert fields["description"]["confidence"] is None
+    assert fields["description"]["origin"] is None
+    assert fields["description"]["rationale"] == ""
+
+    # Counts must accurately reflect the statuses
+    counts = cov["counts"]
+    assert counts["matched"] == 0
+    assert counts["needs_review"] == 2
+    assert counts["missing"] == len(CANONICAL_SPECIFICATIONS["REQUISITION"]) - 2
+    assert counts["unused"] == 0
+    assert cov["unused_host_fields"] == []
+
+
+def test_default_coverage_boundary_cases():
+    """Boundary: empty mapping has 0 needs_review; non-canonical targets get NEEDS_REVIEW; compound sources joined."""
+    # Boundary 1: Empty mapping (0 fields)
+    empty_mapping = EntityMapping(vendor="frappe", entity_type="REQUISITION", id_path="id", fields=())
+    empty_cov = MappingStore._default_coverage(empty_mapping)
+    assert empty_cov["counts"]["matched"] == 0
+    assert empty_cov["counts"]["needs_review"] == 0
+    assert empty_cov["counts"]["missing"] == len(CANONICAL_SPECIFICATIONS["REQUISITION"])
+
+    # Boundary 2: Non-canonical target field and compound source
+    custom_mapping = EntityMapping(
+        vendor="frappe",
+        entity_type="REQUISITION",
+        id_path="id",
+        fields=(
+            FieldMap(target="custom_field", source=("col_a", "col_b")),
+        ),
+    )
+    custom_cov = MappingStore._default_coverage(custom_mapping)
+    assert custom_cov["fields"]["custom_field"]["status"] == "NEEDS_REVIEW"
+    assert custom_cov["fields"]["custom_field"]["source"] == "col_a + col_b"
+    assert custom_cov["fields"]["custom_field"]["confidence"] is None
+    assert custom_cov["fields"]["custom_field"]["origin"] is None
+    assert custom_cov["fields"]["custom_field"]["rationale"] == "proposed without a synthesis report"
+
+
+def test_directly_proposed_mapping_fails_approval_with_review_required(mem_store):
+    """Proposing a mapping directly uses _default_coverage so approval fails with REVIEW_REQUIRED."""
+    mapping = EntityMapping(
+        vendor="frappe",
+        entity_type="REQUISITION",
+        id_path="id",
+        fields=(FieldMap(target="title", source="job_title"),),
+    )
+    version = mem_store.propose_mapping("acme", mapping, proposed_by="alice")
+
+    with pytest.raises(MappingGovernanceError) as exc_info:
+        mem_store.approve_version("acme", "frappe", "REQUISITION", version, approver="bob")
+    assert exc_info.value.code == "REVIEW_REQUIRED"
+    assert "title" in exc_info.value.fields
+
+
+def test_directly_proposed_mapping_can_be_approved_after_review_accept(mem_store):
+    """Directly proposed mapping can be approved once reviewer explicitly accepts the NEEDS_REVIEW fields."""
+    mapping = EntityMapping(
+        vendor="frappe",
+        entity_type="REQUISITION",
+        id_path="id",
+        fields=(
+            FieldMap(target="title", source="job_title"),
+            FieldMap(target="department", source="dept"),
+        ),
+    )
+    v1 = mem_store.propose_mapping("acme", mapping, proposed_by="alice")
+
+    # Reviewing and accepting all fields moves them to MATCHED
+    rev = mem_store.review_version(
+        "acme", "frappe", "REQUISITION", v1, reviewer="alice", actions={"accept": ["title", "department"]}
+    )
+    v2 = rev["version"]
+    assert rev["coverage"]["counts"]["needs_review"] == 0
+    assert rev["coverage"]["fields"]["title"]["status"] == "MATCHED"
+    assert rev["coverage"]["fields"]["department"]["status"] == "MATCHED"
+
+    # Now bob can approve v2 successfully
+    approved = mem_store.approve_version("acme", "frappe", "REQUISITION", v2, approver="bob")
+    assert approved["status"] == "ACTIVE"
+    assert approved["approved_by"] == "bob"
+
+
+def test_synthesize_route_passes_real_coverage_exact_synonym(make_client, bearer, monkeypatch, mem_store):
+    """Synthesize routes must always pass real coverage: exact-synonym field is MATCHED with confidence and RULE."""
+    monkeypatch.setattr(app_module, "mapping_store", mem_store)
+    client = make_client()
+    alice = bearer(roles=["platform_admin"], sub="alice")
+    bob = bearer(roles=["platform_admin"], sub="bob")
+
+    # 'job_title' is an exact synonym for canonical target 'title' (confidence 0.95, origin RULE)
+    payload = {
+        "domain": "REQUISITION",
+        "discovered_fields": [
+            {"name": "id"},
+            {"name": "job_title"},
+        ],
+        "vendor": "frappe",
+    }
+    res = client.post("/v1/schema/synthesize", json=payload, headers=alice)
+    assert res.status_code == 200, res.text
+    body = res.json()
+    version = body["mapping_version"]
+
+    cov = body["coverage"]
+    title_cov = cov["fields"]["title"]
+    assert title_cov["status"] == "MATCHED"
+    assert title_cov["confidence"] == 0.95
+    assert title_cov["origin"] == "RULE"
+    assert title_cov["source"] == "job_title"
+
+    # Stored version in mapping_store retains real coverage, not default coverage
+    row = mem_store._versions("acme", "frappe", "REQUISITION")[version]
+    stored_title_cov = row["coverage"]["fields"]["title"]
+    assert stored_title_cov["status"] == "MATCHED"
+    assert stored_title_cov["confidence"] == 0.95
+    assert stored_title_cov["origin"] == "RULE"
+
+    # Because there are 0 NEEDS_REVIEW fields, bob can approve directly without a review step
+    approve_res = client.post(
+        f"/v1/schema/mappings/frappe/REQUISITION/versions/{version}/approve",
+        headers=bob,
+    )
+    assert approve_res.status_code == 200, approve_res.text
+    assert approve_res.json()["status"] == "ACTIVE"
+
