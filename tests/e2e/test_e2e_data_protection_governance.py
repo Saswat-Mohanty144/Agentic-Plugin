@@ -495,9 +495,10 @@ def test_e2e_schema_introspect_boundaries_and_negatives(make_client, bearer):
     assert resp_empty.status_code == 200
     assert resp_empty.json()["entities_discovered"] == []
 
-    # Negative: Empty request (neither swagger nor samples) -> 400
+    # Negative: Empty request (neither swagger nor samples) -> 422
     resp_bad = client.post("/v1/schema/introspect", json={}, headers=bearer(roles=["platform_admin"]))
-    assert resp_bad.status_code == 400
+    assert resp_bad.status_code == 422
+    assert resp_bad.json()["error"] == "INVALID_ARGUMENT"
 
     # Negative: Role hr_manager lacks MANAGE_SCHEMA -> 403
     resp_perm = client.post(
