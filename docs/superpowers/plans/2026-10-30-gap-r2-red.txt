@@ -1,0 +1,346 @@
+FFFFF.FFFFFFF.F.                                                         [100%]
+=================================== FAILURES ===================================
+__________ test_r5_stream_no_tool_path_scrapes_citations_from_answer ___________
+
+scripted = <function scripted.<locals>._make at 0x11078efc0>
+
+    @pytest.mark.asyncio
+    async def test_r5_stream_no_tool_path_scrapes_citations_from_answer(scripted):
+        """Positive: No-tool path in run_stream collects citations from final answer text."""
+        answer_text = (
+            "Under UAE Federal Decree-Law No. 33 of 2021, Article 9, the probation period "
+            "cannot exceed six months."
+        )
+        gateway, _ = scripted(final(answer_text))
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("What is the probation limit?", jurisdiction="AE", auth=ADMIN))
+    
+        result_event = next(e for e in events if e.get("event") == "result")
+        citations = result_event["data"]["statutory_citations"]
+>       assert len(citations) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+
+tests/unit/test_gap_r2.py:75: AssertionError
+______ test_r5_stream_partial_path_scrapes_citations_from_streamed_tokens ______
+
+scripted = <function scripted.<locals>._make at 0x110f0d6c0>
+
+    @pytest.mark.asyncio
+    async def test_r5_stream_partial_path_scrapes_citations_from_streamed_tokens(scripted):
+        """Positive: Partial path collects citations from streamed tokens after streaming finishes."""
+        gateway, _ = scripted(
+            tool_call(
+                "audit_statutory_compliance",
+                employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+            ),
+            final("As stipulated in Section 15 of Code on Wages 2019, statutory deductions must align."),
+        )
+        orch = _orch(gateway, max_iterations=1)
+        events = await _collect(
+            orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="IN", auth=ADMIN)
+        )
+    
+        result_event = next(e for e in events if e.get("event") == "result")
+        result_data = result_event["data"]
+        assert result_data["partial"] is True
+    
+        citations = result_data["statutory_citations"]
+        # Must contain both tool citation and citation scraped from streamed token text
+>       assert any("Section 15" in c or "Code on Wages" in c for c in citations)
+E       assert False
+E        +  where False = any(<generator object test_r5_stream_partial_path_scrapes_citations_from_streamed_tokens.<locals>.<genexpr> at 0x110871150>)
+
+tests/unit/test_gap_r2.py:103: AssertionError
+_________ test_r5_stream_no_tool_refusal_no_scraping_and_refused_flag __________
+
+scripted = <function scripted.<locals>._make at 0x110f0dda0>
+
+    @pytest.mark.asyncio
+    async def test_r5_stream_no_tool_refusal_no_scraping_and_refused_flag(scripted):
+        """Negative/Refusal: Finish reason 'refusal' on no-tool path sets refused: true and scrapes no citations."""
+        refusal_text = (
+            "I cannot assist with bypassing obligations under UAE Federal Decree-Law No. 33 of 2021, Article 9."
+        )
+        gateway, _ = scripted(
+            LLMResponse(
+                content=refusal_text,
+                finish_reason="refusal",
+                model="scripted",
+                provider="scripted",
+            )
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("How to evade probation rules?", jurisdiction="AE", auth=ADMIN))
+    
+        done_event = next(e for e in events if e.get("event") == "done")
+        assert done_event["data"]["finish_reason"] == "refusal"
+    
+        result_event = next(e for e in events if e.get("event") == "result")
+        result_data = result_event["data"]
+>       assert result_data.get("refused") is True
+E       AssertionError: assert None is True
+E        +  where None = <built-in method get of dict object at 0x110fabe00>('refused')
+E        +    where <built-in method get of dict object at 0x110fabe00> = {'statutory_citations': [], 'suggested_actions': [], 'partial': False, 'truncated': False}.get
+
+tests/unit/test_gap_r2.py:128: AssertionError
+_________ test_r5_stream_partial_refusal_no_scraping_and_refused_flag __________
+
+scripted = <function scripted.<locals>._make at 0x110f0e340>
+
+    @pytest.mark.asyncio
+    async def test_r5_stream_partial_refusal_no_scraping_and_refused_flag(scripted):
+        """Negative/Refusal: Finish reason 'refusal' on fallback stream sets refused: true and suppresses scraping."""
+        refusal_text = "I must decline to summarize under Section 15 of Code on Wages 2019."
+        gateway, _ = scripted(
+            tool_call(
+                "audit_statutory_compliance",
+                employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+            ),
+            LLMResponse(
+                content=refusal_text,
+                finish_reason="refusal",
+                model="scripted",
+                provider="scripted",
+            ),
+        )
+        orch = _orch(gateway, max_iterations=1)
+        events = await _collect(
+            orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="IN", auth=ADMIN)
+        )
+    
+        result_event = next(e for e in events if e.get("event") == "result")
+        result_data = result_event["data"]
+        assert result_data["partial"] is True
+>       assert result_data.get("refused") is True
+E       AssertionError: assert None is True
+E        +  where None = <built-in method get of dict object at 0x1107f2c40>('refused')
+E        +    where <built-in method get of dict object at 0x1107f2c40> = {'statutory_citations': [], 'suggested_actions': [], 'partial': True, 'truncated': False}.get
+
+tests/unit/test_gap_r2.py:157: AssertionError
+__________ test_r5_chat_endpoint_vs_stream_endpoint_citations_parity ___________
+
+make_client = <function make_client.<locals>._make at 0x11078f7e0>
+bearer = <function bearer.<locals>._headers at 0x11160c7c0>
+scripted = <function scripted.<locals>._make at 0x11160c900>
+
+    @pytest.mark.asyncio
+    async def test_r5_chat_endpoint_vs_stream_endpoint_citations_parity(make_client, bearer, scripted):
+        """Parity: Compare /v1/chat citations with /v1/chat/stream result citations for identical scripted response."""
+        answer_text = (
+            "Pursuant to UAE Federal Decree-Law No. 33 of 2021, Article 9, probation periods "
+            "must not exceed 180 days."
+        )
+        payload = {
+            "message": "What is the probation limit under UAE law?",
+            "jurisdiction": "AE",
+            "agentic": True,
+        }
+        headers = bearer(tenant="acme", roles=["hr_manager"])
+    
+        # 1. Non-streaming call via /v1/chat
+        gateway_chat, _ = scripted(final(answer_text))
+        client_chat = make_client(supervisor_agent=SupervisorAgent(llm_gateway=gateway_chat))
+        resp_chat = client_chat.post("/v1/chat", json=payload, headers=headers)
+        assert resp_chat.status_code == 200
+        chat_citations = resp_chat.json()["statutory_citations"]
+    
+        # 2. Streaming call via /v1/chat/stream
+        gateway_stream, _ = scripted(final(answer_text))
+        client_stream = make_client(supervisor_agent=SupervisorAgent(llm_gateway=gateway_stream))
+        resp_stream = client_stream.post("/v1/chat/stream", json=payload, headers=headers)
+        assert resp_stream.status_code == 200
+        events = [json.loads(line[6:]) for line in resp_stream.text.splitlines() if line.startswith("data: ")]
+        result_event = next(e for e in events if e.get("event") == "result")
+        stream_citations = result_event["data"]["statutory_citations"]
+    
+        # Both must match and not be empty
+        assert len(chat_citations) > 0
+>       assert chat_citations == stream_citations
+E       AssertionError: assert ['Pursuant to...ed 180 days.'] == []
+E         
+E         Left contains one more item: 'Pursuant to UAE Federal Decree-Law No. 33 of 2021, Article 9, probation periods must not exceed 180 days.'
+E         Use -v to get more diff
+
+tests/unit/test_gap_r2.py:194: AssertionError
+________________ test_r8_nested_dotted_source_no_false_positive ________________
+
+    def test_r8_nested_dotted_source_no_false_positive():
+        """Positive: Mapping with dotted source 'profile.contact.email' counts 'profile' as mapped."""
+        interceptor = SchemaDriftInterceptor()
+        mapping = EntityMapping(
+            vendor="custom_hrms",
+            entity_type="EMPLOYEE",
+            id_path="id",
+            fields=(FieldMap(target="email", source="profile.contact.email"),),
+        )
+        raw_response = {
+            "id": "EMP-100",
+            "profile": {"contact": {"email": "user@example.com"}},
+        }
+        events = interceptor.inspect_response(EntityType.EMPLOYEE, mapping=mapping, raw_response=raw_response)
+        # 'profile' is a top-level segment of a mapped path and must NOT be flagged as unmapped drift
+>       assert events == []
+E       AssertionError: assert [DriftEvent(e...solved=False)] == []
+E         
+E         Left contains one more item: DriftEvent(entity_type=<EntityType.EMPLOYEE: 'EMPLOYEE'>, severity=<DriftSeverity.INFO: 'INFO'>, detected_at='2026-10-...': 'ADD_MAPPING', 'host_field': 'profile', 'sample_value': {'contact': {'email': 'user@example.com'}}}, resolved=False)
+E         Use -v to get more diff
+
+tests/unit/test_gap_r2.py:229: AssertionError
+________________ test_r8_nested_tuple_source_no_false_positive _________________
+
+    def test_r8_nested_tuple_source_no_false_positive():
+        """Positive: Mapping with tuple of dotted sources counts all top-level segments as mapped."""
+        interceptor = SchemaDriftInterceptor()
+        mapping = EntityMapping(
+            vendor="custom_hrms",
+            entity_type="EMPLOYEE",
+            id_path="id",
+            fields=(
+                FieldMap(target="city", source=("work_address.city", "home_address.city")),
+            ),
+        )
+        raw_response = {
+            "id": "EMP-100",
+            "work_address": {"city": "Dubai"},
+        }
+        events = interceptor.inspect_response(EntityType.EMPLOYEE, mapping=mapping, raw_response=raw_response)
+>       assert events == []
+E       AssertionError: assert [DriftEvent(e...solved=False)] == []
+E         
+E         Left contains one more item: DriftEvent(entity_type=<EntityType.EMPLOYEE: 'EMPLOYEE'>, severity=<DriftSeverity.INFO: 'INFO'>, detected_at='2026-10-...ested_patch={'action': 'ADD_MAPPING', 'host_field': 'work_address', 'sample_value': {'city': 'Dubai'}}, resolved=False)
+E         Use -v to get more diff
+
+tests/unit/test_gap_r2.py:248: AssertionError
+______________ test_r8_genuinely_new_top_level_key_still_reported ______________
+
+    def test_r8_genuinely_new_top_level_key_still_reported():
+        """Negative: Genuinely new top-level key not in mapping sources is still detected as drift."""
+        interceptor = SchemaDriftInterceptor()
+        mapping = EntityMapping(
+            vendor="custom_hrms",
+            entity_type="EMPLOYEE",
+            id_path="id",
+            fields=(FieldMap(target="email", source="profile.email"),),
+        )
+        raw_response = {
+            "id": "EMP-100",
+            "profile": {"email": "user@example.com"},
+            "unmapped_extra_column": "some_value",
+        }
+        events = interceptor.inspect_response(EntityType.EMPLOYEE, mapping=mapping, raw_response=raw_response)
+>       assert len(events) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([DriftEvent(entity_type=<EntityType.EMPLOYEE: 'EMPLOYEE'>, severity=<DriftSeverity.INFO: 'INFO'>, detected_at='2026-10..._patch={'action': 'ADD_MAPPING', 'host_field': 'unmapped_extra_column', 'sample_value': 'some_value'}, resolved=False)])
+
+tests/unit/test_gap_r2.py:266: AssertionError
+__________ test_r8_dotted_id_path_counts_top_level_segment_as_mapped ___________
+
+    def test_r8_dotted_id_path_counts_top_level_segment_as_mapped():
+        """Boundary: Dotted id_path 'meta.employee_id' counts 'meta' as mapped."""
+        interceptor = SchemaDriftInterceptor()
+        mapping = EntityMapping(
+            vendor="custom_hrms",
+            entity_type="EMPLOYEE",
+            id_path="meta.employee_id",
+            fields=(FieldMap(target="name", source="display_name"),),
+        )
+        raw_response = {
+            "meta": {"employee_id": "EMP-001"},
+            "display_name": "Alice Smith",
+        }
+        events = interceptor.inspect_response(EntityType.EMPLOYEE, mapping=mapping, raw_response=raw_response)
+>       assert events == []
+E       AssertionError: assert [DriftEvent(e...solved=False)] == []
+E         
+E         Left contains one more item: DriftEvent(entity_type=<EntityType.EMPLOYEE: 'EMPLOYEE'>, severity=<DriftSeverity.INFO: 'INFO'>, detected_at='2026-10-...sted_patch={'action': 'ADD_MAPPING', 'host_field': 'meta', 'sample_value': {'employee_id': 'EMP-001'}}, resolved=False)
+E         Use -v to get more diff
+
+tests/unit/test_gap_r2.py:285: AssertionError
+______________________ test_r8_dict_mapping_nested_paths _______________________
+
+    def test_r8_dict_mapping_nested_paths():
+        """Boundary: Dict mapping with dotted paths counts top-level segment as mapped."""
+        interceptor = SchemaDriftInterceptor()
+        events = interceptor.inspect_response(
+            EntityType.EMPLOYEE,
+            mapping={"id": "id", "nested.field": "target_field"},
+            raw_response={"id": "1", "nested": {"field": "val"}, "unexpected": 42},
+        )
+>       assert len(events) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([DriftEvent(entity_type=<EntityType.EMPLOYEE: 'EMPLOYEE'>, severity=<DriftSeverity.INFO: 'INFO'>, detected_at='2026-10..., suggested_patch={'action': 'ADD_MAPPING', 'host_field': 'nested', 'sample_value': {'field': 'val'}}, resolved=False)])
+
+tests/unit/test_gap_r2.py:296: AssertionError
+_____________ test_r8_missing_expected_field_resolves_dotted_paths _____________
+
+    def test_r8_missing_expected_field_resolves_dotted_paths():
+        """Positive: Missing expected field check resolves dotted paths without false alarms."""
+        interceptor = SchemaDriftInterceptor()
+        raw_response = {
+            "id": "EMP-1",
+            "nested": {"existing_key": "val"},
+        }
+        # When expected_fields contains both existing and missing dotted paths
+        events = interceptor.inspect_response(
+            EntityType.EMPLOYEE,
+            mapping={"id": "id"},
+            raw_response=raw_response,
+            expected_fields=["nested.existing_key", "nested.absent_key"],
+        )
+        # Only nested.absent_key should be flagged as missing
+        field_names = [e.field_name for e in events]
+>       assert "nested.absent_key" in field_names
+E       AssertionError: assert 'nested.absent_key' in ['nested']
+
+tests/unit/test_gap_r2.py:316: AssertionError
+___________ test_r4_compose_dedicated_config_mount_and_pass_through ____________
+
+    def test_r4_compose_dedicated_config_mount_and_pass_through():
+        """Positive: Compose declares dedicated config directory mount and documents unset-means-unset."""
+        compose = _load_compose()
+        text = (DEPLOY / "docker-compose.yml").read_text()
+        api = compose["services"]["hrms-plugin-api"]
+        volumes = api.get("volumes", [])
+    
+        # Dedicated config directory mount ${HRMS_CONFIG_DIR:-./config}:/etc/hrms/config:ro
+        config_mount = next((v for v in volumes if "/etc/hrms/config" in str(v)), None)
+>       assert config_mount is not None, "missing dedicated config directory mount at /etc/hrms/config"
+E       AssertionError: missing dedicated config directory mount at /etc/hrms/config
+E       assert None is not None
+
+tests/unit/test_gap_r2.py:343: AssertionError
+________________ test_r4_k8s_mounts_audit_secret_and_configmap _________________
+
+    def test_r4_k8s_mounts_audit_secret_and_configmap():
+        """Positive: k8s deployment mounts Secret and ConfigMap read-only and sets env vars."""
+        docs = _load_k8s_docs()
+        deployment = next(d for d in docs if d.get("kind") == "Deployment")
+        pod_spec = deployment["spec"]["template"]["spec"]
+        container = pod_spec["containers"][0]
+    
+        volumes = pod_spec.get("volumes", [])
+        volume_mounts = container.get("volumeMounts", [])
+    
+        # 1. Audit key Secret mount
+        audit_vol = next((v for v in volumes if v.get("secret", {}).get("secretName") == "hrms-plugin-audit-key"), None)
+>       assert audit_vol is not None, "missing Secret hrms-plugin-audit-key in pod volumes"
+E       AssertionError: missing Secret hrms-plugin-audit-key in pod volumes
+E       assert None is not None
+
+tests/unit/test_gap_r2.py:385: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_r2.py::test_r5_stream_no_tool_path_scrapes_citations_from_answer
+FAILED tests/unit/test_gap_r2.py::test_r5_stream_partial_path_scrapes_citations_from_streamed_tokens
+FAILED tests/unit/test_gap_r2.py::test_r5_stream_no_tool_refusal_no_scraping_and_refused_flag
+FAILED tests/unit/test_gap_r2.py::test_r5_stream_partial_refusal_no_scraping_and_refused_flag
+FAILED tests/unit/test_gap_r2.py::test_r5_chat_endpoint_vs_stream_endpoint_citations_parity
+FAILED tests/unit/test_gap_r2.py::test_r8_nested_dotted_source_no_false_positive
+FAILED tests/unit/test_gap_r2.py::test_r8_nested_tuple_source_no_false_positive
+FAILED tests/unit/test_gap_r2.py::test_r8_genuinely_new_top_level_key_still_reported
+FAILED tests/unit/test_gap_r2.py::test_r8_dotted_id_path_counts_top_level_segment_as_mapped
+FAILED tests/unit/test_gap_r2.py::test_r8_dict_mapping_nested_paths - Asserti...
+FAILED tests/unit/test_gap_r2.py::test_r8_missing_expected_field_resolves_dotted_paths
+FAILED tests/unit/test_gap_r2.py::test_r4_compose_dedicated_config_mount_and_pass_through
+FAILED tests/unit/test_gap_r2.py::test_r4_k8s_mounts_audit_secret_and_configmap
+13 failed, 3 passed in 1.25s
