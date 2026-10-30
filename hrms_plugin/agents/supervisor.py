@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -189,6 +189,8 @@ class SupervisorAgent:
         travel_agent: Optional[TravelExpenseAgent] = None,
         llm_gateway: Optional[Any] = None,
         tool_registry: Optional[Any] = None,
+        *,
+        classification_for: Optional[Callable[[str, str], Optional[Dict[str, Any]]]] = None,
     ):
         self.kb = kb or StatutoryKnowledgeBase()
         self.payroll_agent = payroll_agent or StatutoryPayrollAgent(kb=self.kb)
@@ -200,6 +202,7 @@ class SupervisorAgent:
         self.travel_agent = travel_agent or TravelExpenseAgent()
         self.llm_gateway = llm_gateway
         self.tool_registry = tool_registry
+        self.classification_for = classification_for
         self._orchestrator = None
         self._rbac = RbacPolicyEnforcer()
 
@@ -748,7 +751,11 @@ class SupervisorAgent:
                 offboarding_agent=self.offboarding_agent,
                 travel_agent=self.travel_agent,
             )
-            self._orchestrator = AgenticOrchestrator(llm_gateway=gateway, tool_registry=tools)
+            self._orchestrator = AgenticOrchestrator(
+                llm_gateway=gateway,
+                tool_registry=tools,
+                classification_for=self.classification_for,
+            )
         return self._orchestrator
 
     async def process_agentic(

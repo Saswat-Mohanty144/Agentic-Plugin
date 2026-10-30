@@ -12,14 +12,14 @@ import logging
 import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
 from hrms_plugin.agents.supervisor import AgentResponse, UserIntent, matching_intents
 from hrms_plugin.agents.tools import AgenticToolRegistry
 from hrms_plugin.ai.llm import LENGTH_STOP_REASONS, ChatMessage, LLMGateway, TaskClass, ToolCall, ToolDefinition
-from hrms_plugin.security.pii import PiiSession
+from hrms_plugin.security.pii import PiiSession, identifier_kind
 from hrms_plugin.security.rbac import AuthContext
 
 logger = logging.getLogger(__name__)
@@ -188,6 +188,51 @@ def _collect_from_text(text: str, state: _RunState) -> None:
                 state.citations.append(line.strip(" -•*"))
 
 
+def normalise_entity(raw: Any) -> str:
+    """Normalise entity: upper-cased, spaces and hyphens -> '_'."""
+    if raw is None:
+        return ""
+    if hasattr(raw, "value"):
+        raw = raw.value
+    text = str(raw).strip()
+    return re.sub(r"[\s-]+", "_", text).strip("_").upper()
+
+
+def _learn_context(
+    pii: PiiSession,
+    ctx: Dict[str, Any],
+    classification: Optional[Dict[str, Any]],
+    tokenize_compensation: bool,
+) -> None:
+    pii.learn(ctx)
+    if not classification:
+        return
+    for k, v in ctx.items():
+        if k in SERVER_OWNED_PARAMS:
+            continue
+        spec = classification.get(k)
+        if not isinstance(spec, dict):
+            continue
+        data_class = spec.get("data_class")
+        if data_class == "PII":
+            kind = identifier_kind(k) or "PII"
+            pii.learn_value(v, kind)
+        elif data_class == "COMPENSATION" and tokenize_compensation:
+            pii.learn_compensation(v)
+
+
+ClassificationResolver = Callable[[str, str], Optional[Dict[str, Any]]]
+
+
+def _result_data(state: _RunState, *, partial: bool = False, truncated: bool = False) -> Dict[str, Any]:
+    return {
+        "statutory_citations": list(dict.fromkeys(state.citations)),
+        "suggested_actions": state.actions,
+        "partial": partial,
+        "truncated": truncated,
+    }
+
+
 class AgenticOrchestrator:
     """Super Agentic ReAct Engine coordinating multi-step tool reasoning and statutory compliance."""
 
@@ -196,15 +241,48 @@ class AgenticOrchestrator:
         llm_gateway: Optional[LLMGateway] = None,
         tool_registry: Optional[AgenticToolRegistry] = None,
         max_iterations: int = 5,
+        *,
+        classification_for: Optional[ClassificationResolver] = None,
     ):
         self.llm_gateway = llm_gateway or LLMGateway()
         self.tool_registry = tool_registry or AgenticToolRegistry()
         self.max_iterations = max_iterations
+        self.classification_for = classification_for
 
-    def _system_messages(self, jurisdiction: str, tenant_id: str, ctx: Dict[str, Any]) -> List[ChatMessage]:
+    def _resolve_classification(self, tenant_id: str, ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not self.classification_for:
+            return None
+        raw_entity = ctx.get("entity")
+        if not raw_entity:
+            return None
+        normalised = normalise_entity(raw_entity)
+        if not normalised:
+            return None
+        try:
+            return self.classification_for(tenant_id, normalised)
+        except Exception as exc:
+            logger.warning("classification resolution failed for entity %s: %s", normalised, exc)
+            return None
+
+    def _system_messages(
+        self,
+        jurisdiction: str,
+        tenant_id: str,
+        ctx: Dict[str, Any],
+        classification: Optional[Dict[str, Any]] = None,
+    ) -> List[ChatMessage]:
         """Frozen prompt first (cacheable prefix, piece H1), then this request's jurisdiction, tenant and context."""
+        if classification is None and self.classification_for is not None:
+            classification = self._resolve_classification(tenant_id, ctx)
         keys = sorted(k for k in ctx if k not in SERVER_OWNED_PARAMS)
-        navigation = [f"{k}={ctx[k]}" for k in LLM_VISIBLE_CONTEXT_KEYS if k in ctx]
+        visible_keys = list(LLM_VISIBLE_CONTEXT_KEYS)
+        if classification:
+            for k in sorted(ctx):
+                if k not in SERVER_OWNED_PARAMS and k not in visible_keys:
+                    spec = classification.get(k)
+                    if isinstance(spec, dict) and spec.get("llm_visible") is True:
+                        visible_keys.append(k)
+        navigation = [f"{k}={ctx[k]}" for k in visible_keys if k in ctx and k not in SERVER_OWNED_PARAMS]
         context_str = (
             "Context fields provided by the host application (values are passed to tools automatically): "
             + (", ".join(keys) if keys else "none")
@@ -298,16 +376,52 @@ class AgenticOrchestrator:
         return self.tool_registry.intent_for(state.executed_tools[0]) if state.executed_tools else UserIntent.GENERAL_HR
 
     def _response(self, state: _RunState, reply_text: str, confidence: float) -> AgentResponse:
+        data = _result_data(state)
         return AgentResponse(
             intent=self._intent(state),
             routed_agent="AgenticBrain",
             reply_text=reply_text,
             confidence_score=confidence,
             structured_data=state.last_tool_data,
-            statutory_citations=list(dict.fromkeys(state.citations)),
-            suggested_actions=state.actions,
+            statutory_citations=data["statutory_citations"],
+            suggested_actions=data["suggested_actions"],
             thought_process=[s.thought for s in state.steps if s.thought],
             tool_calls=[s.tool_call for s in state.steps if s.tool_call],
+        )
+
+    def _prepare_session(
+        self,
+        user_message: str,
+        jurisdiction: str,
+        context: Optional[Dict[str, Any]],
+        history: Optional[List[Dict[str, str]]],
+        auth: AuthContext,
+    ) -> Tuple[str, _RunState, List[ChatMessage], Optional[List[ToolDefinition]], Dict[str, Any]]:
+        tenant_id = auth.tenant_id
+        ctx = context or {}
+        policy = self.llm_gateway.preflight(tenant_id)
+        state = _RunState(
+            pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
+            stated=_user_numbers(user_message, history, ctx),
+        )
+        classification = self._resolve_classification(tenant_id, ctx)
+        _learn_context(state.pii, ctx, classification, policy.tokenize_compensation)
+        messages: List[ChatMessage] = self._system_messages(
+            jurisdiction, tenant_id, ctx, classification=classification
+        )
+        for h in history or []:
+            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
+        messages.append(ChatMessage(role="user", content=user_message))
+        tools = self._offered_tools(auth, user_message, history)
+        trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
+        return tenant_id, state, messages, tools, trusted
+
+    def _tool_message(self, tc: ToolCall, output: Any) -> ChatMessage:
+        return ChatMessage(
+            role="tool",
+            content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
+            tool_call_id=tc.id,
+            name=tc.name,
         )
 
     async def run(
@@ -320,19 +434,9 @@ class AgenticOrchestrator:
         auth: AuthContext,
     ) -> AgentResponse:
         """Execute autonomous ReAct agent loop until final answer is formulated."""
-        tenant_id = auth.tenant_id
-        ctx = context or {}
-        policy = self.llm_gateway.preflight(tenant_id)  # fail closed before any work (piece G2)
-        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
-                          stated=_user_numbers(user_message, history, ctx))
-        state.pii.learn(ctx)
-        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
-        for h in history or []:
-            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
-        messages.append(ChatMessage(role="user", content=user_message))
-
-        tools = self._offered_tools(auth, user_message, history)
-        trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
+        tenant_id, state, messages, tools, trusted = self._prepare_session(
+            user_message, jurisdiction, context, history, auth
+        )
 
         for iteration in range(1, self.max_iterations + 1):
             llm_resp = await self.llm_gateway.chat(
@@ -353,9 +457,7 @@ class AgenticOrchestrator:
             messages.append(self._assistant_turn(llm_resp))
             for tc in llm_resp.tool_calls:
                 output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
-                messages.append(ChatMessage(
-                    role="tool", content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
-                    tool_call_id=tc.id, name=tc.name))
+                messages.append(self._tool_message(tc, output))
 
         # Step limit reached (#5): one more call with tool use forbidden, answering from the results gathered so far.
         final_resp = await self.llm_gateway.chat(
@@ -381,39 +483,40 @@ class AgenticOrchestrator:
         auth: AuthContext,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Stream real-time SSE events for thoughts, tool dispatches, final tokens and the resolved intent."""
-        tenant_id = auth.tenant_id
-        ctx = context or {}
-        tools = self._offered_tools(auth, user_message, history)
-        trusted = self._trusted_values(jurisdiction, tenant_id, ctx)
-        policy = self.llm_gateway.preflight(tenant_id)
-        state = _RunState(pii=PiiSession(tokenize_compensation=policy.tokenize_compensation),
-                          stated=_user_numbers(user_message, history, ctx))
-        state.pii.learn(ctx)
+        tenant_id, state, messages, tools, trusted = self._prepare_session(
+            user_message, jurisdiction, context, history, auth
+        )
         yield {"event": "thinking", "data": f"Analyzing request in jurisdiction [{jurisdiction}]..."}
 
-        messages: List[ChatMessage] = self._system_messages(jurisdiction, tenant_id, ctx)
-        for h in history or []:
-            messages.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
-        messages.append(ChatMessage(role="user", content=user_message))
-        llm_resp = await self.llm_gateway.chat(
-            messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
-        )
-        if llm_resp.thought_process:
-            yield {"event": "thinking", "data": llm_resp.thought_process}
+        for iteration in range(1, self.max_iterations + 1):
+            llm_resp = await self.llm_gateway.chat(
+                messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii
+            )
+            thought = llm_resp.thought_process or (
+                f"Step {iteration}: Reasoning through available information." if llm_resp.tool_calls else None
+            )
+            if llm_resp.thought_process:
+                yield {"event": "thinking", "data": llm_resp.thought_process}
 
-        if not llm_resp.tool_calls:
-            # Stream the answer we already have instead of calling the LLM again (piece E4).
-            for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
-                yield {"event": "token", "data": piece}
-            yield {"event": "done", "data": {"finish_reason": llm_resp.finish_reason}}
-            yield {"event": "intent", "data": self._intent(state).value}
-            return
+            if not llm_resp.tool_calls:
+                for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
+                    yield {"event": "token", "data": piece}
+                truncated = llm_resp.finish_reason in LENGTH_STOP_REASONS
+                yield {
+                    "event": "done",
+                    "data": {
+                        "finish_reason": llm_resp.finish_reason,
+                        "truncated": truncated,
+                    },
+                }
+                yield {"event": "result", "data": _result_data(state, partial=False, truncated=truncated)}
+                yield {"event": "intent", "data": self._intent(state).value}
+                return
 
-        messages.append(self._assistant_turn(llm_resp))
-        if llm_resp.tool_calls:
+            messages.append(self._assistant_turn(llm_resp))
             for tc in llm_resp.tool_calls:
                 yield {"event": "tool_call", "data": {"name": tc.name, "arguments": tc.arguments}}
-                output = await self._execute_tool_call(tc, trusted, state, llm_resp.thought_process, 1, auth)
+                output = await self._execute_tool_call(tc, trusted, state, thought, iteration, auth)
                 step_call = state.steps[-1].tool_call or {}
                 yield {
                     "event": "tool_observation",
@@ -424,12 +527,19 @@ class AgenticOrchestrator:
                         "output": output,
                     },
                 }
-                messages.append(ChatMessage(
-                    role="tool", content=tool_result_content(self.tool_registry.model_view(tc.name, output)),
-                    tool_call_id=tc.id, name=tc.name))
-            yield {"event": "thinking", "data": "Synthesizing verified compliant response..."}
+                messages.append(self._tool_message(tc, output))
 
-        # Same tools as the first turn so the cached prefix matches; the gateway forbids their use here (agy H-F1).
+        # After max_iterations rounds still requesting tools:
+        yield {"event": "partial", "data": True}
+        # Same tools as earlier turns so the cached prefix matches; the gateway forbids their use here (agy H-F1).
+        truncated = False
         async for chunk in self.llm_gateway.chat_stream(messages, tools=tools, tenant_id=tenant_id, pii=state.pii):
-            yield chunk
+            if chunk.get("event") == "done":
+                data = dict(chunk.get("data") or {})
+                truncated = data.get("finish_reason") in LENGTH_STOP_REASONS
+                data["truncated"] = truncated
+                yield {**chunk, "data": data}
+            else:
+                yield chunk
+        yield {"event": "result", "data": _result_data(state, partial=True, truncated=truncated)}
         yield {"event": "intent", "data": self._intent(state).value}

@@ -1,0 +1,882 @@
+FFFFFFFFFFFFFFFFFFFF.FFFFFFFF                                            [100%]
+=================================== FAILURES ===================================
+___________ test_active_classification_returns_none_when_no_versions ___________
+
+    def test_active_classification_returns_none_when_no_versions():
+        store = MappingStore(backend=MemoryKeyValueStore())
+>       assert store.active_classification("acme", "frappe", "EMPLOYEE") is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MappingStore' object has no attribute 'active_classification'
+
+tests/unit/test_gap_c.py:86: AttributeError
+__________ test_active_classification_returns_none_for_proposed_only ___________
+
+    def test_active_classification_returns_none_for_proposed_only():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = _sample_mapping()
+        store.propose_mapping("acme", m, proposed_by="alice")
+>       assert store.active_classification("acme", "frappe", "EMPLOYEE") is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MappingStore' object has no attribute 'active_classification'
+
+tests/unit/test_gap_c.py:93: AttributeError
+__________ test_active_classification_returns_dict_for_active_version __________
+
+    def test_active_classification_returns_dict_for_active_version():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        expected = {
+            "department": {"data_class": "INTERNAL", "llm_visible": True},
+            "badge_code": {"data_class": "PII", "llm_visible": False},
+            "annual_bonus": {"data_class": "COMPENSATION", "llm_visible": False},
+            "employee_id": {"data_class": "PII", "llm_visible": False},
+        }
+        _setup_active_mapping(store, classification=expected)
+>       result = store.active_classification("acme", "frappe", "EMPLOYEE")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MappingStore' object has no attribute 'active_classification'
+
+tests/unit/test_gap_c.py:105: AttributeError
+____ test_active_classification_returns_none_when_vendor_or_tenant_mismatch ____
+
+    def test_active_classification_returns_none_when_vendor_or_tenant_mismatch():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        _setup_active_mapping(store, tenant_id="acme", vendor="frappe", entity_type="EMPLOYEE")
+>       assert store.active_classification("other_tenant", "frappe", "EMPLOYEE") is None
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MappingStore' object has no attribute 'active_classification'
+
+tests/unit/test_gap_c.py:112: AttributeError
+_____________ test_active_classification_supports_entity_type_enum _____________
+
+    def test_active_classification_supports_entity_type_enum():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        _setup_active_mapping(store, tenant_id="acme", vendor="frappe", entity_type="EMPLOYEE")
+>       result = store.active_classification("acme", "frappe", EntityType.EMPLOYEE)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MappingStore' object has no attribute 'active_classification'
+
+tests/unit/test_gap_c.py:120: AttributeError
+___________ test_active_classification_returns_latest_active_version ___________
+
+    def test_active_classification_returns_latest_active_version():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        m = _sample_mapping()
+        v1 = store.propose_mapping("acme", m, "alice")
+        store.approve_version(
+            "acme", "frappe", "EMPLOYEE", v1, "bob",
+            classification={"department": {"data_class": "INTERNAL", "llm_visible": False}},
+        )
+        v2 = store.propose_mapping("acme", m, "charlie")
+        store.approve_version(
+            "acme", "frappe", "EMPLOYEE", v2, "dana",
+            classification={"department": {"data_class": "INTERNAL", "llm_visible": True}},
+        )
+>       res = store.active_classification("acme", "frappe", "EMPLOYEE")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MappingStore' object has no attribute 'active_classification'
+
+tests/unit/test_gap_c.py:138: AttributeError
+________________ test_normalise_entity_cases[employee-EMPLOYEE] ________________
+
+raw = 'employee', expected = 'EMPLOYEE'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = 'employee'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_______________ test_normalise_entity_cases[EMPLOYEE-EMPLOYEE0] ________________
+
+raw = 'EMPLOYEE', expected = 'EMPLOYEE'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = 'EMPLOYEE'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_________ test_normalise_entity_cases[employee-record-EMPLOYEE_RECORD] _________
+
+raw = 'employee-record', expected = 'EMPLOYEE_RECORD'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = 'employee-record'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_________ test_normalise_entity_cases[employee record-EMPLOYEE_RECORD] _________
+
+raw = 'employee record', expected = 'EMPLOYEE_RECORD'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = 'employee record'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+________ test_normalise_entity_cases[  Leave - Request  -LEAVE_REQUEST] ________
+
+raw = '  Leave - Request  ', expected = 'LEAVE_REQUEST'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = '  Leave - Request  '
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+___________ test_normalise_entity_cases[expense_claim-EXPENSE_CLAIM] ___________
+
+raw = 'expense_claim', expected = 'EXPENSE_CLAIM'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = 'expense_claim'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+____ test_normalise_entity_cases[candidate-profile-v2-CANDIDATE_PROFILE_V2] ____
+
+raw = 'candidate-profile-v2', expected = 'CANDIDATE_PROFILE_V2'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = 'candidate-profile-v2'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_______________ test_normalise_entity_cases[EMPLOYEE-EMPLOYEE1] ________________
+
+raw = <EntityType.EMPLOYEE: 'EMPLOYEE'>, expected = 'EMPLOYEE'
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("employee", "EMPLOYEE"),
+            ("EMPLOYEE", "EMPLOYEE"),
+            ("employee-record", "EMPLOYEE_RECORD"),
+            ("employee record", "EMPLOYEE_RECORD"),
+            ("  Leave - Request  ", "LEAVE_REQUEST"),
+            ("expense_claim", "EXPENSE_CLAIM"),
+            ("candidate-profile-v2", "CANDIDATE_PROFILE_V2"),
+            (EntityType.EMPLOYEE, "EMPLOYEE"),
+        ],
+    )
+    def test_normalise_entity_cases(raw, expected):
+>       assert _normalise_entity(raw) == expected
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = <EntityType.EMPLOYEE: 'EMPLOYEE'>
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+________________ test_normalise_entity_empty_or_boundary[None] _________________
+
+empty_val = None
+
+    @pytest.mark.parametrize("empty_val", [None, "", "   ", "---", "  -  "])
+    def test_normalise_entity_empty_or_boundary(empty_val):
+>       assert _normalise_entity(empty_val) == ""
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = None
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+__________________ test_normalise_entity_empty_or_boundary[] ___________________
+
+empty_val = ''
+
+    @pytest.mark.parametrize("empty_val", [None, "", "   ", "---", "  -  "])
+    def test_normalise_entity_empty_or_boundary(empty_val):
+>       assert _normalise_entity(empty_val) == ""
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = ''
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_________________ test_normalise_entity_empty_or_boundary[   ] _________________
+
+empty_val = '   '
+
+    @pytest.mark.parametrize("empty_val", [None, "", "   ", "---", "  -  "])
+    def test_normalise_entity_empty_or_boundary(empty_val):
+>       assert _normalise_entity(empty_val) == ""
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = '   '
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_________________ test_normalise_entity_empty_or_boundary[---] _________________
+
+empty_val = '---'
+
+    @pytest.mark.parametrize("empty_val", [None, "", "   ", "---", "  -  "])
+    def test_normalise_entity_empty_or_boundary(empty_val):
+>       assert _normalise_entity(empty_val) == ""
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = '---'
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+________________ test_normalise_entity_empty_or_boundary[  -  ] ________________
+
+empty_val = '  -  '
+
+    @pytest.mark.parametrize("empty_val", [None, "", "   ", "---", "  -  "])
+    def test_normalise_entity_empty_or_boundary(empty_val):
+>       assert _normalise_entity(empty_val) == ""
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+raw = '  -  '
+
+    def _normalise_entity(raw: Any) -> str:
+        func = getattr(orch_module, "normalise_entity", None)
+        if func is None:
+>           raise AttributeError("orchestrator module has no normalise_entity function")
+E           AttributeError: orchestrator module has no normalise_entity function
+
+tests/unit/test_gap_c.py:44: AttributeError
+_________________ test_llm_visible_keys_shown_in_system_prompt _________________
+
+    @pytest.mark.asyncio
+    async def test_llm_visible_keys_shown_in_system_prompt():
+        gateway, client = scripted_gateway([final("Done.")])
+        classification = {
+            "department": {"data_class": "INTERNAL", "llm_visible": True},
+            "badge_code": {"data_class": "PII", "llm_visible": False},
+            "unclassified_param": {"data_class": "INTERNAL", "llm_visible": False},
+        }
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: classification,
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:179: TypeError
+______________________ test_server_owned_keys_never_shown ______________________
+
+    @pytest.mark.asyncio
+    async def test_server_owned_keys_never_shown():
+        gateway, client = scripted_gateway([final("Done.")])
+        classification = {
+            "tenant_id": {"data_class": "PUBLIC", "llm_visible": True},
+            "jurisdiction": {"data_class": "PUBLIC", "llm_visible": True},
+            "department": {"data_class": "INTERNAL", "llm_visible": True},
+        }
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: classification,
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:227: TypeError
+___________ test_classified_pii_learned_even_with_unknown_field_name ___________
+
+    @pytest.mark.asyncio
+    async def test_classified_pii_learned_even_with_unknown_field_name():
+        gateway, client = scripted_gateway([final("Acknowledged.")])
+        classification = {
+            "custom_secret_key": {"data_class": "PII", "llm_visible": False},
+        }
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: classification,
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:256: TypeError
+______________ test_unclassified_custom_field_not_learned_as_pii _______________
+
+    @pytest.mark.asyncio
+    async def test_unclassified_custom_field_not_learned_as_pii():
+        gateway, client = scripted_gateway([final("Acknowledged.")])
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: None,  # no classification
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:282: TypeError
+__________ test_compensation_learned_when_tokenize_compensation_true ___________
+
+    @pytest.mark.asyncio
+    async def test_compensation_learned_when_tokenize_compensation_true():
+        gateway, client = scripted_gateway([final("Salary noted.")])
+        # Configure tenant policy with tokenize_compensation=True
+        gateway.policy_resolver = lambda tenant_id, provider: LlmPolicy(
+            allowed_providers=("scripted", "fake"), max_data_tier=2, tokenize_compensation=True
+        )
+        classification = {
+            "custom_stipend": {"data_class": "COMPENSATION", "llm_visible": False},
+        }
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: classification,
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:315: TypeError
+________ test_compensation_not_learned_when_tokenize_compensation_false ________
+
+    @pytest.mark.asyncio
+    async def test_compensation_not_learned_when_tokenize_compensation_false():
+        gateway, client = scripted_gateway([final("Salary noted.")])
+        gateway.policy_resolver = lambda tenant_id, provider: LlmPolicy(
+            allowed_providers=("scripted", "fake"), max_data_tier=2, tokenize_compensation=False
+        )
+        classification = {
+            "custom_stipend": {"data_class": "COMPENSATION", "llm_visible": False},
+        }
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: classification,
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:344: TypeError
+_____________ test_run_stream_applies_classification_and_pii_rules _____________
+
+    @pytest.mark.asyncio
+    async def test_run_stream_applies_classification_and_pii_rules():
+        gateway, client = scripted_gateway([final("Streamed reply.")])
+        classification = {
+            "department": {"data_class": "INTERNAL", "llm_visible": True},
+            "badge_code": {"data_class": "PII", "llm_visible": False},
+        }
+>       orch = AgenticOrchestrator(
+            llm_gateway=gateway,
+            tool_registry=AgenticToolRegistry(),
+            classification_for=lambda tenant, entity: classification,
+        )
+E       TypeError: AgenticOrchestrator.__init__() got an unexpected keyword argument 'classification_for'
+
+tests/unit/test_gap_c.py:373: TypeError
+__________________ test_default_orchestrator_resolver_is_none __________________
+
+    def test_default_orchestrator_resolver_is_none():
+        orch = AgenticOrchestrator()
+>       assert orch.classification_for is None
+               ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AgenticOrchestrator' object has no attribute 'classification_for'
+
+tests/unit/test_gap_c.py:407: AttributeError
+____________ test_wiring_with_real_mapping_store_and_host_registry _____________
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-316/test_wiring_with_real_mapping_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x108bb9110>
+
+    @pytest.mark.asyncio
+    async def test_wiring_with_real_mapping_store_and_host_registry(tmp_path, monkeypatch):
+        hosts_yaml = tmp_path / "hosts.yaml"
+        hosts_yaml.write_text(
+            """
+    tenants:
+      - tenant_id: acme
+        vendor: frappe
+        base_url: https://frappe.acme.test
+        api_key_env: FRAPPE_API_KEY
+        api_secret_env: FRAPPE_API_SECRET
+        timeout_seconds: 10
+    """,
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_yaml))
+        monkeypatch.setenv("FRAPPE_API_KEY", "dummy_key")
+        monkeypatch.setenv("FRAPPE_API_SECRET", "dummy_secret")
+    
+        store = MappingStore(backend=MemoryKeyValueStore())
+        _setup_active_mapping(
+            store,
+            tenant_id="acme",
+            vendor="frappe",
+            entity_type="EMPLOYEE",
+            classification={
+                "department": {"data_class": "INTERNAL", "llm_visible": True},
+                "badge_code": {"data_class": "PII", "llm_visible": False},
+                "annual_bonus": {"data_class": "COMPENSATION", "llm_visible": False},
+                "employee_id": {"data_class": "PII", "llm_visible": False},
+            },
+        )
+    
+>       resolver = app_module.make_classification_resolver(store)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_c.py:443: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'make_classification_resolver'
+
+    def __getattr__(name: str) -> Any:
+        """Build the default app on first access to `app` (uvicorn, `python -m hrms_plugin.server`).
+    
+        Importing `create_app` must not require a tenant registry; starting the service still fails fast without one.
+        """
+        global _default_app
+        if name == "app":
+            if _default_app is None:
+                _default_app = _create_default_app()
+            return _default_app
+>       raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+E       AttributeError: module 'hrms_plugin.server.app' has no attribute 'make_classification_resolver'
+
+hrms_plugin/server/app.py:1160: AttributeError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_c.py::test_active_classification_returns_none_when_no_versions
+FAILED tests/unit/test_gap_c.py::test_active_classification_returns_none_for_proposed_only
+FAILED tests/unit/test_gap_c.py::test_active_classification_returns_dict_for_active_version
+FAILED tests/unit/test_gap_c.py::test_active_classification_returns_none_when_vendor_or_tenant_mismatch
+FAILED tests/unit/test_gap_c.py::test_active_classification_supports_entity_type_enum
+FAILED tests/unit/test_gap_c.py::test_active_classification_returns_latest_active_version
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[employee-EMPLOYEE]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[EMPLOYEE-EMPLOYEE0]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[employee-record-EMPLOYEE_RECORD]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[employee record-EMPLOYEE_RECORD]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[  Leave - Request  -LEAVE_REQUEST]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[expense_claim-EXPENSE_CLAIM]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[candidate-profile-v2-CANDIDATE_PROFILE_V2]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_cases[EMPLOYEE-EMPLOYEE1]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_empty_or_boundary[None]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_empty_or_boundary[] - ...
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_empty_or_boundary[   ]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_empty_or_boundary[---]
+FAILED tests/unit/test_gap_c.py::test_normalise_entity_empty_or_boundary[  -  ]
+FAILED tests/unit/test_gap_c.py::test_llm_visible_keys_shown_in_system_prompt
+FAILED tests/unit/test_gap_c.py::test_server_owned_keys_never_shown - TypeErr...
+FAILED tests/unit/test_gap_c.py::test_classified_pii_learned_even_with_unknown_field_name
+FAILED tests/unit/test_gap_c.py::test_unclassified_custom_field_not_learned_as_pii
+FAILED tests/unit/test_gap_c.py::test_compensation_learned_when_tokenize_compensation_true
+FAILED tests/unit/test_gap_c.py::test_compensation_not_learned_when_tokenize_compensation_false
+FAILED tests/unit/test_gap_c.py::test_run_stream_applies_classification_and_pii_rules
+FAILED tests/unit/test_gap_c.py::test_default_orchestrator_resolver_is_none
+FAILED tests/unit/test_gap_c.py::test_wiring_with_real_mapping_store_and_host_registry
+28 failed, 1 passed in 0.94s
+.............................FF.F...FF.................................. [ 66%]
+...........................FFFFFFFFFF                                    [100%]
+=================================== FAILURES ===================================
+___________ test_orchestrator_rejects_classification_resolver_alias ____________
+
+    def test_orchestrator_rejects_classification_resolver_alias():
+>       with pytest.raises(TypeError, match="unexpected keyword argument 'classification_resolver'"):
+E       Failed: DID NOT RAISE TypeError
+
+tests/unit/test_gap_c.py:476: Failed
+____________ test_supervisor_rejects_classification_resolver_alias _____________
+
+    def test_supervisor_rejects_classification_resolver_alias():
+>       with pytest.raises(TypeError, match="unexpected keyword argument 'classification_resolver'"):
+E       Failed: DID NOT RAISE TypeError
+
+tests/unit/test_gap_c.py:481: Failed
+_____________ test_orchestrator_does_not_touch_pii_private_members _____________
+
+    def test_orchestrator_does_not_touch_pii_private_members():
+        code = Path("hrms_plugin/agents/orchestrator.py").read_text(encoding="utf-8")
+>       assert "._known" not in code, "orchestrator.py must not access PiiSession._known"
+E       AssertionError: orchestrator.py must not access PiiSession._known
+E       assert '._known' not in '"""Autonomo...te).value}\n'
+E         
+E         '._known' is contained here:
+E                  pii._known[text.casefold()] = kind
+E         ?           +++++++
+E               elif isinstance(value, dict):
+E                   for nested in value.values():
+E                       _learn_classified_pii(pii, nested, kind)...
+E         
+E         ...Full output truncated, use '-vv' to show
+
+tests/unit/test_gap_c.py:496: AssertionError
+__ test_make_classification_resolver_invalid_registry_logs_warning_no_values ___
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-363/test_make_classification_resol1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107ecdc10>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x107ecc950>
+
+    def test_make_classification_resolver_invalid_registry_logs_warning_no_values(tmp_path, monkeypatch, caplog):
+        bad_yaml = tmp_path / "bad_hosts.yaml"
+        bad_yaml.write_text("tenants: [invalid: yaml: {", encoding="utf-8")
+        monkeypatch.setenv("HRMS_HOSTS", str(bad_yaml))
+        store = MappingStore(backend=MemoryKeyValueStore())
+        resolver = app_module.make_classification_resolver(store)
+        with caplog.at_level(logging.WARNING):
+            res = resolver("secret_tenant", "SECRET_ENTITY")
+        assert res is None
+>       assert len(caplog.records) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+E        +    where [] = <_pytest.logging.LogCaptureFixture object at 0x107ecc950>.records
+
+tests/unit/test_gap_c.py:550: AssertionError
+____ test_make_classification_resolver_store_failure_logs_warning_no_values ____
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-363/test_make_classification_resol2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107ed0a50>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x107ed0c50>
+
+    def test_make_classification_resolver_store_failure_logs_warning_no_values(tmp_path, monkeypatch, caplog):
+        hosts_yaml = tmp_path / "hosts.yaml"
+        hosts_yaml.write_text(
+            """
+    tenants:
+      - tenant_id: acme
+        vendor: frappe
+        base_url: https://frappe.acme.test
+        timeout_seconds: 5
+    """,
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_yaml))
+        store = MagicMock(spec=MappingStore)
+        store.active_classification.side_effect = RuntimeError("database connection failed")
+        resolver = app_module.make_classification_resolver(store)
+        with caplog.at_level(logging.WARNING):
+            res = resolver("acme", "EMPLOYEE")
+        assert res is None
+>       assert len(caplog.records) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+E        +    where [] = <_pytest.logging.LogCaptureFixture object at 0x107ed0c50>.records
+
+tests/unit/test_gap_c.py:576: AssertionError
+________________ test_learn_value_positive_strings_and_numbers _________________
+
+    def test_learn_value_positive_strings_and_numbers():
+        s = PiiSession()
+>       s.learn_value("SecretBadge123", "BADGE")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:207: AttributeError
+________________ test_learn_value_negative_and_boundary_cases[] ________________
+
+value = ''
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________ test_learn_value_negative_and_boundary_cases[   ] _______________
+
+value = '   '
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+_______________ test_learn_value_negative_and_boundary_cases[A] ________________
+
+value = 'A'
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+_______________ test_learn_value_negative_and_boundary_cases[1] ________________
+
+value = 1
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________ test_learn_value_negative_and_boundary_cases[True] ______________
+
+value = True
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+_____________ test_learn_value_negative_and_boundary_cases[False] ______________
+
+value = False
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________ test_learn_value_negative_and_boundary_cases[None] ______________
+
+value = None
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________________ test_learn_value_nested_structures ______________________
+
+    def test_learn_value_nested_structures():
+        s = PiiSession()
+>       s.learn_value({"a": ["NestedVal1", {"b": "NestedVal2", "c": 54321}]}, "NESTED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:228: AttributeError
+___________________________ test_learn_compensation ____________________________
+
+    def test_learn_compensation():
+        s = PiiSession(tokenize_compensation=True)
+>       s.learn_compensation("75000")
+        ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_compensation'
+
+tests/unit/test_pii.py:238: AttributeError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_c.py::test_orchestrator_rejects_classification_resolver_alias
+FAILED tests/unit/test_gap_c.py::test_supervisor_rejects_classification_resolver_alias
+FAILED tests/unit/test_gap_c.py::test_orchestrator_does_not_touch_pii_private_members
+FAILED tests/unit/test_gap_c.py::test_make_classification_resolver_invalid_registry_logs_warning_no_values
+FAILED tests/unit/test_gap_c.py::test_make_classification_resolver_store_failure_logs_warning_no_values
+FAILED tests/unit/test_pii.py::test_learn_value_positive_strings_and_numbers
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[   ]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[A]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[1]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[True]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[False]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[None]
+FAILED tests/unit/test_pii.py::test_learn_value_nested_structures - Attribute...
+FAILED tests/unit/test_pii.py::test_learn_compensation - AttributeError: 'Pii...
+15 failed, 94 passed in 1.25s

@@ -94,8 +94,9 @@ async def test_orchestrator_synthesis_passes_the_same_tools(scripted):
         return original(messages, tools=tools, **kw)
 
     gw.chat_stream = spy
-    [e async for e in AgenticOrchestrator(llm_gateway=gw, tool_registry=AgenticToolRegistry()).run_stream(
-        "q", jurisdiction="AE", auth=ADMIN)]
+    [e async for e in AgenticOrchestrator(
+        llm_gateway=gw, tool_registry=AgenticToolRegistry(), max_iterations=1
+    ).run_stream("q", jurisdiction="AE", auth=ADMIN)]
     assert [t.name for t in seen["tools"]] == [t.name for t in client.calls[0]["tools"]]
 
 
