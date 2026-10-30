@@ -592,29 +592,64 @@ sequenceDiagram
 
 Used by a super admin when onboarding a new host or entity type. All routes need `MANAGE_SCHEMA`.
 
+**What schema matching promises (and does not).** Vendors describe the same things differently and will keep
+changing. The plugin does not promise a 100% automatic match, and it never fills a gap with a guess. It proposes the
+best match it can justify, shows exactly what is matched, what needs a person's judgement and what is missing, and
+lets an expert accept, reject or configure each field. Nothing becomes active until a second person approves it. If a
+vendor has 20 fields and we model 10, at best 10 map; the other vendor fields are listed as unused, and canonical
+fields the vendor lacks are listed as missing. A missing field stays missing; the plugin does not invent a value for it.
+
+```mermaid
+flowchart LR
+    I["Introspect"] --> S["Synthesize: draft mapping + coverage report"]
+    S --> R{"Expert review"}
+    R -- "accept / reject / configure fields" --> N["New draft version"]
+    N --> R
+    R -- "reject whole draft" --> X["REJECTED"]
+    R -- "nothing left to review" --> A["Approve (different person)"]
+    A --> ACT["ACTIVE"]
+```
+
 1. **Introspect** (`POST /v1/schema/introspect`). Upload an OpenAPI/Swagger document or sample records. The service
    lists entities and field types. Sample values are removed from the response. When sample records are sent and the
-   tenant already has an ACTIVE mapping for that entity (`vendor` in the request, default `host`), the response also
-   lists `drift`: new fields the mapping does not cover and expected fields that are missing, with severity. Drift
-   reports carry field names, never values.
-2. **Synthesize** (`POST /v1/schema/synthesize`). Body: `domain`, `discovered_fields`, `vendor` (lower-case, default
-   `host`; use the host's vendor, for example `frappe`, for a mapping that should override that vendor's profile) and
-   optional `sample_records` (at most 50). Matches discovered field names to the canonical model by rules: exact name
-   or synonym (confidence 0.95–1.0), normalised name (0.90), normalised synonym (0.85), substring (0.75). Mapped
-   fields with confidence ≥ 0.8 and a single source become writable back. The report lists average confidence and
-   unmapped fields. The result is saved as a **PROPOSED** version.
+   tenant already has an ACTIVE mapping for that entity (`vendor` in the request, default the tenant's host vendor),
+   the response also lists `drift`: new fields the mapping does not cover and expected fields that are missing, with
+   severity. Drift reports carry field names, never values.
+2. **Synthesize** (`POST /v1/schema/synthesize`). Body: `domain`, `discovered_fields`, `vendor` (lower-case; default
+   the tenant's host vendor from `HRMS_HOSTS`, else `host`) and optional `sample_records` (at most 50). Matches
+   discovered field names to the canonical model by rules: exact name or synonym (confidence 0.95–1.0), normalised
+   name (0.90), normalised synonym (0.85), substring (0.75). Mapped fields with confidence ≥ 0.8 and a single source
+   become writable back. The result is saved as a **PROPOSED** (draft) version.
    Canonical types: requisition, candidate, employee, leave request, leave balance, punch, payslip, expense claim,
    asset, attendance request; others get a spec built on the fly.
-3. **Shadow probe.** When `sample_records` are sent, the proposed mapping is dry-run against them. The response and
-   the stored version get `probe`: `is_valid`, `quality_score` (1 − 0.25 per error − 0.05 per warning), records tested
-   and issues (severity, field, record index, message; never the record's values).
-4. **Agentic synthesize** (`POST /v1/schema/synthesize/agentic`). Same, then asks the AI model to match only the
-   fields rules could not match, sending field names only (tier 1). If the AI call fails, the rule-based result is
-   kept.
-5. **Review** (`GET /v1/schema/mappings`, `GET /v1/schema/mappings/{vendor}/{entity_type}`).
-6. **Approve** (`POST .../versions/{version}/approve`, recent sign-in). The approver must not be the proposer
-   (`403 SAME_PERSON`). A version whose probe failed cannot be approved (`409 PROBE_FAILED`). The body may classify
-   each field (`data_class`, `llm_visible`). The new version becomes **ACTIVE** and the previous one **SUPERSEDED**.
+3. **Coverage report.** Every draft stores `coverage`, returned by synthesize and by `GET /v1/schema/mappings`. For
+   each canonical field: `status`, `source`, `confidence`, `origin` (RULE, LLM or MANUAL), `rationale`, `required`
+   and `accepted_by`; plus `unused_host_fields` and counts. Statuses:
+
+   | Status | Meaning |
+   |---|---|
+   | MATCHED | Rule match with confidence ≥ 0.8, a field a reviewer accepted, or one an expert configured by hand |
+   | NEEDS_REVIEW | Confidence below 0.8, any AI suggestion (whatever its confidence), or a mapping proposed without a synthesis report |
+   | MISSING | No source field; shown as missing, never filled |
+
+   The report carries field names only, never record values.
+4. **Shadow probe.** When `sample_records` are sent, the draft is dry-run against them. The response and the stored
+   version get `probe`: `is_valid`, `quality_score` (1 − 0.25 per error − 0.05 per warning), records tested and issues
+   (severity, field, record index, message; never the record's values).
+5. **Agentic synthesize** (`POST /v1/schema/synthesize/agentic`). Same, then asks the AI model to match only the
+   fields rules could not match, sending field names only (tier 1). Its suggestions are always NEEDS_REVIEW. If the AI
+   call fails, the rule-based result is kept.
+6. **Expert review** (`POST .../versions/{version}/review`, recent sign-in). Body: `accept` (targets), `reject`
+   (targets) and `manual` (`{target: {source, transform?, values?}}`). It creates a new draft version with the
+   decisions applied (rejected fields become MISSING, configured fields MANUAL and MATCHED, accepted fields MATCHED with
+   `accepted_by`), marks the reviewed version **REVISED**, and records the decisions. The reviewer is the proposer of
+   the new draft. Invalid decisions (unknown field, a field in two lists, a bad transform) return
+   `422 REVIEW_INVALID` with the problems. A probe is not carried over, because it described the earlier draft.
+7. **Reject** (`POST .../versions/{version}/reject`, recent sign-in, with a `reason`) marks a draft **REJECTED**.
+8. **Approve** (`POST .../versions/{version}/approve`, recent sign-in). The approver must not be the proposer of that
+   version (`403 SAME_PERSON`). A draft with any NEEDS_REVIEW field cannot be approved (`409 REVIEW_REQUIRED`, listing
+   the fields), nor one whose probe failed (`409 PROBE_FAILED`). The body may classify each field (`data_class`,
+   `llm_visible`). The new version becomes **ACTIVE** and the previous one **SUPERSEDED**.
 
 Field transforms available to mappings: string, strip, lower, upper, int, decimal, datetime, date, list, join_names,
 bool, plus value maps for enumerations.
@@ -715,6 +750,8 @@ Decree M/51) and US (FLSA). Matching is by keyword weighting.
 | `POST /v1/schema/synthesize/agentic` | MANAGE_SCHEMA | Propose a mapping with AI help |
 | `GET /v1/schema/mappings` | MANAGE_SCHEMA | List mappings and versions |
 | `GET /v1/schema/mappings/{vendor}/{entity_type}` | MANAGE_SCHEMA | Active mapping |
+| `POST /v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/review` | MANAGE_SCHEMA, recent sign-in | Accept, reject or configure fields (new draft) |
+| `POST /v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/reject` | MANAGE_SCHEMA, recent sign-in | Reject a draft |
 | `POST /v1/schema/mappings/{vendor}/{entity_type}/versions/{version}/approve` | MANAGE_SCHEMA, recent sign-in | Approve a mapping version |
 | `POST /v1/schema/fingerprints/approve` | MANAGE_SCHEMA, recent sign-in | Approve a salary-slip shape (two people: first call `202`) |
 | `GET /v1/schema/fingerprints/quarantine` | MANAGE_SCHEMA | List quarantined drifts |
@@ -742,8 +779,8 @@ Errors are JSON `{"error": "<CODE>", ...}`. Common codes:
 | 401 | `UNAUTHENTICATED`, `REAUTH_REQUIRED` |
 | 403 | `FORBIDDEN`, `TENANT_MISMATCH`, `LLM_NOT_ALLOWED_FOR_TENANT`, `DATA_TIER_NOT_ALLOWED`, `DATA_RESIDENCY_MISMATCH`, `VOICE_NOT_ALLOWED_FOR_TENANT`, `SAME_PERSON`, `ORIGIN_NOT_ALLOWED` |
 | 404 | `NOT_FOUND`, `SLIP_NOT_FOUND` |
-| 409 | `HOST_NOT_CONFIGURED`, `SCHEMA_DRIFT`, `MAPPING_NOT_APPROVED`, `MAPPING_NOT_APPLICABLE`, `PROBE_FAILED`, `CONFLICT`, `INVALID_STATE`, `FINGERPRINT_NOT_OBSERVED` |
-| 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE` |
+| 409 | `HOST_NOT_CONFIGURED`, `SCHEMA_DRIFT`, `MAPPING_NOT_APPROVED`, `MAPPING_NOT_APPLICABLE`, `PROBE_FAILED`, `REVIEW_REQUIRED`, `CONFLICT`, `INVALID_STATE`, `FINGERPRINT_NOT_OBSERVED` |
+| 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE`, `REVIEW_INVALID` |
 | 429 | `RATE_LIMITED`, `LLM_BUDGET_EXHAUSTED` |
 | 502 / 504 | `HOST_ERROR`, `VOICE_UPSTREAM_ERROR`, `VOICE_UPSTREAM_TIMEOUT` |
 | 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED`, `AUDIT_SIGNING_NOT_CONFIGURED` |
@@ -874,6 +911,21 @@ Rates and ceilings are illustrative; payroll owners must confirm the values that
 Shipped: `frappe.yaml` and `iceipts.yaml`, for the REQUISITION entity. A new vendor with a standard REST API needs a
 new profile file, not new code.
 
+**Connection protocol is a setting.** Each profile declares `protocol: rest` (the default) or `protocol: mcp`; any
+other value is refused when the profile loads. Field rules, status maps, rejected rows and shape checks are the same
+for both, so changing protocol never changes how data is interpreted.
+
+- `rest`: the existing path, paging and authentication described in [section 9](#9-flow-reading-requisitions-from-the-host-hrms).
+- `mcp`: the plugin acts as an MCP client of the vendor's MCP server (Streamable HTTP, bearer token). Per entity the
+  profile names the `tool`, optional `arguments`, `items_at` (where the list sits in the tool result) and optional
+  cursor paging (`cursor_param`, `next_cursor_at`, at most 50 pages). The client sends `initialize`,
+  `notifications/initialized` and `tools/call`, keeps the server's session id, and accepts JSON or event-stream
+  replies. A tool error or JSON-RPC error becomes `HOST_ERROR` without echoing the vendor's response text. **Status:**
+  tested against simulated MCP servers only; no real vendor MCP server has been connected yet.
+
+A further protocol means adding one transport class next to these two; the profile format and everything downstream
+stay unchanged.
+
 ---
 
 ## 18. Running and deploying
@@ -954,7 +1006,7 @@ HRMS_FRAPPE_SANDBOX=1 pytest tests/integration   # live Frappe tests (needs the 
 | `tests/integration` | Live Frappe HR v15 sandbox |
 | `sdk/test` | Widget core logic, streaming parser and DOM-level behaviour (212 tests) |
 
-Latest full run on `agentic-ai` (2026-10-30): **2,335 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
+Latest full run on `agentic-ai` (2026-10-30): **2,383 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
 **212 passed**, ruff clean. The last measured line coverage was 98.9% (2026-10-29, before the section-20 fixes).
 
 How quality was established:
@@ -989,6 +1041,7 @@ failing test recorded first and was checked by mutation):
 | No persistent volume; unused variables in deploy files | Volume/PVC, hardened pod, unused variables removed |
 | CI on `main` only | Every branch and pull request |
 | Review-round findings (vendor default, MCP data policy, pending-request expiry, deploy mounts, stream citations, tenant-scoped origin, drift on nested fields, currency for SA/US) | Fixed; see the plan file, section "Review round" |
+| Stakeholder feedback: show partial matches honestly, let an expert accept/reject/configure, keep protocols open | Coverage report, review/reject actions, approval blocked until reviewed, `protocol: rest\|mcp` ([section 12](#12-flow-schema-adaptation-for-a-new-hr-system), [17.5](#175-vendor-profiles-hrms_pluginintegrationsprofilesyaml)); plan `docs/superpowers/plans/2026-10-30-voice-review-plan.md` |
 
 **Remaining gaps:**
 
@@ -997,6 +1050,8 @@ failing test recorded first and was checked by mutation):
 | Labour-law search is keyword-based over 10 citations | Limited coverage. More citations need a legally reviewed source (owner: legal reviewer) |
 | Single replica | SQLite and in-process limits; scaling out needs a shared store (hosting topology decision) |
 | MCP endpoint answers in JSON only | No server-sent-event stream; enough for request/response tool calls |
+| MCP client to vendors is untested against a real vendor | Simulated servers only; needs a vendor MCP server and credentials to prove |
+| No review screen in the widget | Review, reject and approve are API actions; an admin screen would sit on top of them |
 
 **Waiting on owners (not code decisions):**
 
