@@ -43,9 +43,8 @@ def test_int_transform_for_headcount():
 @pytest.mark.parametrize("field, reason", [
     (FieldMap(target="salary_band", source="band"), "not a requisition field"),
     (FieldMap(target="title", source=("title", "name")), "single source"),
-    (FieldMap(target="title", source="title", transform="upper"), "transform"),
+    (FieldMap(target="title", source="title", transform="decimal"), "transform"),
     (FieldMap(target="title", source="title", default="Untitled"), "default"),
-    (FieldMap(target="title", source="title", required=True), "required"),
     (FieldMap(target="headcount", source="position"), "type"),
     (FieldMap(target="title", source="title", transform="int"), "type"),
     (FieldMap(target="status", source="status"), "status needs a value map"),
@@ -56,6 +55,14 @@ def test_unfaithful_overrides_are_refused(field, reason):
     with pytest.raises(OverlayError) as exc:
         overlay(SPEC, mapping(field))
     assert exc.value.field == field.target and reason in exc.value.reason
+
+
+def test_faithful_transforms_and_required_are_accepted():
+    for tr in ("strip", "lower", "upper"):
+        spec, _ = overlay(SPEC, mapping(FieldMap(target="title", source="title", transform=tr)))
+        assert spec.fields["title"].transform == tr
+    spec_req, _ = overlay(SPEC, mapping(FieldMap(target="title", source="title", required=True)))
+    assert spec_req.fields["title"].required is True
 
 
 # store -------------------------------------------------------------------------------------------------------
@@ -121,7 +128,7 @@ def test_route_ignores_a_pending_proposal(make_client, bearer, acme_iceipts):
 
 def test_route_refuses_an_approved_mapping_it_cannot_apply(make_client, bearer, acme_iceipts):
     monkeypatch, store = acme_iceipts
-    v = store.propose_mapping("acme", mapping(FieldMap(target="title", source="title", transform="upper")), "alice")
+    v = store.propose_mapping("acme", mapping(FieldMap(target="title", source="title", transform="decimal")), "alice")
     store.approve_version("acme", "iceipts", "REQUISITION", v, "bob")
     res = _get(make_client, bearer, monkeypatch, [iceipts_row()])
     assert res.status_code == 409 and res.json()["error"] == "MAPPING_NOT_APPLICABLE"

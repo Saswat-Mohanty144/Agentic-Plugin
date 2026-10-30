@@ -178,11 +178,14 @@ class VoiceTurnRequest(BaseModel):
 class IntrospectRequest(BaseModel):
     swagger_dict: Optional[Dict[str, Any]] = None
     sample_records: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    vendor: str = Field(default="host", pattern=r"^[a-z0-9_-]{1,32}$")
 
 
 class SynthesizeRequest(BaseModel):
     domain: str = "EMPLOYEE"
     discovered_fields: List[Dict[str, Any]]
+    vendor: str = Field(default="host", pattern=r"^[a-z0-9_-]{1,32}$")
+    sample_records: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=50)
 
 
 class FingerprintApproveRequest(BaseModel):
@@ -454,15 +457,50 @@ def introspect_schema(req: IntrospectRequest, auth: AuthContext = Depends(requir
             "endpoints_count": discovered.endpoints_count,
         }
     elif req.sample_records:
+        from hrms_plugin.schema.drift import SchemaDriftInterceptor
+
         entities = {}
+        drift_events = []
+        interceptor = SchemaDriftInterceptor()
         for entity_name, samples in req.sample_records.items():
             discovered_ent = introspector.introspect_json_samples(entity_name, samples)
             # Structure only (Q3): sample values, and "enums" inferred from them, are data and never leave.
             entities[entity_name] = discovered_ent.model_dump(
                 exclude={"raw_sample": True, "fields": {"__all__": {"sample_values", "enum_values"}}})
+            active_res = mapping_store.active_version(auth.tenant_id, req.vendor, entity_name)
+            if active_res is not None:
+                _, active_mapping = active_res
+                try:
+                    domain_type = _entity_type(entity_name)
+                except ApiError:
+                    domain_type = None
+                if domain_type is not None:
+                    combined_resp: Dict[str, Any] = {}
+                    for s in samples:
+                        if isinstance(s, dict):
+                            combined_resp.update(s)
+                    events = interceptor.inspect_response(
+                        entity_type=domain_type,
+                        mapping=active_mapping,
+                        raw_response=combined_resp,
+                    )
+                    for ev in events:
+                        patch = dict(ev.suggested_patch) if ev.suggested_patch else None
+                        if patch:
+                            patch.pop("sample_value", None)
+                        drift_events.append({
+                            "severity": ev.severity.value,
+                            "entity_type": ev.entity_type.value,
+                            "detected_at": ev.detected_at,
+                            "field_name": ev.field_name,
+                            "description": ev.description,
+                            "suggested_patch": patch,
+                            "resolved": ev.resolved,
+                        })
         return {
             "entities_discovered": list(entities.keys()),
             "entities": entities,
+            "drift": drift_events,
         }
     else:
         raise HTTPException(status_code=400, detail="Must provide swagger_dict or sample_records")
@@ -476,17 +514,44 @@ def synthesize_mapping(
     """Synthesize candidate FieldMap connecting discovered host fields to Canonical ontology."""
     domain_enum = _entity_type(req.domain)
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
+    from hrms_plugin.schema.prober import ShadowProber
 
-    discovered_fields_dict = {
-        f["name"]: DiscoveredField(name=f["name"], path=f.get("path", f["name"])) for f in req.discovered_fields
-    }
+    sample_ent = (
+        introspector.introspect_json_samples(domain_enum.value, req.sample_records)
+        if req.sample_records
+        else None
+    )
+    discovered_fields_dict = {}
+    for f in req.discovered_fields:
+        name = f["name"]
+        enums = f.get("enum_values")
+        if enums is None and sample_ent and name in sample_ent.fields:
+            enums = sample_ent.fields[name].enum_values
+        discovered_fields_dict[name] = DiscoveredField(
+            name=name,
+            path=f.get("path", name),
+            enum_values=enums or [],
+        )
     discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
     mapping, report = synthesizer.synthesize(
         discovered=discovered,
         canonical_type=domain_enum,
+        vendor=req.vendor,
     )
-    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id)
-    return {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
+    probe_data = None
+    if req.sample_records is not None:
+        report_probe = ShadowProber.probe(mapping, req.sample_records)
+        probe_data = {
+            "is_valid": report_probe.is_valid,
+            "quality_score": report_probe.quality_score,
+            "records_tested": report_probe.records_tested,
+            "issues": [i.model_dump() for i in report_probe.issues],
+        }
+    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data)
+    res = {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
+    if probe_data is not None:
+        res["probe"] = probe_data
+    return res
 
 
 @router.post("/v1/schema/synthesize/agentic")
@@ -499,10 +564,24 @@ async def synthesize_mapping_agentic(
     _rate_limit(request, auth)
     domain_enum = _entity_type(req.domain)
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
+    from hrms_plugin.schema.prober import ShadowProber
 
-    discovered_fields_dict = {
-        f["name"]: DiscoveredField(name=f["name"], path=f.get("path", f["name"])) for f in req.discovered_fields
-    }
+    sample_ent = (
+        introspector.introspect_json_samples(domain_enum.value, req.sample_records)
+        if req.sample_records
+        else None
+    )
+    discovered_fields_dict = {}
+    for f in req.discovered_fields:
+        name = f["name"]
+        enums = f.get("enum_values")
+        if enums is None and sample_ent and name in sample_ent.fields:
+            enums = sample_ent.fields[name].enum_values
+        discovered_fields_dict[name] = DiscoveredField(
+            name=name,
+            path=f.get("path", name),
+            enum_values=enums or [],
+        )
     discovered = DiscoveredEntity(name=domain_enum.value, fields=discovered_fields_dict)
     try:  # the app's one gateway: no client, egress store or SQLite connection built per request (#2)
         gateway = request.app.state.supervisor.get_orchestrator().llm_gateway
@@ -513,9 +592,22 @@ async def synthesize_mapping_agentic(
         canonical_type=domain_enum,
         tenant_id=auth.tenant_id,
         llm_gateway=gateway,
+        vendor=req.vendor,
     )
-    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id)
-    return {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
+    probe_data = None
+    if req.sample_records is not None:
+        report_probe = ShadowProber.probe(mapping, req.sample_records)
+        probe_data = {
+            "is_valid": report_probe.is_valid,
+            "quality_score": report_probe.quality_score,
+            "records_tested": report_probe.records_tested,
+            "issues": [i.model_dump() for i in report_probe.issues],
+        }
+    version = mapping_store.propose_mapping(auth.tenant_id, mapping, proposed_by=auth.user_id, probe=probe_data)
+    res = {**report.model_dump(), "mapping_version": version, "mapping_status": "PROPOSED"}
+    if probe_data is not None:
+        res["probe"] = probe_data
+    return res
 
 
 @router.get("/v1/schema/mappings")
@@ -603,8 +695,9 @@ def approve_mapping_version(
         row = mapping_store.approve_version(auth.tenant_id, vendor, entity_type, version, approver=auth.user_id,
                                            classification=req.classification if req else None)
     except MappingGovernanceError as exc:
-        status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409, "CLASSIFICATION_UNKNOWN_FIELD": 422,
-                  "INVALID_CLASSIFICATION": 422, "SENSITIVE_FIELD_LLM_VISIBLE": 422}.get(exc.code, 400)
+        status = {"NOT_FOUND": 404, "SAME_PERSON": 403, "INVALID_STATE": 409, "PROBE_FAILED": 409,
+                  "CLASSIFICATION_UNKNOWN_FIELD": 422, "INVALID_CLASSIFICATION": 422,
+                  "SENSITIVE_FIELD_LLM_VISIBLE": 422}.get(exc.code, 400)
         raise ApiError(status, {"error": exc.code}) from None
     return {k: v for k, v in row.items() if k != "mapping"}
 
