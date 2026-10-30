@@ -563,7 +563,7 @@ def test_shadow_prober_validation_warnings_and_exceptions():
     report = ShadowProber.probe(mapping, records, required_canonical_fields=["headcount"])
     assert report.is_valid is False
     assert report.warning_count >= 1
-    assert any(i.severity == IssueSeverity.ERROR and "no id at path" in i.message for i in report.issues)
+    assert any(i.severity == IssueSeverity.ERROR and i.message == "MappingError" for i in report.issues)
     assert any(i.severity == IssueSeverity.WARNING and "expected Decimal" in i.message for i in report.issues)
 
 

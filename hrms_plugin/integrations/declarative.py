@@ -53,6 +53,14 @@ class FieldSpec(BaseModel):
     source: StrictStr = Field(alias="from", pattern=_PATH)
     type: Literal["str", "int"] = "str"
     map: Optional[Dict[StrictStr, StrictStr]] = None
+    transform: Optional[Literal["strip", "lower", "upper"]] = None
+    required: Optional[StrictBool] = None
+
+    @model_validator(mode="after")
+    def _validate_transform(self) -> "FieldSpec":
+        if self.transform is not None and self.type != "str":
+            raise ValueError("transform is only supported for str fields")
+        return self
 
 
 class OffsetPaging(BaseModel):
@@ -316,6 +324,8 @@ class DeclarativeConnector:
     @staticmethod
     def _value(row: Dict[str, Any], name: str, fs: FieldSpec) -> Any:
         raw = _get(row, fs.source)
+        if fs.required and (raw is None or raw == ""):
+            raise _Rejected("MISSING_VALUE", name)
         if fs.map is not None:
             if not isinstance(raw, str) or raw not in fs.map:
                 raise _Rejected("UNMAPPED_VALUE", name)
@@ -334,4 +344,12 @@ class DeclarativeConnector:
             return None
         if not isinstance(raw, str):
             raise _Rejected("INVALID_VALUE", name)
+        if fs.transform == "strip":
+            raw = raw.strip()
+        elif fs.transform == "lower":
+            raw = raw.lower()
+        elif fs.transform == "upper":
+            raw = raw.upper()
+        if fs.required and raw == "":
+            raise _Rejected("MISSING_VALUE", name)
         return raw

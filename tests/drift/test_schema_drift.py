@@ -78,7 +78,7 @@ def test_prober_detects_schema_drift_nullability_failure(prober):
     report = prober.probe(mapping, drifted_records)
     assert report.is_valid is False
     assert report.error_count >= 1
-    assert any("required field 'email' is empty" in issue.message for issue in report.issues)
+    assert any(issue.message == "MappingError" for issue in report.issues)
 
 
 def test_type_coercion_string_to_numeric_invariance():

@@ -108,7 +108,7 @@ class ShadowProber:
                     ProbeIssue(
                         severity=IssueSeverity.ERROR,
                         field=mapping.id_path,
-                        message=str(err),
+                        message=type(err).__name__,
                         sample_index=idx,
                     )
                 )
@@ -141,7 +141,6 @@ class ShadowProber:
                                     field=fm.target,
                                     message=f"Field {fm.target!r} expected date/datetime, got {type(val).__name__}",
                                     sample_index=idx,
-                                    raw_value=val,
                                 )
                             )
                         elif fm.transform == "decimal" and not isinstance(val, (Decimal, int, float)):
@@ -151,7 +150,6 @@ class ShadowProber:
                                     field=fm.target,
                                     message=f"Field {fm.target!r} expected Decimal, got {type(val).__name__}",
                                     sample_index=idx,
-                                    raw_value=val,
                                 )
                             )
 
@@ -160,7 +158,7 @@ class ShadowProber:
                     ProbeIssue(
                         severity=IssueSeverity.ERROR,
                         field="to_canonical",
-                        message=f"Unexpected exception during projection: {ex}",
+                        message=type(ex).__name__,
                         sample_index=idx,
                     )
                 )

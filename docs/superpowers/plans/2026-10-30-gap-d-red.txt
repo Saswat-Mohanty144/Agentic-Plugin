@@ -1,0 +1,509 @@
+F..FFFFFFFFFFFF                                                          [100%]
+=================================== FAILURES ===================================
+______________ test_field_spec_transforms_and_required_supported _______________
+
+    def test_field_spec_transforms_and_required_supported():
+        for tr in ("strip", "lower", "upper"):
+>           spec = FieldSpec(source="title", transform=tr)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for FieldSpec
+E           transform
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='strip', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+tests/unit/test_gap_d.py:37: ValidationError
+________________ test_declarative_connector_transforms_strings _________________
+
+    def test_declarative_connector_transforms_strings():
+        row = {"title": "  Software Engineer  "}
+>       assert DeclarativeConnector._value(row, "title", FieldSpec(source="title", transform="strip")) == "Software Engineer"
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for FieldSpec
+E       transform
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='strip', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+tests/unit/test_gap_d.py:57: ValidationError
+_____ test_declarative_connector_required_field_missing_or_empty_rejected ______
+
+    def test_declarative_connector_required_field_missing_or_empty_rejected():
+>       fs_req = FieldSpec(source="title", required=True)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for FieldSpec
+E       required
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=True, input_type=bool]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+tests/unit/test_gap_d.py:63: ValidationError
+______ test_declarative_connector_optional_field_preserves_none_or_empty _______
+
+    def test_declarative_connector_optional_field_preserves_none_or_empty():
+>       fs = FieldSpec(source="title", required=False)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       pydantic_core._pydantic_core.ValidationError: 1 validation error for FieldSpec
+E       required
+E         Extra inputs are not permitted [type=extra_forbidden, input_value=False, input_type=bool]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+tests/unit/test_gap_d.py:87: ValidationError
+__________________ test_overlay_passes_transform_and_required __________________
+
+    def test_overlay_passes_transform_and_required():
+>       spec, overridden = overlay(
+            SPEC,
+            _mapping("iceipts", FieldMap(target="title", source="title", transform="strip", required=True)),
+        )
+
+tests/unit/test_gap_d.py:95: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+hrms_plugin/integrations/mapping_overlay.py:54: in overlay
+    fields[fm.target] = _field_spec(fm)  # type: ignore[index]
+                        ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+fm = FieldMap(target='title', source='title', transform='strip', default=None, required=True, values={})
+
+    def _field_spec(fm: FieldMap) -> FieldSpec:
+        if fm.target not in REQUISITION_FIELDS:
+            raise OverlayError(fm.target, "not a requisition field")
+        if not isinstance(fm.source, str):
+            raise OverlayError(fm.target, "the connector reads a single source path")
+        if fm.transform not in _TRANSFORM_TYPES:
+>           raise OverlayError(fm.target, f"transform {fm.transform!r} is not supported by the connector")
+E           hrms_plugin.integrations.mapping_overlay.OverlayError: title: transform 'strip' is not supported by the connector
+
+hrms_plugin/integrations/mapping_overlay.py:33: OverlayError
+__________ test_overlay_refuses_invalid_transforms_defaults_and_types __________
+
+    def test_overlay_refuses_invalid_transforms_defaults_and_types():
+        with pytest.raises(OverlayError) as exc1:
+            overlay(SPEC, _mapping("iceipts", FieldMap(target="title", source="title", default="Untitled")))
+        assert "default" in exc1.value.reason
+    
+        with pytest.raises(OverlayError) as exc2:
+            overlay(SPEC, _mapping("iceipts", FieldMap(target="title", source=("a", "b"))))
+        assert "single source" in exc2.value.reason
+    
+        with pytest.raises(OverlayError) as exc3:
+            overlay(SPEC, _mapping("iceipts", FieldMap(target="title", source="title", transform="reverse")))
+        assert "transform" in exc3.value.reason
+    
+        with pytest.raises(OverlayError) as exc4:
+            overlay(SPEC, _mapping("iceipts", FieldMap(target="title", source="title", transform="int")))
+        assert "type" in exc4.value.reason
+    
+        with pytest.raises(OverlayError) as exc5:
+            overlay(SPEC, _mapping("iceipts", FieldMap(target="headcount", source="position", transform="strip")))
+>       assert "type" in exc5.value.reason
+E       assert 'type' in "transform 'strip' is not supported by the connector"
+E        +  where "transform 'strip' is not supported by the connector" = OverlayError("headcount: transform 'strip' is not supported by the connector").reason
+E        +    where OverlayError("headcount: transform 'strip' is not supported by the connector") = <ExceptionInfo OverlayError("headcount: transform 'strip' is not supported by the connector") tblen=3>.value
+
+tests/unit/test_gap_d.py:127: AssertionError
+____________ test_mapping_store_propose_and_approve_probe_lifecycle ____________
+
+    def test_mapping_store_propose_and_approve_probe_lifecycle():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        probe_ok = {"is_valid": True, "quality_score": 1.0, "records_tested": 2, "issues": []}
+>       v1 = store.propose_mapping("acme", _mapping("iceipts", FieldMap(target="title", source="title")), "alice", probe=probe_ok)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: MappingStore.propose_mapping() got an unexpected keyword argument 'probe'
+
+tests/unit/test_gap_d.py:135: TypeError
+_____________ test_mapping_store_approve_fails_when_probe_invalid ______________
+
+    def test_mapping_store_approve_fails_when_probe_invalid():
+        store = MappingStore(backend=MemoryKeyValueStore())
+        probe_fail = {"is_valid": False, "quality_score": 0.0, "records_tested": 1, "issues": [{"severity": "ERROR", "field": "id", "message": "fail"}]}
+>       v1 = store.propose_mapping("acme", _mapping("iceipts", FieldMap(target="title", source="title")), "alice", probe=probe_fail)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: MappingStore.propose_mapping() got an unexpected keyword argument 'probe'
+
+tests/unit/test_gap_d.py:151: TypeError
+________________ test_synthesize_vendor_validation_and_default _________________
+
+make_client = <function make_client.<locals>._make at 0x10fae7740>
+bearer = <function bearer.<locals>._headers at 0x10fc8c220>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fc9b190>
+
+    def test_synthesize_vendor_validation_and_default(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "designation"}, {"name": "department"}],
+        }
+        # Default vendor is host
+        res_default = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+        assert res_default.status_code == 200
+        assert res_default.json()["vendor"] == "host"
+    
+        # Custom vendor
+        res_frappe = client.post("/v1/schema/synthesize", json={**payload, "vendor": "frappe"}, headers=auth)
+        assert res_frappe.status_code == 200
+>       assert res_frappe.json()["vendor"] == "frappe"
+E       AssertionError: assert 'host' == 'frappe'
+E         
+E         - frappe
+E         + host
+
+tests/unit/test_gap_d.py:177: AssertionError
+________________ test_synthesize_with_sample_records_runs_probe ________________
+
+make_client = <function make_client.<locals>._make at 0x10fc8cb80>
+bearer = <function bearer.<locals>._headers at 0x10fc44cc0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fc8bb90>
+
+    def test_synthesize_with_sample_records_runs_probe(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        samples_valid = [
+            {"id": "REQ-1", "designation": "Backend Dev", "department": "Eng"},
+            {"id": "REQ-2", "designation": "Frontend Dev", "department": "Design"},
+        ]
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "designation"}, {"name": "department"}],
+            "vendor": "frappe",
+            "sample_records": samples_valid,
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+        assert res.status_code == 200
+        data = res.json()
+>       assert "probe" in data
+E       AssertionError: assert 'probe' in {'entity_type': 'REQUISITION', 'vendor': 'host', 'id_path': 'id', 'field_mappings': [{'canonical_target': 'title', 'ho...canonical_target': 'department', 'host_source_path': 'department', 'transform': 'strip', 'confidence': 1.0, ...}], ...}
+
+tests/unit/test_gap_d.py:205: AssertionError
+___________ test_introspect_schema_with_sample_records_detects_drift ___________
+
+make_client = <function make_client.<locals>._make at 0x10fc27a60>
+bearer = <function bearer.<locals>._headers at 0x10fc44400>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fd66210>
+
+    def test_introspect_schema_with_sample_records_detects_drift(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        # Set up an active mapping for vendor "frappe" entity "REQUISITION"
+        v = store.propose_mapping("acme", EntityMapping(
+            vendor="frappe",
+            entity_type="REQUISITION",
+            id_path="name",
+            fields=(FieldMap(target="title", source="designation"), FieldMap(target="department", source="department")),
+        ), "alice")
+        store.approve_version("acme", "frappe", "REQUISITION", v, "bob")
+    
+        # Introspect with sample records containing an unmapped field
+        samples = {
+            "REQUISITION": [
+                {"name": "HR-REQ-001", "designation": "Eng Lead", "department": "R&D", "unexpected_host_col": "secret123"},
+            ]
+        }
+        res = client.post("/v1/schema/introspect", json={"sample_records": samples, "vendor": "frappe"}, headers=auth)
+        assert res.status_code == 200
+        data = res.json()
+>       assert "drift" in data
+E       AssertionError: assert 'drift' in {'entities_discovered': ['REQUISITION'], 'entities': {'REQUISITION': {'name': 'REQUISITION', 'read_endpoint': None, 'write_endpoint': None, 'id_field': None, ...}}}
+
+tests/unit/test_gap_d.py:265: AssertionError
+___________________ test_introspect_invalid_vendor_rejected ____________________
+
+make_client = <function make_client.<locals>._make at 0x10fcd6200>
+bearer = <function bearer.<locals>._headers at 0x10fcd6660>
+
+    def test_introspect_invalid_vendor_rejected(make_client, bearer):
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+        res = client.post("/v1/schema/introspect", json={"sample_records": {"REQUISITION": []}, "vendor": "INVALID!"}, headers=auth)
+>       assert res.status_code == 422
+E       assert 200 == 422
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_d.py:283: AssertionError
+__________ test_e2e_synthesize_frappe_requisition_and_apply_override ___________
+
+make_client = <function make_client.<locals>._make at 0x10fc44f40>
+bearer = <function bearer.<locals>._headers at 0x10fc44b80>
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-263/test_e2e_synthesize_frappe_req0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10fd22b10>
+
+    def test_e2e_synthesize_frappe_requisition_and_apply_override(make_client, bearer, tmp_path, monkeypatch):
+        hosts_path = tmp_path / "hosts.yaml"
+        hosts_path.write_text(yaml.safe_dump({"tenants": [{**FRAPPE_HOST, "tenant_id": "acme"}]}))
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_path))
+        monkeypatch.setenv("ACME_KEY", ENV["ACME_KEY"])
+        monkeypatch.setenv("ACME_SECRET", ENV["ACME_SECRET"])
+    
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+    
+        client = make_client(raise_server_exceptions=False)
+        alice_token = bearer(roles=["platform_admin"], sub="USR-001")
+        bob_token = bearer(roles=["platform_admin"], sub="USR-002")
+    
+        discovered_fields = [
+            {"name": "name"},
+            {"name": "designation"},
+            {"name": "department"},
+            {"name": "no_of_positions"},
+            {"name": "status"},
+            {"name": "description"},
+            {"name": "requested_by"},
+        ]
+        sample_records = [
+            {
+                "name": "HR-HIREQ-00001",
+                "designation": "Payroll Analyst",
+                "department": "Finance - AC",
+                "no_of_positions": 2,
+                "status": "Open & Approved",
+                "description": "<p>Run payroll</p>",
+                "requested_by": "HR-EMP-00003",
+            }
+        ]
+    
+        # 1. Synthesize with vendor "frappe"
+        syn_res = client.post("/v1/schema/synthesize", json={
+            "domain": "REQUISITION",
+            "vendor": "frappe",
+            "discovered_fields": discovered_fields,
+            "sample_records": sample_records,
+        }, headers=alice_token)
+        assert syn_res.status_code == 200
+        syn_data = syn_res.json()
+        version = syn_data["mapping_version"]
+>       assert syn_data["vendor"] == "frappe"
+E       AssertionError: assert 'host' == 'frappe'
+E         
+E         - frappe
+E         + host
+
+tests/unit/test_gap_d.py:333: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_d.py::test_field_spec_transforms_and_required_supported
+FAILED tests/unit/test_gap_d.py::test_declarative_connector_transforms_strings
+FAILED tests/unit/test_gap_d.py::test_declarative_connector_required_field_missing_or_empty_rejected
+FAILED tests/unit/test_gap_d.py::test_declarative_connector_optional_field_preserves_none_or_empty
+FAILED tests/unit/test_gap_d.py::test_overlay_passes_transform_and_required
+FAILED tests/unit/test_gap_d.py::test_overlay_refuses_invalid_transforms_defaults_and_types
+FAILED tests/unit/test_gap_d.py::test_mapping_store_propose_and_approve_probe_lifecycle
+FAILED tests/unit/test_gap_d.py::test_mapping_store_approve_fails_when_probe_invalid
+FAILED tests/unit/test_gap_d.py::test_synthesize_vendor_validation_and_default
+FAILED tests/unit/test_gap_d.py::test_synthesize_with_sample_records_runs_probe
+FAILED tests/unit/test_gap_d.py::test_introspect_schema_with_sample_records_detects_drift
+FAILED tests/unit/test_gap_d.py::test_introspect_invalid_vendor_rejected - as...
+FAILED tests/unit/test_gap_d.py::test_e2e_synthesize_frappe_requisition_and_apply_override
+13 failed, 2 passed in 1.19s
+
+
+=== FOLLOW-UP PRIVACY DEFECT RED RUN ===
+...............FFFFF                                                     [100%]
+=================================== FAILURES ===================================
+__ test_synthesize_probe_drops_raw_value_and_sanitizes_projection_exceptions ___
+
+make_client = <function make_client.<locals>._make at 0x113528180>
+bearer = <function bearer.<locals>._headers at 0x11352aca0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1134f1650>
+
+    def test_synthesize_probe_drops_raw_value_and_sanitizes_projection_exceptions(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        secret_val = "ZZ-SECRET-VALUE-91"
+        from hrms_plugin.schema import mapping as mapping_module
+        orig_strip = mapping_module.TRANSFORMS["strip"]
+    
+        def sensitive_strip(val):
+            if val == secret_val:
+                raise ValueError(f"rejected secret payload: {val}")
+            return orig_strip(val)
+    
+        monkeypatch.setitem(mapping_module.TRANSFORMS, "strip", sensitive_strip)
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title"}],
+            "vendor": "frappe",
+            "sample_records": [{"id": "REQ-1", "title": secret_val}],
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+        assert res.status_code == 200
+>       assert secret_val not in res.text
+E       assert 'ZZ-SECRET-VALUE-91' not in '{"entity_ty...ue":null}]}}'
+E         
+E         'ZZ-SECRET-VALUE-91' is contained here:
+E            payload: ZZ-SECRET-VALUE-91","sample_index":0,"raw_value":null}]}}
+E         ?           ++++++++++++++++++
+
+tests/unit/test_gap_d.py:390: AssertionError
+____________ test_synthesize_probe_drops_raw_value_on_type_warning _____________
+
+make_client = <function make_client.<locals>._make at 0x1135b60c0>
+bearer = <function bearer.<locals>._headers at 0x1135b72e0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1135331d0>
+
+    def test_synthesize_probe_drops_raw_value_on_type_warning(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        secret_val = "ZZ-SECRET-VALUE-91"
+        from hrms_plugin.schema.prober import IssueSeverity, ProbeIssue, ShadowProber
+        orig_probe = ShadowProber.probe
+    
+        def probe_with_raw_val(mapping, sample_records, required_canonical_fields=None):
+            report = orig_probe(mapping, sample_records, required_canonical_fields)
+            report.issues.append(
+                ProbeIssue(
+                    severity=IssueSeverity.WARNING,
+                    field="experience",
+                    message="Field 'experience' expected Decimal, got str",
+                    sample_index=0,
+                    raw_value=secret_val,
+                )
+            )
+            return report
+    
+        monkeypatch.setattr(ShadowProber, "probe", staticmethod(probe_with_raw_val))
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title"}],
+            "vendor": "frappe",
+            "sample_records": [{"id": "REQ-1", "title": "Dev"}],
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+        assert res.status_code == 200
+>       assert secret_val not in res.text
+E       assert 'ZZ-SECRET-VALUE-91' not in '{"entity_ty...ALUE-91"}]}}'
+E         
+E         'ZZ-SECRET-VALUE-91' is contained here:
+E           w_value":"ZZ-SECRET-VALUE-91"}]}}
+
+tests/unit/test_gap_d.py:444: AssertionError
+____ test_synthesize_probe_mapping_error_exception_sanitized_to_class_name _____
+
+make_client = <function make_client.<locals>._make at 0x1135b49a0>
+bearer = <function bearer.<locals>._headers at 0x1135b4040>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1135c9750>
+
+    def test_synthesize_probe_mapping_error_exception_sanitized_to_class_name(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        secret_val = "ZZ-SECRET-VALUE-91"
+        from hrms_plugin.schema.mapping import EntityMapping, MappingError
+        orig_ext_id = EntityMapping.external_id
+    
+        def bad_external_id(self, payload):
+            if payload.get("id") == secret_val:
+                raise MappingError(f"PK lookup failed with secret: {secret_val}")
+            return orig_ext_id(self, payload)
+    
+        monkeypatch.setattr(EntityMapping, "external_id", bad_external_id)
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title"}],
+            "vendor": "frappe",
+            "sample_records": [{"id": secret_val, "title": "Dev"}],
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+        assert res.status_code == 200
+>       assert secret_val not in res.text
+E       assert 'ZZ-SECRET-VALUE-91' not in '{"entity_ty...ue":null}]}}'
+E         
+E         'ZZ-SECRET-VALUE-91' is contained here:
+E           h secret: ZZ-SECRET-VALUE-91","sample_index":0,"raw_value":null}]}}
+E         ?           ++++++++++++++++++
+
+tests/unit/test_gap_d.py:479: AssertionError
+_________________ test_synthesize_agentic_probe_structure_only _________________
+
+make_client = <function make_client.<locals>._make at 0x1135b5620>
+bearer = <function bearer.<locals>._headers at 0x1135b4400>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1135a8d50>
+
+    def test_synthesize_agentic_probe_structure_only(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        secret_val = "ZZ-SECRET-VALUE-91"
+        from hrms_plugin.schema import mapping as mapping_module
+        orig_strip = mapping_module.TRANSFORMS["strip"]
+    
+        def sensitive_strip(val):
+            if val == secret_val:
+                raise ValueError(f"rejected secret payload: {val}")
+            return orig_strip(val)
+    
+        monkeypatch.setitem(mapping_module.TRANSFORMS, "strip", sensitive_strip)
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title"}],
+            "vendor": "frappe",
+            "sample_records": [{"id": "REQ-1", "title": secret_val}],
+        }
+        res = client.post("/v1/schema/synthesize/agentic", json=payload, headers=auth)
+        assert res.status_code == 200
+>       assert secret_val not in res.text
+E       assert 'ZZ-SECRET-VALUE-91' not in '{"entity_ty...ue":null}]}}'
+E         
+E         'ZZ-SECRET-VALUE-91' is contained here:
+E            payload: ZZ-SECRET-VALUE-91","sample_index":0,"raw_value":null}]}}
+E         ?           ++++++++++++++++++
+
+tests/unit/test_gap_d.py:514: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  hrms_plugin.schema.synthesizer:synthesizer.py:877 LLM schema mapping failed; returning rule-based mapping
+___________ test_synthesize_probe_preserves_fixed_template_messages ____________
+
+make_client = <function make_client.<locals>._make at 0x11376cc20>
+bearer = <function bearer.<locals>._headers at 0x11376d120>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113840510>
+
+    def test_synthesize_probe_preserves_fixed_template_messages(make_client, bearer, monkeypatch):
+        store = MappingStore(backend=MemoryKeyValueStore())
+        monkeypatch.setattr(app_module, "mapping_store", store)
+        client = make_client()
+        auth = bearer(roles=["platform_admin"], sub="alice")
+    
+        payload = {
+            "domain": "REQUISITION",
+            "discovered_fields": [{"name": "id"}, {"name": "title"}],
+            "vendor": "frappe",
+            "sample_records": [{"id": "", "title": ""}],
+        }
+        res = client.post("/v1/schema/synthesize", json=payload, headers=auth)
+        assert res.status_code == 200
+        issues = res.json()["probe"]["issues"]
+        assert len(issues) > 0
+        messages = [i["message"] for i in issues]
+>       assert any("Primary key 'id' resolved to empty string" in m or m == "MappingError" for m in messages)
+E       assert False
+E        +  where False = any(<generator object test_synthesize_probe_preserves_fixed_template_messages.<locals>.<genexpr> at 0x11388e4d0>)
+
+tests/unit/test_gap_d.py:539: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_d.py::test_synthesize_probe_drops_raw_value_and_sanitizes_projection_exceptions
+FAILED tests/unit/test_gap_d.py::test_synthesize_probe_drops_raw_value_on_type_warning
+FAILED tests/unit/test_gap_d.py::test_synthesize_probe_mapping_error_exception_sanitized_to_class_name
+FAILED tests/unit/test_gap_d.py::test_synthesize_agentic_probe_structure_only
+FAILED tests/unit/test_gap_d.py::test_synthesize_probe_preserves_fixed_template_messages
+5 failed, 15 passed in 0.98s

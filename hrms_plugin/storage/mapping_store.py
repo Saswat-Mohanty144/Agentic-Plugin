@@ -169,15 +169,17 @@ class MappingStore:
         key = f"{self._make_key(tenant_id, vendor, entity_type)}:{row['version']:06d}"
         self.backend.set(self.VERSIONS_NAMESPACE, key, row)
 
-    def propose_mapping(self, tenant_id: str, mapping: EntityMapping, proposed_by: str) -> int:
+    def propose_mapping(self, tenant_id: str, mapping: EntityMapping, proposed_by: str,
+                        probe: Optional[Dict[str, Any]] = None) -> int:
         with self._lock:  # version allocation must be atomic within the process (agy G-F7)
-            return self._propose_locked(tenant_id, mapping, proposed_by)
+            return self._propose_locked(tenant_id, mapping, proposed_by, probe)
 
-    def _propose_locked(self, tenant_id: str, mapping: EntityMapping, proposed_by: str) -> int:
+    def _propose_locked(self, tenant_id: str, mapping: EntityMapping, proposed_by: str,
+                        probe: Optional[Dict[str, Any]] = None) -> int:
         existing = self._versions(tenant_id, mapping.vendor, mapping.entity_type)
         version = max(existing, default=0) + 1
         _tenant, vendor, entity = self._make_key(tenant_id, mapping.vendor, mapping.entity_type).split(":")
-        self._put_version(tenant_id, mapping.vendor, mapping.entity_type, {
+        row: Dict[str, Any] = {
             "version": version,
             "vendor": vendor,
             "entity_type": entity,
@@ -185,7 +187,10 @@ class MappingStore:
             "proposed_by": proposed_by,
             "proposed_at": time.time(),
             "mapping": entity_mapping_to_dict(mapping),
-        })
+        }
+        if probe is not None:
+            row["probe"] = probe
+        self._put_version(tenant_id, mapping.vendor, mapping.entity_type, row)
         return version
 
     def approve_version(self, tenant_id: str, vendor: str, entity_type: str | EntityType, version: int,
@@ -205,6 +210,8 @@ class MappingStore:
             raise MappingGovernanceError("INVALID_STATE", row["status"])
         if approver == row["proposed_by"]:
             raise MappingGovernanceError("SAME_PERSON", "the approver must not be the proposer")
+        if row.get("probe") and row["probe"].get("is_valid") is False:
+            raise MappingGovernanceError("PROBE_FAILED", "stored probe is invalid")
         classified = classify_fields(row["mapping"], classification)  # validated before anything changes
         for other in versions.values():
             if other["status"] == "ACTIVE":

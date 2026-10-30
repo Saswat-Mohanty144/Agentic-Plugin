@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from hrms_plugin.integrations.declarative import INT_FIELDS, REQUISITION_FIELDS, EntitySpec, FieldSpec
 from hrms_plugin.schema.mapping import EntityMapping, FieldMap
 
-_TRANSFORM_TYPES = {"string": "str", "int": "int"}
+_STR_TRANSFORMS = {"string", "strip", "lower", "upper"}
 
 
 class OverlayError(Exception):
@@ -29,16 +29,24 @@ def _field_spec(fm: FieldMap) -> FieldSpec:
         raise OverlayError(fm.target, "not a requisition field")
     if not isinstance(fm.source, str):
         raise OverlayError(fm.target, "the connector reads a single source path")
-    if fm.transform not in _TRANSFORM_TYPES:
-        raise OverlayError(fm.target, f"transform {fm.transform!r} is not supported by the connector")
+    expected = "int" if fm.target in INT_FIELDS else "str"
+    if expected == "int":
+        if fm.transform in _STR_TRANSFORMS:
+            raise OverlayError(fm.target, f"type must be {expected}")
+        if fm.transform != "int":
+            raise OverlayError(fm.target, f"transform {fm.transform!r} is not supported by the connector")
+    else:
+        if fm.transform == "int":
+            raise OverlayError(fm.target, f"type must be {expected}")
+        if fm.transform not in _STR_TRANSFORMS:
+            raise OverlayError(fm.target, f"transform {fm.transform!r} is not supported by the connector")
     if fm.default is not None:
         raise OverlayError(fm.target, "a default value cannot be applied by the connector")
-    if fm.required:
-        raise OverlayError(fm.target, "required is not supported by the connector")
-    expected = "int" if fm.target in INT_FIELDS else "str"
-    if _TRANSFORM_TYPES[fm.transform] != expected:
-        raise OverlayError(fm.target, f"type must be {expected}")
     data: Dict[str, object] = {"from": fm.source, "type": expected}
+    if fm.transform in ("strip", "lower", "upper"):
+        data["transform"] = fm.transform
+    if fm.required:
+        data["required"] = True
     if fm.values:
         data["map"] = dict(fm.values)
     try:

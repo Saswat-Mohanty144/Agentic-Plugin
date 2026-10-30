@@ -785,7 +785,7 @@ class MappingSynthesizer:
         discovered: DiscoveredEntity,
         canonical_type: EntityType | str,
         llm_gateway: Optional[Any] = None,
-        vendor: str = "custom",
+        vendor: str = "host",
         tenant_id: str = "DEFAULT",
     ) -> Tuple[EntityMapping, SynthesisReport]:
         """Synthesize schema mappings with LLM semantic reasoning over ambiguous/vendor fields."""
