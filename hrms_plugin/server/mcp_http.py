@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import json
-import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
+from hrms_plugin.governance.rate_limit import enforce_rate_limit
 from hrms_plugin.security.http_auth import ApiError, require
 from hrms_plugin.security.rbac import AuthContext, Permission
 from hrms_plugin.server.mcp_server import JURISDICTIONS, HrmsMcpServer
 
 router = APIRouter()
-
-
-def _rate_limit(request: Request, auth: AuthContext) -> None:
-    retry = request.app.state.rate_limiter.check(auth.tenant_id)
-    if retry is not None:
-        raise ApiError(429, {"error": "RATE_LIMITED"}, headers={"Retry-After": str(max(1, math.ceil(retry)))})
 
 
 def _rpc_error(req_id: Any, code: int, message: str) -> JSONResponse:
@@ -46,7 +40,11 @@ async def mcp_post(
     request: Request,
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ) -> Response:
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
+
+    proto_version = request.headers.get("mcp-protocol-version")
+    if proto_version is not None and proto_version not in ("2025-06-18", "2025-03-26"):
+        raise ApiError(400, {"error": "UNSUPPORTED_PROTOCOL_VERSION"})
 
     origin = request.headers.get("origin")
     if origin is not None and origin not in request.app.state.registry.all_origins():
@@ -119,10 +117,11 @@ async def mcp_post(
 
         server = HrmsMcpServer(auth=auth, jurisdiction=jurisdiction)
         output = await server.call_tool(name, arguments)
+        safe_output = json.loads(json.dumps(output, default=str))
         is_error = bool(output.get("success") is False or "error" in output)
         return _rpc_ok(req_id, {
-            "content": [{"type": "text", "text": json.dumps(output, default=str)}],
-            "structuredContent": output,
+            "content": [{"type": "text", "text": json.dumps(safe_output)}],
+            "structuredContent": safe_output,
             "isError": is_error,
         })
 

@@ -7,9 +7,15 @@ In-process: with several replicas each enforces its own bucket.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from typing import Callable, Dict, Optional, Tuple
+
+from fastapi import Request
+
+from hrms_plugin.security.http_auth import ApiError
+from hrms_plugin.security.rbac import AuthContext
 
 LimitResolver = Callable[[str], Optional[int]]
 
@@ -39,3 +45,12 @@ class TenantRateLimiter:
                 return None
             self._buckets[tenant_id] = (tokens, now)
             return (1.0 - tokens) / rate
+
+
+def enforce_rate_limit(request: Request, auth: AuthContext) -> None:
+    """QE-3: per-tenant requests per minute on LLM- and voice-backed routes; checked after authentication."""
+    retry = request.app.state.rate_limiter.check(auth.tenant_id)
+    if retry is not None:
+        raise ApiError(429, {"error": "RATE_LIMITED"}, headers={"Retry-After": str(max(1, math.ceil(retry)))})
+
+

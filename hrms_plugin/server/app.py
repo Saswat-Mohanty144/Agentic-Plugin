@@ -8,7 +8,6 @@ import contextlib
 import hashlib
 import json
 import logging
-import math
 import os
 import re
 import time
@@ -38,7 +37,7 @@ from hrms_plugin.agents.voice import STT_MODEL, TTS_MODEL, VoiceAgent, VoiceUpst
 from hrms_plugin.ai.llm import LLMNotConfigured
 from hrms_plugin.governance.egress_log import EgressLog
 from hrms_plugin.governance.llm_policy import LlmBudgetExceeded, LlmNotAllowed
-from hrms_plugin.governance.rate_limit import TenantRateLimiter
+from hrms_plugin.governance.rate_limit import TenantRateLimiter, enforce_rate_limit
 from hrms_plugin.payroll.service import PayrollService
 from hrms_plugin.rag.store import StatutoryKnowledgeBase
 from hrms_plugin.schema.canonical import EntityType
@@ -241,7 +240,7 @@ async def chat_endpoint(
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Unified conversational AI copilot endpoint with automatic PII masking and agentic tool reasoning."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     check_message(req.message)
     history, trimmed = trim_history([h.model_dump() for h in req.history or []])
     agent: SupervisorAgent = request.app.state.supervisor
@@ -273,7 +272,7 @@ async def chat_stream_endpoint(
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Real-time SSE event stream for autonomous agent thoughts, tool dispatches, and tokens."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     check_message(req.message)
     history, trimmed = trim_history([h.model_dump() for h in req.history or []])
     agent: SupervisorAgent = request.app.state.supervisor
@@ -331,11 +330,7 @@ def _policy_limit(registry: TenantRegistry) -> Callable[[str], Optional[int]]:
     return resolve
 
 
-def _rate_limit(request: Request, auth: AuthContext) -> None:
-    """QE-3: per-tenant requests per minute on LLM- and voice-backed routes; checked after authentication."""
-    retry = request.app.state.rate_limiter.check(auth.tenant_id)
-    if retry is not None:
-        raise ApiError(429, {"error": "RATE_LIMITED"}, headers={"Retry-After": str(max(1, math.ceil(retry)))})
+_rate_limit = enforce_rate_limit
 
 
 def _require_demo(request: Request) -> None:
@@ -388,7 +383,7 @@ async def voice_transcribe(
     req: VoiceTranscribeRequest, request: Request, auth: AuthContext = Depends(require(Permission.USE_COPILOT))
 ):
     """Transcribe base64 audio bytes via Sarvam AI Saaras model."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     audio_bytes = _decode_audio(req.audio_base64)
     _require_voice_opt_in(request, auth.tenant_id)
     return await _transcribe(request, auth, audio_bytes, req.language_code)
@@ -399,7 +394,7 @@ async def voice_synthesize(
     req: VoiceSynthesizeRequest, request: Request, auth: AuthContext = Depends(require(Permission.USE_COPILOT))
 ):
     """Synthesize text into natural voice audio via Sarvam AI Bulbul model."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     check_message(req.text)
     _require_voice_opt_in(request, auth.tenant_id)
     return await _synthesize(auth, req.text, target_language=req.target_language, speaker=req.speaker)
@@ -412,7 +407,7 @@ async def voice_turn(
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Full-duplex multimodal turn: Audio In -> Transcribe -> ReAct Agent Brain -> Spoken Audio Out."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     audio_bytes = _decode_audio(req.audio_base64)
     _require_voice_opt_in(request, auth.tenant_id)
     stt = await _transcribe(request, auth, audio_bytes, req.language_code)
@@ -497,7 +492,7 @@ async def synthesize_mapping_agentic(
     auth: AuthContext = Depends(require(Permission.MANAGE_SCHEMA)),
 ):
     """Synthesize FieldMap with LLM semantic reasoning over ambiguous/vendor host fields."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     domain_enum = _entity_type(req.domain)
     from hrms_plugin.schema.introspector import DiscoveredEntity, DiscoveredField
 
@@ -913,7 +908,7 @@ def legacy_chat_adapter(
     auth: AuthContext = Depends(require(Permission.USE_COPILOT)),
 ):
     """Legacy endpoint adapter for Next.js ComplianceCopilotSidecar."""
-    _rate_limit(request, auth)
+    enforce_rate_limit(request, auth)
     check_message(req.message)
     resp = request.app.state.supervisor.process_message(
         message=req.message,

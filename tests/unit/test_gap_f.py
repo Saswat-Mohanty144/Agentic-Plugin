@@ -606,3 +606,170 @@ def test_tools_call_defaults_empty_arguments_if_omitted(make_client, bearer):
     result = res.json()["result"]
     assert result["isError"] is True
     assert result["structuredContent"]["error"] == "TOOL_NOT_AVAILABLE"
+
+
+# -----------------------------------------------------------------------------
+# Follow-up Review Findings: Decimal and Non-JSON types in tools/call
+# -----------------------------------------------------------------------------
+
+def test_tools_call_with_decimal_and_non_json_types_returns_200(make_client, bearer, monkeypatch):
+    """tools/call serializes Decimal, datetime and other non-JSON types into strings without 500 error."""
+    from datetime import datetime
+    from decimal import Decimal
+
+    from hrms_plugin.server.mcp_server import HrmsMcpServer
+
+    async def mock_call_tool(self, name, arguments):
+        return {
+            "success": True,
+            "wage": Decimal("1234.50"),
+            "calculated_at": datetime(2026, 10, 30, 12, 0, 0),
+            "nested": {"bonus": Decimal("500.00")},
+        }
+
+    monkeypatch.setattr(HrmsMcpServer, "call_tool", mock_call_tool)
+
+    client = make_client()
+    res = client.post(
+        "/v1/mcp",
+        json=_rpc_req(
+            "tools/call",
+            params={"name": "hrms_calculate_pf_contribution", "arguments": {"employee_id": "EMP-1"}},
+            req_id="call-decimal",
+        ),
+        headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["id"] == "call-decimal"
+    result = data["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"]["wage"] == "1234.50"
+    assert result["structuredContent"]["calculated_at"] == "2026-10-30 12:00:00"
+    assert result["structuredContent"]["nested"]["bonus"] == "500.00"
+    content_text = json.loads(result["content"][0]["text"])
+    assert content_text["wage"] == "1234.50"
+    assert content_text["nested"]["bonus"] == "500.00"
+
+
+def test_tools_call_with_decimal_in_list_of_objects(make_client, bearer, monkeypatch):
+    """tools/call safely serializes Decimal objects inside lists."""
+    from decimal import Decimal
+
+    from hrms_plugin.server.mcp_server import HrmsMcpServer
+
+    async def mock_call_tool(self, name, arguments):
+        return {
+            "success": True,
+            "items": [{"code": "BASE", "amount": Decimal("2500.75")}],
+        }
+
+    monkeypatch.setattr(HrmsMcpServer, "call_tool", mock_call_tool)
+
+    client = make_client()
+    res = client.post(
+        "/v1/mcp",
+        json=_rpc_req(
+            "tools/call",
+            params={"name": "hrms_calculate_pf_contribution", "arguments": {"employee_id": "EMP-1"}},
+            req_id="call-list-decimal",
+        ),
+        headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+    )
+    assert res.status_code == 200
+    result = res.json()["result"]
+    assert result["structuredContent"]["items"][0]["amount"] == "2500.75"
+
+
+# -----------------------------------------------------------------------------
+# Follow-up Review Findings: MCP-Protocol-Version Request Header
+# -----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("version", ["2024-11-05", "1.0.0", "unsupported", "2025-01-01", ""])
+def test_post_mcp_unsupported_protocol_version_header_returns_400(make_client, bearer, version):
+    """If MCP-Protocol-Version request header is present and unsupported, returns 400 UNSUPPORTED_PROTOCOL_VERSION."""
+    client = make_client()
+    headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+    headers["MCP-Protocol-Version"] = version
+    res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+    assert res.status_code == 400
+    assert res.json() == {"error": "UNSUPPORTED_PROTOCOL_VERSION"}
+
+
+@pytest.mark.parametrize("version", ["2025-06-18", "2025-03-26"])
+def test_post_mcp_supported_protocol_version_header_accepted(make_client, bearer, version):
+    """If MCP-Protocol-Version request header is present and supported, request succeeds."""
+    client = make_client()
+    headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+    headers["MCP-Protocol-Version"] = version
+    res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+    assert res.status_code == 200
+    assert res.json()["result"] == {}
+
+
+def test_post_mcp_protocol_version_header_case_insensitive(make_client, bearer):
+    """MCP-Protocol-Version header matching is case-insensitive."""
+    client = make_client()
+    headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+    headers["mcp-protocol-version"] = "unsupported-ver"
+    res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+    assert res.status_code == 400
+    assert res.json() == {"error": "UNSUPPORTED_PROTOCOL_VERSION"}
+
+
+def test_post_mcp_absent_protocol_version_header_accepted(make_client, bearer):
+    """If MCP-Protocol-Version request header is absent, request is accepted."""
+    client = make_client()
+    headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+    assert "MCP-Protocol-Version" not in headers
+    res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+    assert res.status_code == 200
+
+
+# -----------------------------------------------------------------------------
+# Follow-up Review Findings: Shared enforce_rate_limit Helper
+# -----------------------------------------------------------------------------
+
+def test_enforce_rate_limit_helper_imported_and_enforced():
+    """enforce_rate_limit raises 429 RATE_LIMITED when limiter.check returns retry seconds."""
+    from unittest.mock import MagicMock
+
+    from hrms_plugin.governance.rate_limit import enforce_rate_limit
+    from hrms_plugin.security.http_auth import ApiError
+    from hrms_plugin.security.rbac import AuthContext, UserRole
+
+    mock_request = MagicMock()
+    mock_auth = AuthContext(
+        tenant_id="tenant-x",
+        user_id="user-1",
+        roles=frozenset([UserRole.EMPLOYEE]),
+    )
+
+    # When check returns None: proceeds without error
+    mock_request.app.state.rate_limiter.check.return_value = None
+    enforce_rate_limit(mock_request, mock_auth)
+
+    # When check returns 5.2 seconds: raises 429 with ceil(5.2) -> 6
+    mock_request.app.state.rate_limiter.check.return_value = 5.2
+    with pytest.raises(ApiError) as exc_info:
+        enforce_rate_limit(mock_request, mock_auth)
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.body == {"error": "RATE_LIMITED"}
+    assert exc_info.value.headers == {"Retry-After": "6"}
+
+    # When check returns 0.2 seconds: raises 429 with max(1, ceil(0.2)) -> 1
+    mock_request.app.state.rate_limiter.check.return_value = 0.2
+    with pytest.raises(ApiError) as exc_info:
+        enforce_rate_limit(mock_request, mock_auth)
+    assert exc_info.value.headers == {"Retry-After": "1"}
+
+
+def test_app_and_mcp_share_enforce_rate_limit():
+    """Both app.py and mcp_http.py use enforce_rate_limit from governance.rate_limit."""
+    import hrms_plugin.server.app as app_mod
+    import hrms_plugin.server.mcp_http as mcp_mod
+    from hrms_plugin.governance.rate_limit import enforce_rate_limit
+
+    app_func = getattr(app_mod, "enforce_rate_limit", getattr(app_mod, "_rate_limit", None))
+    assert app_func is enforce_rate_limit
+    assert getattr(mcp_mod, "enforce_rate_limit", None) is enforce_rate_limit

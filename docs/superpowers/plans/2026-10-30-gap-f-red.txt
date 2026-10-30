@@ -1440,3 +1440,492 @@ FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[uuid-1234-5678
 FAILED tests/unit/test_gap_f.py::test_json_rpc_id_types_preserved[None] - ass...
 FAILED tests/unit/test_gap_f.py::test_tools_call_defaults_empty_arguments_if_omitted
 67 failed in 3.47s
+...................................................................FFFFF [ 90%]
+FF..F.FF                                                                 [100%]
+=================================== FAILURES ===================================
+_________ test_tools_call_with_decimal_and_non_json_types_returns_200 __________
+
+make_client = <function make_client.<locals>._make at 0x113675760>
+bearer = <function bearer.<locals>._headers at 0x113749b20>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113986b50>
+
+    def test_tools_call_with_decimal_and_non_json_types_returns_200(make_client, bearer, monkeypatch):
+        """tools/call serializes Decimal, datetime and other non-JSON types into strings without 500 error."""
+        from datetime import datetime
+        from decimal import Decimal
+        from hrms_plugin.server.mcp_server import HrmsMcpServer
+    
+        async def mock_call_tool(self, name, arguments):
+            return {
+                "success": True,
+                "wage": Decimal("1234.50"),
+                "calculated_at": datetime(2026, 10, 30, 12, 0, 0),
+                "nested": {"bonus": Decimal("500.00")},
+            }
+    
+        monkeypatch.setattr(HrmsMcpServer, "call_tool", mock_call_tool)
+    
+        client = make_client()
+>       res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_calculate_pf_contribution", "arguments": {"employee_id": "EMP-1"}},
+                req_id="call-decimal",
+            ),
+            headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+        )
+
+tests/unit/test_gap_f.py:632: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:1203: in post
+    return self.request(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:518: in request
+    return super().request(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:796: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:993: in send
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:987: in send
+    response.read()
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:877: in read
+    self._content = b"".join(self.iter_bytes())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:893: in iter_bytes
+    for raw_bytes in self.iter_raw():
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:948: in iter_raw
+    for raw_stream_bytes in self.stream:
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:143: in __iter__
+    yield from self._stream
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:384: in iter_body
+    exit_stack.close()
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:609: in close
+    self.__exit__(None, None, None)
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:601: in __exit__
+    raise exc_details[1]
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:586: in __exit__
+    if cb(*exc_details):
+       ^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:399: in close_app
+    raise exception
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:366: in run_app
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/applications.py:1194: in __call__
+    await super().__call__(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py:91: in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py:149: in simple_response
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/routing.py:683: in __call__
+    await self.middleware_stack(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:2811: in app
+    await route.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1839: in handle
+    await self.original_router.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:2894: in handle
+    await included_router._handle_selected(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1865: in _handle_selected
+    await original_route.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1328: in handle
+    await effective_context.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:166: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:152: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:745: in app
+    raw_response = await run_endpoint_function(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:372: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hrms_plugin/server/mcp_http.py:123: in mcp_post
+    return _rpc_ok(req_id, {
+hrms_plugin/server/mcp_http.py:33: in _rpc_ok
+    return JSONResponse(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/responses.py:197: in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/responses.py:46: in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/responses.py:200: in render
+    return json.dumps(
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x113820b50>, o = Decimal('1234.50')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type Decimal is not JSON serializable
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/encoder.py:180: TypeError
+_______________ test_tools_call_with_decimal_in_list_of_objects ________________
+
+make_client = <function make_client.<locals>._make at 0x113748360>
+bearer = <function bearer.<locals>._headers at 0x11371bce0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1146609d0>
+
+    def test_tools_call_with_decimal_in_list_of_objects(make_client, bearer, monkeypatch):
+        """tools/call safely serializes Decimal objects inside lists."""
+        from decimal import Decimal
+        from hrms_plugin.server.mcp_server import HrmsMcpServer
+    
+        async def mock_call_tool(self, name, arguments):
+            return {
+                "success": True,
+                "items": [{"code": "BASE", "amount": Decimal("2500.75")}],
+            }
+    
+        monkeypatch.setattr(HrmsMcpServer, "call_tool", mock_call_tool)
+    
+        client = make_client()
+>       res = client.post(
+            "/v1/mcp",
+            json=_rpc_req(
+                "tools/call",
+                params={"name": "hrms_calculate_pf_contribution", "arguments": {"employee_id": "EMP-1"}},
+                req_id="call-list-decimal",
+            ),
+            headers=_headers(bearer(roles=["platform_admin"]), jurisdiction="IN"),
+        )
+
+tests/unit/test_gap_f.py:668: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:1203: in post
+    return self.request(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:518: in request
+    return super().request(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:796: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:993: in send
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:987: in send
+    response.read()
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:877: in read
+    self._content = b"".join(self.iter_bytes())
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:893: in iter_bytes
+    for raw_bytes in self.iter_raw():
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_models.py:948: in iter_raw
+    for raw_stream_bytes in self.stream:
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/httpx2/_client.py:143: in __iter__
+    yield from self._stream
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:384: in iter_body
+    exit_stack.close()
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:609: in close
+    self.__exit__(None, None, None)
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:601: in __exit__
+    raise exc_details[1]
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/contextlib.py:586: in __exit__
+    if cb(*exc_details):
+       ^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:399: in close_app
+    raise exception
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/testclient.py:366: in run_app
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/applications.py:1194: in __call__
+    await super().__call__(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py:91: in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/cors.py:149: in simple_response
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/routing.py:683: in __call__
+    await self.middleware_stack(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:2811: in app
+    await route.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1839: in handle
+    await self.original_router.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:2894: in handle
+    await included_router._handle_selected(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1865: in _handle_selected
+    await original_route.handle(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:1328: in handle
+    await effective_context.app(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:166: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:152: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:745: in app
+    raw_response = await run_endpoint_function(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/fastapi/routing.py:372: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hrms_plugin/server/mcp_http.py:123: in mcp_post
+    return _rpc_ok(req_id, {
+hrms_plugin/server/mcp_http.py:33: in _rpc_ok
+    return JSONResponse(
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/responses.py:197: in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/responses.py:46: in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/starlette/responses.py:200: in render
+    return json.dumps(
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/encoder.py:258: in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x1143e2650>, o = Decimal('2500.75')
+
+    def default(self, o):
+        """Implement this method in a subclass such that it returns
+        a serializable object for ``o``, or calls the base implementation
+        (to raise a ``TypeError``).
+    
+        For example, to support arbitrary iterators, you could
+        implement default like this::
+    
+            def default(self, o):
+                try:
+                    iterable = iter(o)
+                except TypeError:
+                    pass
+                else:
+                    return list(iterable)
+                # Let the base class default method raise the TypeError
+                return super().default(o)
+    
+        """
+>       raise TypeError(f'Object of type {o.__class__.__name__} '
+                        f'is not JSON serializable')
+E       TypeError: Object of type Decimal is not JSON serializable
+
+/usr/local/Cellar/python@3.11/3.11.15_4/Frameworks/Python.framework/Versions/3.11/lib/python3.11/json/encoder.py:180: TypeError
+__ test_post_mcp_unsupported_protocol_version_header_returns_400[2024-11-05] ___
+
+make_client = <function make_client.<locals>._make at 0x113a044a0>
+bearer = <function bearer.<locals>._headers at 0x113a04ae0>
+version = '2024-11-05'
+
+    @pytest.mark.parametrize("version", ["2024-11-05", "1.0.0", "unsupported", "2025-01-01", ""])
+    def test_post_mcp_unsupported_protocol_version_header_returns_400(make_client, bearer, version):
+        """If MCP-Protocol-Version request header is present and unsupported, returns 400 UNSUPPORTED_PROTOCOL_VERSION."""
+        client = make_client()
+        headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+        headers["MCP-Protocol-Version"] = version
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+>       assert res.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_f.py:693: AssertionError
+_____ test_post_mcp_unsupported_protocol_version_header_returns_400[1.0.0] _____
+
+make_client = <function make_client.<locals>._make at 0x113676160>
+bearer = <function bearer.<locals>._headers at 0x113677600>, version = '1.0.0'
+
+    @pytest.mark.parametrize("version", ["2024-11-05", "1.0.0", "unsupported", "2025-01-01", ""])
+    def test_post_mcp_unsupported_protocol_version_header_returns_400(make_client, bearer, version):
+        """If MCP-Protocol-Version request header is present and unsupported, returns 400 UNSUPPORTED_PROTOCOL_VERSION."""
+        client = make_client()
+        headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+        headers["MCP-Protocol-Version"] = version
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+>       assert res.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_f.py:693: AssertionError
+__ test_post_mcp_unsupported_protocol_version_header_returns_400[unsupported] __
+
+make_client = <function make_client.<locals>._make at 0x1136be7a0>
+bearer = <function bearer.<locals>._headers at 0x1136bd3a0>
+version = 'unsupported'
+
+    @pytest.mark.parametrize("version", ["2024-11-05", "1.0.0", "unsupported", "2025-01-01", ""])
+    def test_post_mcp_unsupported_protocol_version_header_returns_400(make_client, bearer, version):
+        """If MCP-Protocol-Version request header is present and unsupported, returns 400 UNSUPPORTED_PROTOCOL_VERSION."""
+        client = make_client()
+        headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+        headers["MCP-Protocol-Version"] = version
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+>       assert res.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_f.py:693: AssertionError
+__ test_post_mcp_unsupported_protocol_version_header_returns_400[2025-01-01] ___
+
+make_client = <function make_client.<locals>._make at 0x113677380>
+bearer = <function bearer.<locals>._headers at 0x11379cb80>
+version = '2025-01-01'
+
+    @pytest.mark.parametrize("version", ["2024-11-05", "1.0.0", "unsupported", "2025-01-01", ""])
+    def test_post_mcp_unsupported_protocol_version_header_returns_400(make_client, bearer, version):
+        """If MCP-Protocol-Version request header is present and unsupported, returns 400 UNSUPPORTED_PROTOCOL_VERSION."""
+        client = make_client()
+        headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+        headers["MCP-Protocol-Version"] = version
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+>       assert res.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_f.py:693: AssertionError
+_______ test_post_mcp_unsupported_protocol_version_header_returns_400[] ________
+
+make_client = <function make_client.<locals>._make at 0x11379ca40>
+bearer = <function bearer.<locals>._headers at 0x11379c4a0>, version = ''
+
+    @pytest.mark.parametrize("version", ["2024-11-05", "1.0.0", "unsupported", "2025-01-01", ""])
+    def test_post_mcp_unsupported_protocol_version_header_returns_400(make_client, bearer, version):
+        """If MCP-Protocol-Version request header is present and unsupported, returns 400 UNSUPPORTED_PROTOCOL_VERSION."""
+        client = make_client()
+        headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+        headers["MCP-Protocol-Version"] = version
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+>       assert res.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_f.py:693: AssertionError
+____________ test_post_mcp_protocol_version_header_case_insensitive ____________
+
+make_client = <function make_client.<locals>._make at 0x113813060>
+bearer = <function bearer.<locals>._headers at 0x11379dc60>
+
+    def test_post_mcp_protocol_version_header_case_insensitive(make_client, bearer):
+        """MCP-Protocol-Version header matching is case-insensitive."""
+        client = make_client()
+        headers = _headers(bearer(roles=["staff"]), jurisdiction="IN")
+        headers["mcp-protocol-version"] = "unsupported-ver"
+        res = client.post("/v1/mcp", json=_rpc_req("ping"), headers=headers)
+>       assert res.status_code == 400
+E       assert 200 == 400
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_f.py:714: AssertionError
+_____________ test_enforce_rate_limit_helper_imported_and_enforced _____________
+
+    def test_enforce_rate_limit_helper_imported_and_enforced():
+        """enforce_rate_limit raises 429 RATE_LIMITED when limiter.check returns retry seconds."""
+        from unittest.mock import MagicMock
+        from hrms_plugin.governance.rate_limit import enforce_rate_limit
+        from hrms_plugin.security.http_auth import ApiError
+        from hrms_plugin.security.rbac import AuthContext, UserRole
+    
+        mock_request = MagicMock()
+        mock_auth = AuthContext(
+            tenant_id="tenant-x",
+            user_id="user-1",
+            roles=frozenset([UserRole.EMPLOYEE]),
+        )
+    
+        # When check returns None: proceeds without error
+        mock_request.app.state.rate_limiter.check.return_value = None
+        enforce_rate_limit(mock_request, mock_auth)
+    
+        # When check returns 5.2 seconds: raises 429 with ceil(5.2) -> 6
+        mock_request.app.state.rate_limiter.check.return_value = 5.2
+>       with pytest.raises(ApiError) as exc_info:
+E       Failed: DID NOT RAISE ApiError
+
+tests/unit/test_gap_f.py:751: Failed
+__________________ test_app_and_mcp_share_enforce_rate_limit ___________________
+
+    def test_app_and_mcp_share_enforce_rate_limit():
+        """Both app.py and mcp_http.py use enforce_rate_limit from governance.rate_limit."""
+        import hrms_plugin.server.app as app_mod
+        import hrms_plugin.server.mcp_http as mcp_mod
+        from hrms_plugin.governance.rate_limit import enforce_rate_limit
+    
+        app_func = getattr(app_mod, "enforce_rate_limit", getattr(app_mod, "_rate_limit", None))
+>       assert app_func is enforce_rate_limit
+E       assert <function _rate_limit at 0x11349bec0> is <function enforce_rate_limit at 0x1132bfce0>
+
+tests/unit/test_gap_f.py:771: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_f.py::test_tools_call_with_decimal_and_non_json_types_returns_200
+FAILED tests/unit/test_gap_f.py::test_tools_call_with_decimal_in_list_of_objects
+FAILED tests/unit/test_gap_f.py::test_post_mcp_unsupported_protocol_version_header_returns_400[2024-11-05]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_unsupported_protocol_version_header_returns_400[1.0.0]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_unsupported_protocol_version_header_returns_400[unsupported]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_unsupported_protocol_version_header_returns_400[2025-01-01]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_unsupported_protocol_version_header_returns_400[]
+FAILED tests/unit/test_gap_f.py::test_post_mcp_protocol_version_header_case_insensitive
+FAILED tests/unit/test_gap_f.py::test_enforce_rate_limit_helper_imported_and_enforced
+FAILED tests/unit/test_gap_f.py::test_app_and_mcp_share_enforce_rate_limit - ...
+10 failed, 70 passed in 3.78s
