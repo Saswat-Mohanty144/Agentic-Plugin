@@ -1,0 +1,313 @@
+FFFFFFFFFFF                                                              [100%]
+=================================== FAILURES ===================================
+_______________ test_rollback_two_person_rule_service_lifecycle ________________
+
+wb_service = <hrms_plugin.writeback.service.WritebackService object at 0x10cdfab90>
+
+    async def test_rollback_two_person_rule_service_lifecycle(wb_service):
+        """Positive: First user requests rollback -> 202/ROLLBACK_PENDING; second user executes -> ROLLED_BACK."""
+        p = await wb_service.propose(USER_1, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
+        await wb_service.approve(APPROVER, p["id"])
+    
+        # Step 1: User 1 requests rollback
+        first_res = await wb_service.rollback(USER_1, p["id"])
+>       assert first_res["status"] == "ROLLBACK_PENDING"
+E       AssertionError: assert 'ROLLED_BACK' == 'ROLLBACK_PENDING'
+E         
+E         - ROLLBACK_PENDING
+E         + ROLLED_BACK
+
+tests/unit/test_gap_e.py:142: AssertionError
+_____________ test_rollback_two_person_invalid_state_and_conflicts _____________
+
+wb_service = <hrms_plugin.writeback.service.WritebackService object at 0x10cdef710>
+
+    async def test_rollback_two_person_invalid_state_and_conflicts(wb_service):
+        """Negative & Boundary: Rollback of pending proposal, and host conflict at execution."""
+        p = await wb_service.propose(USER_1, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
+    
+        # Cannot rollback PENDING proposal
+        with pytest.raises(WritebackError) as exc_info:
+            await wb_service.rollback(USER_1, p["id"])
+        assert exc_info.value.code == "INVALID_STATE"
+    
+        # Approve proposal
+        await wb_service.approve(APPROVER, p["id"])
+    
+        # User 1 requests rollback
+        req_res = await wb_service.rollback(USER_1, p["id"])
+>       assert req_res["status"] == "ROLLBACK_PENDING"
+E       AssertionError: assert 'ROLLED_BACK' == 'ROLLBACK_PENDING'
+E         
+E         - ROLLBACK_PENDING
+E         + ROLLED_BACK
+
+tests/unit/test_gap_e.py:184: AssertionError
+______________________ test_rollback_http_two_person_flow ______________________
+
+make_client = <function make_client.<locals>._make at 0x10cea2480>
+bearer = <function bearer.<locals>._headers at 0x10cea3060>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cde5ad0>
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-270/test_rollback_http_two_person_0')
+mock_frappe = <tests.unit.test_gap_e.StatefulFrappeMock object at 0x10cde5110>
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10cf91890>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_rollback_http_two_person_0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_rollback_http_two_person_flow(make_client, bearer, monkeypatch, tmp_path, mock_frappe, test_ed25519_key):
+        """HTTP: First call returns 202 ROLLBACK_PENDING, same user 403 SAME_PERSON, second user 200 ROLLED_BACK."""
+        from hrms_plugin.server import app as app_mod
+    
+        path = tmp_path / "hosts.yaml"
+        path.write_text(yaml.safe_dump(HOSTS))
+        monkeypatch.setenv("HRMS_HOSTS", str(path))
+        monkeypatch.setenv("ACME_FRAPPE_KEY", "k")
+        monkeypatch.setenv("ACME_FRAPPE_SECRET", "s")
+        monkeypatch.setattr(
+            app_mod.writeback_service,
+            "_client_factory",
+            lambda h, k, s: FrappeClient(
+                h, k, s, http_client=httpx.AsyncClient(transport=httpx.MockTransport(mock_frappe.handler))
+            ),
+        )
+    
+        client = make_client()
+        body = {"doctype": "Employee", "name": "HR-EMP-00001", "patch": {"notice_number_of_days": 60}}
+        prop = client.post("/v1/writeback/proposals", json=body, headers=bearer(sub="user-1"))
+        assert prop.status_code == 200
+        pid = prop.json()["id"]
+    
+        appr = client.post(f"/v1/writeback/proposals/{pid}/approve", headers=bearer(sub="user-approver"))
+        assert appr.status_code == 200
+    
+        # Step 1: User 1 requests rollback -> 202 ROLLBACK_PENDING
+        rb1 = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="user-1"))
+>       assert rb1.status_code == 202
+E       assert 200 == 202
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_e.py:229: AssertionError
+_______________ test_schema_fingerprint_approval_two_person_rule _______________
+
+make_client = <function make_client.<locals>._make at 0x10cea27a0>
+bearer = <function bearer.<locals>._headers at 0x10cec1120>
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10cd0e390>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_schema_fingerprint_approv0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_schema_fingerprint_approval_two_person_rule(make_client, bearer, test_ed25519_key):
+        """POST /v1/schema/fingerprints/approve: 202 PENDING_CONFIRMATION -> 403 SAME_PERSON -> 200 APPROVED."""
+        client = make_client()
+        fp_a = "sha256:" + "a" * 64
+        body_a = {"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_a}
+    
+        # Step 1: User 1 requests approval -> 202 PENDING_CONFIRMATION
+        r1 = client.post(
+            "/v1/schema/fingerprints/approve", json=body_a, headers=bearer(sub="admin-1", roles=["platform_admin"])
+        )
+>       assert r1.status_code == 202
+E       assert 200 == 202
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_e.py:260: AssertionError
+________________ test_schema_fingerprint_replacement_of_pending ________________
+
+make_client = <function make_client.<locals>._make at 0x10cec11c0>
+bearer = <function bearer.<locals>._headers at 0x10cec2340>
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10cf955d0>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_schema_fingerprint_replac0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_schema_fingerprint_replacement_of_pending(make_client, bearer, test_ed25519_key):
+        """Requesting a different fingerprint replaces the pending one."""
+        client = make_client()
+        fp_a = "sha256:" + "a" * 64
+        fp_b = "sha256:" + "b" * 64
+    
+        # User 1 requests fingerprint A
+        r1 = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_a},
+            headers=bearer(sub="admin-1", roles=["platform_admin"]),
+        )
+>       assert r1.status_code == 202
+E       assert 200 == 202
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_e.py:294: AssertionError
+_______________ test_requisition_shape_approval_two_person_rule ________________
+
+make_client = <function make_client.<locals>._make at 0x10cec22a0>
+bearer = <function bearer.<locals>._headers at 0x10cec1bc0>
+requisition_env = (<_pytest.monkeypatch.MonkeyPatch object at 0x10cf537d0>, <hrms_plugin.storage.memory_store.MemoryKeyValueStore object at 0x10cdd3090>)
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10cf93630>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_requisition_shape_approva0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_requisition_shape_approval_two_person_rule(make_client, bearer, requisition_env, test_ed25519_key):
+        """POST /v1/hosts/requisitions/shape/approve: 202 PENDING_CONFIRMATION -> 403 SAME_PERSON -> 200 APPROVED."""
+        monkeypatch, _ = requisition_env
+        _patch_transport(monkeypatch, Http([iceipts_row()]))
+        client = make_client()
+    
+        # Observe the shape first
+        get_res = client.get("/v1/hosts/requisitions", headers=bearer(roles=["recruiter"]))
+>       fp = get_res.json()["schema"]["fingerprint"]
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'schema'
+
+tests/unit/test_gap_e.py:340: KeyError
+_____________ test_audit_gateway_ed25519_signing_and_verification ______________
+
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10d01ea90>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_audit_gateway_ed25519_sig0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_audit_gateway_ed25519_signing_and_verification(test_ed25519_key):
+        """Positive: HostAuditGateway signs headers with Ed25519 and verify_audit_headers validates."""
+        gateway = HostAuditGateway()
+        headers = gateway.create_attribution_headers(
+            tenant_id="acme",
+            agent_name="WritebackService",
+            hitl_approver_id="user-approver",
+            reasoning_payload={"action": "test", "val": 123},
+        )
+        http_dict = headers.to_http_headers()
+    
+>       assert http_dict["X-Audit-Key-Id"] == test_ed25519_key["key_id"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'X-Audit-Key-Id'
+
+tests/unit/test_gap_e.py:399: KeyError
+______________ test_verify_audit_headers_tampering_and_boundaries ______________
+
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10d0570f0>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_verify_audit_headers_tamp0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_verify_audit_headers_tampering_and_boundaries(test_ed25519_key):
+        """Negative & Boundary: Tampering with header values, signature, or key causes verify to return False."""
+        gateway = HostAuditGateway()
+        headers = gateway.create_attribution_headers(
+            tenant_id="acme",
+            agent_name="WritebackService",
+            hitl_approver_id="user-approver",
+            reasoning_payload={"action": "test"},
+        )
+        http_dict = headers.to_http_headers()
+        pub = test_ed25519_key["pub"]
+        verify_fn = getattr(audit_module, "verify_audit_headers", None)
+>       assert verify_fn is not None, "verify_audit_headers must be defined"
+E       AssertionError: verify_audit_headers must be defined
+E       assert None is not None
+
+tests/unit/test_gap_e.py:438: AssertionError
+_______ test_writeback_approve_refuses_when_audit_signing_not_configured _______
+
+make_client = <function make_client.<locals>._make at 0x10cec2e80>
+bearer = <function bearer.<locals>._headers at 0x10cec1260>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cff46d0>
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-270/test_writeback_approve_refuses0')
+mock_frappe = <tests.unit.test_gap_e.StatefulFrappeMock object at 0x10cff5e50>
+
+    def test_writeback_approve_refuses_when_audit_signing_not_configured(make_client, bearer, monkeypatch, tmp_path, mock_frappe):
+        """POST /v1/writeback/proposals/{id}/approve returns 503 AUDIT_SIGNING_NOT_CONFIGURED before touching host."""
+        from hrms_plugin.server import app as app_mod
+    
+        path = tmp_path / "hosts.yaml"
+        path.write_text(yaml.safe_dump(HOSTS))
+        monkeypatch.setenv("HRMS_HOSTS", str(path))
+        monkeypatch.setenv("ACME_FRAPPE_KEY", "k")
+        monkeypatch.setenv("ACME_FRAPPE_SECRET", "s")
+        monkeypatch.setattr(
+            app_mod.writeback_service,
+            "_client_factory",
+            lambda h, k, s: FrappeClient(
+                h, k, s, http_client=httpx.AsyncClient(transport=httpx.MockTransport(mock_frappe.handler))
+            ),
+        )
+    
+        client = make_client()
+        body = {"doctype": "Employee", "name": "HR-EMP-00001", "patch": {"notice_number_of_days": 60}}
+        prop = client.post("/v1/writeback/proposals", json=body, headers=bearer(sub="user-1"))
+        assert prop.status_code == 200
+        pid = prop.json()["id"]
+    
+        # Unset signing key env var
+        monkeypatch.delenv("HRMS_AUDIT_SIGNING_KEY_FILE", raising=False)
+        monkeypatch.delenv("HRMS_AUDIT_KEY_ID", raising=False)
+    
+        puts_before = len(mock_frappe.puts)
+        resp = client.post(f"/v1/writeback/proposals/{pid}/approve", headers=bearer(sub="user-approver"))
+>       assert resp.status_code == 503
+E       assert 200 == 503
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_e.py:504: AssertionError
+______ test_writeback_rollback_refuses_when_audit_signing_not_configured _______
+
+make_client = <function make_client.<locals>._make at 0x10cfb87c0>
+bearer = <function bearer.<locals>._headers at 0x10cfb9260>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d0842d0>
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-270/test_writeback_rollback_refuse0')
+mock_frappe = <tests.unit.test_gap_e.StatefulFrappeMock object at 0x10d0863d0>
+test_ed25519_key = {'priv': <cryptography.hazmat.bindings._rust.openssl.ed25519.Ed25519PrivateKey object at 0x10cf96650>, 'pub': <cryptog...gn/T/pytest-of-satosh/pytest-270/test_writeback_rollback_refuse0/test_audit_key.pem', 'key_id': 'test-audit-key-id-42'}
+
+    def test_writeback_rollback_refuses_when_audit_signing_not_configured(
+        make_client, bearer, monkeypatch, tmp_path, mock_frappe, test_ed25519_key
+    ):
+        """POST /v1/writeback/proposals/{id}/rollback execution refuses 503 AUDIT_SIGNING_NOT_CONFIGURED before host write."""
+        from hrms_plugin.server import app as app_mod
+    
+        path = tmp_path / "hosts.yaml"
+        path.write_text(yaml.safe_dump(HOSTS))
+        monkeypatch.setenv("HRMS_HOSTS", str(path))
+        monkeypatch.setenv("ACME_FRAPPE_KEY", "k")
+        monkeypatch.setenv("ACME_FRAPPE_SECRET", "s")
+        monkeypatch.setattr(
+            app_mod.writeback_service,
+            "_client_factory",
+            lambda h, k, s: FrappeClient(
+                h, k, s, http_client=httpx.AsyncClient(transport=httpx.MockTransport(mock_frappe.handler))
+            ),
+        )
+    
+        client = make_client()
+        body = {"doctype": "Employee", "name": "HR-EMP-00001", "patch": {"notice_number_of_days": 60}}
+        prop = client.post("/v1/writeback/proposals", json=body, headers=bearer(sub="user-1"))
+        pid = prop.json()["id"]
+        appr = client.post(f"/v1/writeback/proposals/{pid}/approve", headers=bearer(sub="user-approver"))
+        assert appr.status_code == 200
+    
+        # User 1 requests rollback -> 202 ROLLBACK_PENDING
+        rb1 = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="user-1"))
+>       assert rb1.status_code == 202
+E       assert 200 == 202
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_e.py:538: AssertionError
+_______ test_remediate_execute_refuses_when_audit_signing_not_configured _______
+
+make_client = <function make_client.<locals>._make at 0x10cf04680>
+bearer = <function bearer.<locals>._headers at 0x10cfb8ae0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d044910>
+
+    def test_remediate_execute_refuses_when_audit_signing_not_configured(make_client, bearer, monkeypatch):
+        """POST /v1/remediate/execute returns 503 AUDIT_SIGNING_NOT_CONFIGURED when key is not configured."""
+        monkeypatch.delenv("HRMS_AUDIT_SIGNING_KEY_FILE", raising=False)
+        monkeypatch.delenv("HRMS_AUDIT_KEY_ID", raising=False)
+    
+        client = make_client()
+        payload = {
+            "violation_id": "VIO-001",
+            "target_entity": "EMPLOYEE",
+            "entity_id": "EMP-001",
+            "patch_payload": {"annual_leave_balance": 20},
+        }
+        resp = client.post("/v1/remediate/execute", json=payload, headers=bearer(roles=["hr_manager"]))
+>       assert resp.status_code == 503
+E       assert 200 == 503
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/unit/test_gap_e.py:563: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_e.py::test_rollback_two_person_rule_service_lifecycle
+FAILED tests/unit/test_gap_e.py::test_rollback_two_person_invalid_state_and_conflicts
+FAILED tests/unit/test_gap_e.py::test_rollback_http_two_person_flow - assert ...
+FAILED tests/unit/test_gap_e.py::test_schema_fingerprint_approval_two_person_rule
+FAILED tests/unit/test_gap_e.py::test_schema_fingerprint_replacement_of_pending
+FAILED tests/unit/test_gap_e.py::test_requisition_shape_approval_two_person_rule
+FAILED tests/unit/test_gap_e.py::test_audit_gateway_ed25519_signing_and_verification
+FAILED tests/unit/test_gap_e.py::test_verify_audit_headers_tampering_and_boundaries
+FAILED tests/unit/test_gap_e.py::test_writeback_approve_refuses_when_audit_signing_not_configured
+FAILED tests/unit/test_gap_e.py::test_writeback_rollback_refuses_when_audit_signing_not_configured
+FAILED tests/unit/test_gap_e.py::test_remediate_execute_refuses_when_audit_signing_not_configured
+11 failed in 1.25s

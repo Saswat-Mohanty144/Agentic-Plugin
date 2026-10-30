@@ -195,18 +195,21 @@ async def test_other_tenant_cannot_see_or_approve(svc):
 async def test_rollback_restores_before_values_once(svc, frappe):
     p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
     await svc.approve(APPROVER, p["id"])
-    rolled = await svc.rollback(APPROVER, p["id"])
+    req = await svc.rollback(APPROVER, p["id"])
+    assert req["status"] == "ROLLBACK_PENDING"
+    rolled = await svc.rollback(PROPOSER, p["id"])
     assert rolled["status"] == "ROLLED_BACK" and frappe.doc["notice_number_of_days"] == 30
     assert frappe.puts[-1]["body"] == {"notice_number_of_days": 30}
-    assert await svc.rollback(APPROVER, p["id"]) == rolled and len(frappe.puts) == 2
+    assert await svc.rollback(PROPOSER, p["id"]) == rolled and len(frappe.puts) == 2
 
 
 async def test_rollback_after_someone_else_edited_is_refused(svc, frappe):
     p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
     await svc.approve(APPROVER, p["id"])
+    await svc.rollback(APPROVER, p["id"])
     frappe.doc["notice_number_of_days"] = 75
     frappe.touch()
-    assert await codes(svc.rollback(APPROVER, p["id"])) == "ROLLBACK_CONFLICT"
+    assert await codes(svc.rollback(PROPOSER, p["id"])) == "ROLLBACK_CONFLICT"
     assert frappe.doc["notice_number_of_days"] == 75 and len(frappe.puts) == 1
 
 
@@ -219,6 +222,7 @@ async def test_approve_after_rollback_is_invalid(svc):
     p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
     await svc.approve(APPROVER, p["id"])
     await svc.rollback(APPROVER, p["id"])
+    await svc.rollback(PROPOSER, p["id"])
     assert await codes(svc.approve(APPROVER, p["id"])) == "INVALID_STATE"
 
 
@@ -284,7 +288,9 @@ def test_http_flow_with_separation_of_duties(make_client, bearer, monkeypatch, t
     assert same.status_code == 403 and same.json()["error"] == "SAME_PERSON"
     ok = client.post(f"/v1/writeback/proposals/{pid}/approve", headers=bearer(sub="hr-2"))
     assert ok.status_code == 200 and ok.json()["status"] == "EXECUTED"
-    back = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="hr-2"))
+    rb_req = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="hr-2"))
+    assert rb_req.status_code == 202 and rb_req.json()["status"] == "ROLLBACK_PENDING"
+    back = client.post(f"/v1/writeback/proposals/{pid}/rollback", headers=bearer(sub="hr-3"))
     assert back.status_code == 200 and back.json()["status"] == "ROLLED_BACK"
 
 
@@ -317,6 +323,7 @@ def test_http_bad_body_rejected(make_client, bearer):
 async def test_rollback_carries_audit_headers_and_records_audit(svc, frappe):          # F1 / F6
     p = await svc.propose(PROPOSER, "Employee", "HR-EMP-00001", {"notice_number_of_days": 60})
     await svc.approve(APPROVER, p["id"])
+    await svc.rollback(PROPOSER, p["id"])
     rolled = await svc.rollback(APPROVER, p["id"])
     headers = frappe.puts[-1]["headers"]
     assert headers["x-hitl-approver-id"] == "hr-2" and headers["x-agent-name"] == "WritebackService"
@@ -350,7 +357,8 @@ async def test_missing_modified_after_write_is_recovered_by_reread(svc, frappe):
     done = await svc.approve(APPROVER, p["id"])
     assert done["status"] == "EXECUTED" and done["after_modified"] == frappe.doc["modified"]
     frappe.handler = real
-    assert (await svc.rollback(APPROVER, p["id"]))["status"] == "ROLLED_BACK"
+    await svc.rollback(APPROVER, p["id"])
+    assert (await svc.rollback(PROPOSER, p["id"]))["status"] == "ROLLED_BACK"
 
 
 async def test_host_error_detail_is_kept(svc, frappe):                                   # F5
@@ -389,4 +397,5 @@ async def test_decimal_write_and_rollback_restore_exact_values(decimal_svc, frap
     await decimal_svc.approve(APPROVER, p["id"])
     assert frappe.puts[-1]["body"] == {"ctc": "1600000.00"}
     await decimal_svc.rollback(APPROVER, p["id"])
+    await decimal_svc.rollback(PROPOSER, p["id"])
     assert frappe.puts[-1]["body"] == {"ctc": 1500000.5}

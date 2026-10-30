@@ -807,6 +807,7 @@ def test_e2e_pf_calculate_positive_happy_path(make_client, bearer, frappe_mock):
     client = make_client()
     fp = slip_fingerprint(frappe_mock.slips[0])
     app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-1")
+    app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-2")
 
     payload = {"employee_id": "HR-EMP-00001", "period": "2026-09"}
     resp = client.post(
@@ -839,6 +840,7 @@ def test_e2e_pf_calculate_boundaries_ceilings(
     frappe_mock.slips = [slip(basic=basic, da=da)]
     fp = slip_fingerprint(frappe_mock.slips[0])
     app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-1")
+    app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-2")
 
     client = make_client()
     resp = client.post(
@@ -860,6 +862,7 @@ def test_e2e_pf_calculate_strict_mode_gross_mismatch_502(make_client, bearer, fr
     frappe_mock.slips = [bad_slip]
     fp = slip_fingerprint(bad_slip)
     app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-1")
+    app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-2")
 
     client = make_client()
     resp = client.post(
@@ -877,6 +880,7 @@ def test_e2e_pf_calculate_strict_mode_currency_mismatch_502(make_client, bearer,
     frappe_mock.slips = [bad_slip]
     fp = slip_fingerprint(bad_slip)
     app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-1")
+    app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-2")
 
     client = make_client()
     resp = client.post(
@@ -897,6 +901,7 @@ def test_e2e_pf_calculate_strict_mode_missing_required_component_409(make_client
     frappe_mock.slips = [bad_slip]
     fp = slip_fingerprint(bad_slip)
     app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-1")
+    app_module.payroll_service.approve_fingerprint("acme", "frappe", "Salary Slip", fp, "approver-2")
 
     client = make_client()
     resp = client.post(
@@ -928,6 +933,9 @@ def test_e2e_pf_calculate_schema_fingerprint_drift_409(make_client, bearer, frap
     """(3) Negative: Schema fingerprint drift returns 409 SCHEMA_DRIFT and quarantines document."""
     app_module.payroll_service.approve_fingerprint(
         "acme", "frappe", "Salary Slip", "sha256:" + "0" * 64, "approver-1"
+    )
+    app_module.payroll_service.approve_fingerprint(
+        "acme", "frappe", "Salary Slip", "sha256:" + "0" * 64, "approver-2"
     )
     client = make_client()
     resp = client.post(
@@ -1060,10 +1068,18 @@ def test_e2e_writeback_two_phase_lifecycle_propose_approve_rollback(make_client,
     assert app_data["approved_by"] == "MGR-002"
     assert frappe_mock.doc["notice_number_of_days"] == 60
 
-    # Step 3: Rollback by manager 2 (or fresh manager)
-    resp_rb = client.post(
+    # Step 3: Rollback request by manager 2
+    resp_req = client.post(
         f"/v1/writeback/proposals/{proposal_id}/rollback",
         headers=bearer(tenant="acme", sub="MGR-002", roles=["hr_manager"], iat=NOW),
+    )
+    assert resp_req.status_code == 202
+    assert resp_req.json()["status"] == "ROLLBACK_PENDING"
+
+    # Step 3b: Rollback execution by manager 3 (different person)
+    resp_rb = client.post(
+        f"/v1/writeback/proposals/{proposal_id}/rollback",
+        headers=bearer(tenant="acme", sub="MGR-003", roles=["hr_manager"], iat=NOW),
     )
     assert resp_rb.status_code == 200
     rb_data = resp_rb.json()
@@ -1247,12 +1263,20 @@ def test_e2e_writeback_concurrency_conflict_on_rollback_409(make_client, bearer,
     )
     assert resp_app.status_code == 200
 
+    # Request rollback
+    resp_req = client.post(
+        f"/v1/writeback/proposals/{proposal_id}/rollback",
+        headers=bearer(tenant="acme", sub="MGR-002", roles=["hr_manager"], iat=NOW),
+    )
+    assert resp_req.status_code == 202
+
     # External modification occurs post-approve
     frappe_mock.touch()
 
+    # Rollback execution by different user -> ROLLBACK_CONFLICT
     resp_rb = client.post(
         f"/v1/writeback/proposals/{proposal_id}/rollback",
-        headers=bearer(tenant="acme", sub="MGR-002", roles=["hr_manager"], iat=NOW),
+        headers=bearer(tenant="acme", sub="MGR-003", roles=["hr_manager"], iat=NOW),
     )
     assert resp_rb.status_code == 409
     assert resp_rb.json()["error"] == "ROLLBACK_CONFLICT"
@@ -1285,10 +1309,17 @@ def test_e2e_writeback_idempotency(make_client, bearer, frappe_mock):
     assert resp_app2.json() == resp_app1.json()
     assert len(frappe_mock.puts) == puts_count_after_approve  # no second PUT
 
-    # First rollback
-    resp_rb1 = client.post(
+    # Request rollback
+    resp_req = client.post(
         f"/v1/writeback/proposals/{proposal_id}/rollback",
         headers=bearer(tenant="acme", sub="MGR-002", roles=["hr_manager"], iat=NOW),
+    )
+    assert resp_req.status_code == 202
+
+    # Execute rollback by different user
+    resp_rb1 = client.post(
+        f"/v1/writeback/proposals/{proposal_id}/rollback",
+        headers=bearer(tenant="acme", sub="MGR-003", roles=["hr_manager"], iat=NOW),
     )
     assert resp_rb1.status_code == 200
     puts_count_after_rollback = len(frappe_mock.puts)
@@ -1296,7 +1327,7 @@ def test_e2e_writeback_idempotency(make_client, bearer, frappe_mock):
     # Second rollback -> idempotent
     resp_rb2 = client.post(
         f"/v1/writeback/proposals/{proposal_id}/rollback",
-        headers=bearer(tenant="acme", sub="MGR-002", roles=["hr_manager"], iat=NOW),
+        headers=bearer(tenant="acme", sub="MGR-003", roles=["hr_manager"], iat=NOW),
     )
     assert resp_rb2.status_code == 200
     assert resp_rb2.json() == resp_rb1.json()

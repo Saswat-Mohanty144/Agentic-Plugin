@@ -113,7 +113,8 @@ def _slip_for(basic, period):
 
 async def _calc(store, basic, period):
     svc = service(FrappeMock(slips=[_slip_for(basic, period)]), store=store)
-    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin1")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin2")
     return svc, await svc.calculate_pf("acme", EMP, period, "IN")
 
 
@@ -160,7 +161,8 @@ async def test_currency_must_match_jurisdiction(env, tmp_path):
     data["tenants"][0]["currency"] = "AED"
     env.setenv("HRMS_PAYROLL_RULES", str(write(tmp_path, "rules.yaml", data)))
     svc = service(FrappeMock(slips=[slip(currency="AED")]))
-    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip(currency="AED")), approved_by="a")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip(currency="AED")), approved_by="a1")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip(currency="AED")), approved_by="a2")
     result = await svc.calculate_pf("acme", EMP, "2026-09", "IN")
     assert result["error"] == "INCONSISTENT_PAYLOAD" and "does not match jurisdiction IN" in result["detail"]
 

@@ -208,7 +208,7 @@ class WritebackProposalRequest(BaseModel):
 WRITEBACK_STATUS = {
     "NOT_FOUND": 404, "FIELD_NOT_WRITABLE": 422, "INVALID_VALUE": 422, "NO_CHANGE": 422, "CONFLICT": 409,
     "ROLLBACK_CONFLICT": 409, "ROLLBACK_UNAVAILABLE": 409, "EXPIRED": 409, "INVALID_STATE": 409, "SAME_PERSON": 403,
-    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502, "VENDOR_NOT_SUPPORTED": 409,
+    "HOST_NOT_CONFIGURED": 503, "HOST_ERROR": 502, "VENDOR_NOT_SUPPORTED": 409, "AUDIT_SIGNING_NOT_CONFIGURED": 503,
 }
 
 
@@ -553,7 +553,14 @@ def approve_schema_fingerprint(
     ),
 ):
     record = payroll_service.approve_fingerprint(auth.tenant_id, req.vendor, req.doctype, req.fingerprint, auth.user_id)
-    return {"tenant_id": auth.tenant_id, "vendor": req.vendor, "doctype": req.doctype, **record}
+    if "error" in record:
+        if record["error"] == "SAME_PERSON":
+            raise ApiError(403, {"error": "SAME_PERSON"})
+        raise ApiError(400, record)
+    res = {"tenant_id": auth.tenant_id, "vendor": req.vendor, "doctype": req.doctype, **record}
+    if record.get("status") == "PENDING_CONFIRMATION":
+        return JSONResponse(status_code=202, content=res)
+    return res
 
 
 @router.get("/v1/schema/fingerprints/quarantine")
@@ -578,7 +585,10 @@ async def approve_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH
 
 @router.post("/v1/writeback/proposals/{proposal_id}/rollback")
 async def rollback_writeback(proposal_id: str, auth: AuthContext = Depends(_FRESH_MUTATE)):
-    return await writeback_service.rollback(auth, proposal_id)
+    res = await writeback_service.rollback(auth, proposal_id)
+    if res.get("status") == "ROLLBACK_PENDING":
+        return JSONResponse(status_code=202, content=res)
+    return res
 
 
 class ApproveMappingRequest(BaseModel):
@@ -741,8 +751,29 @@ def approve_requisition_shape(req: ShapeApproveRequest, auth: AuthContext = Depe
     observed = _storage.get("observed_shapes", key)
     if observed is None or observed["fingerprint"] != req.fingerprint:
         raise ApiError(409, {"error": "FINGERPRINT_NOT_OBSERVED"})
-    record = {**observed, "approved_by": auth.user_id, "approved_at": time.time()}
+
+    pending = _storage.get("pending_shapes", key)
+    if not pending or pending.get("fingerprint") != req.fingerprint:
+        pending_record = {
+            "fingerprint": req.fingerprint,
+            "requested_by": auth.user_id,
+            "requested_at": time.time(),
+        }
+        _storage.set("pending_shapes", key, pending_record)
+        return JSONResponse(status_code=202, content={"status": "PENDING_CONFIRMATION", **pending_record})
+
+    if pending.get("requested_by") == auth.user_id:
+        raise ApiError(403, {"error": "SAME_PERSON"})
+
+    record = {
+        **observed,
+        "approved_by": auth.user_id,
+        "approved_at": time.time(),
+        "requested_by": pending["requested_by"],
+        "requested_at": pending.get("requested_at"),
+    }
     _storage.set("approved_shapes", key, record)
+    _storage.delete("pending_shapes", key)
     return {"status": "APPROVED", "fingerprint": req.fingerprint}
 
 
@@ -771,6 +802,8 @@ def execute_remediation(
 ):
     """Issue host audit attribution headers for a reviewed remediation. This endpoint writes NOTHING to the host:
     changes are made only through /v1/writeback/proposals, approved by a different person (piece F2, agy D-F2)."""
+    if not audit_gateway.is_configured():
+        raise ApiError(503, {"error": "AUDIT_SIGNING_NOT_CONFIGURED"})
     # Generate Host Audit Attribution Headers
     headers = audit_gateway.create_attribution_headers(
         tenant_id=auth.tenant_id,
@@ -1071,7 +1104,10 @@ async def _voice_upstream_error_handler(request: Request, exc: VoiceUpstreamErro
 
 async def _writeback_error_handler(_request: Request, exc: WritebackError) -> JSONResponse:
     status = WRITEBACK_STATUS.get(exc.code, 500)
-    return JSONResponse(status_code=status, content={"error": exc.code, "detail": exc.detail})
+    content = {"error": exc.code}
+    if exc.detail:
+        content["detail"] = exc.detail
+    return JSONResponse(status_code=status, content=content)
 
 
 async def _llm_not_allowed_handler(_request: Request, _exc: LlmNotAllowed) -> JSONResponse:

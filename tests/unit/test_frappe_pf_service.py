@@ -74,7 +74,8 @@ def service(mock, store=None):
 
 async def approved_service(mock):
     svc = service(mock)
-    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin1")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin2")
     return svc
 
 
@@ -203,7 +204,8 @@ async def test_drift_quarantines_without_payload(env):
     drifted["gross_pay"] = str(drifted["gross_pay"])  # host changed a number to a string
     store = MemoryKeyValueStore()
     svc = service(FrappeMock([drifted]), store)
-    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin1")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(slip()), approved_by="admin2")
     result = await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN")
     assert result["error"] == "SCHEMA_DRIFT" and "employee_contribution" not in result
     rows = svc.list_quarantine("acme")
@@ -216,7 +218,8 @@ async def test_drift_quarantines_without_payload(env):
 async def test_validation_errors_surface_as_codes(env):
     bad = slip(currency="AED")
     svc = service(FrappeMock([bad]))
-    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin1")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin2")
     assert (await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN"))["error"] == "INCONSISTENT_PAYLOAD"
 
 
@@ -269,8 +272,14 @@ def test_approve_endpoint_requires_manage_schema_and_fresh_token(make_client, be
     )
     stale = bearer(roles=["platform_admin"], iat=NOW - 301)
     assert client.post("/v1/schema/fingerprints/approve", json=body, headers=stale).status_code == 401
-    ok = client.post("/v1/schema/fingerprints/approve", json=body, headers=bearer(roles=["platform_admin"], sub="adm"))
-    assert ok.status_code == 200 and ok.json()["approved_by"] == "adm"
+    ok1 = client.post(
+        "/v1/schema/fingerprints/approve", json=body, headers=bearer(roles=["platform_admin"], sub="adm1")
+    )
+    assert ok1.status_code == 202 and ok1.json()["status"] == "PENDING_CONFIRMATION"
+    ok = client.post(
+        "/v1/schema/fingerprints/approve", json=body, headers=bearer(roles=["platform_admin"], sub="adm2")
+    )
+    assert ok.status_code == 200 and ok.json()["approved_by"] == "adm2"
 
 
 @pytest.mark.parametrize(
@@ -362,6 +371,7 @@ def test_quarantine_listing_returns_rows(make_client, bearer):
 async def test_currency_check_is_what_fails_not_the_employee_check(env):
     bad = slip(currency="AED")
     svc = service(FrappeMock([bad]))
-    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin1")
+    svc.approve_fingerprint("acme", "frappe", "Salary Slip", slip_fingerprint(bad), approved_by="admin2")
     result = await svc.calculate_pf("acme", "HR-EMP-00001", "2026-09", "IN")
     assert result["error"] == "INCONSISTENT_PAYLOAD" and "currency" in result["detail"]

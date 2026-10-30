@@ -51,6 +51,27 @@ def keys():
     return _KEYS
 
 
+@pytest.fixture(scope="session", autouse=True)
+def audit_signing_env(tmp_path_factory):
+    """Session-wide Ed25519 audit signing key (piece D7). Tests unset via monkeypatch for unconfigured cases."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    key_dir = tmp_path_factory.mktemp("audit_signing_key")
+    key_file = key_dir / "audit_ed25519.pem"
+    priv_key = Ed25519PrivateKey.generate()
+    pem = priv_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    key_file.write_bytes(pem)
+    key_id = "test-session-audit-key-1"
+    os.environ["HRMS_AUDIT_SIGNING_KEY_FILE"] = str(key_file)
+    os.environ["HRMS_AUDIT_KEY_ID"] = key_id
+    yield {"key_file": str(key_file), "key_id": key_id, "private_key": priv_key}
+
+
 @pytest.fixture
 def registry():
     from hrms_plugin.security.tenant_registry import load_registry
