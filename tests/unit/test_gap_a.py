@@ -141,7 +141,7 @@ def test_leave_apply_missing_inputs(supervisor):
     assert resp.confidence_score == 0.0
     assert resp.structured_data == {
         "error": "MISSING_INPUT",
-        "missing": ["employee_id", "requested_days", "current_balance"],
+        "missing": ["employee_id", "leave_type", "requested_days", "current_balance"],
     }
     assert _has_no_figures(resp.reply_text)
 
@@ -306,7 +306,10 @@ def test_offboarding_missing_inputs(supervisor):
     )
     assert resp_clr.intent == UserIntent.OFFBOARDING_FNF
     assert resp_clr.confidence_score == 0.0
-    assert resp_clr.structured_data == {"error": "MISSING_INPUT", "missing": ["employee_id", "employee_name"]}
+    assert resp_clr.structured_data == {
+        "error": "MISSING_INPUT",
+        "missing": ["employee_id", "employee_name", "returned_assets", "pending_assets", "finance_cleared"],
+    }
     assert _has_no_figures(resp_clr.reply_text)
 
     # 7c. Final settlement calculation
@@ -320,7 +323,15 @@ def test_offboarding_missing_inputs(supervisor):
     assert resp_fnf.confidence_score == 0.0
     assert resp_fnf.structured_data == {
         "error": "MISSING_INPUT",
-        "missing": ["employee_id", "employee_name", "basic_wage_monthly", "gross_wage_monthly", "tenure_years"],
+        "missing": [
+            "employee_id",
+            "employee_name",
+            "basic_wage_monthly",
+            "gross_wage_monthly",
+            "tenure_years",
+            "unused_leave_days",
+            "unpaid_work_days",
+        ],
     }
     assert _has_no_figures(resp_fnf.reply_text)
 
@@ -335,6 +346,8 @@ def test_offboarding_missing_inputs(supervisor):
             "basic_wage_monthly": 12000.0,
             "gross_wage_monthly": 20000.0,
             "tenure_years": 3.0,
+            "unused_leave_days": 0.0,
+            "unpaid_work_days": 0,
         },
     )
     assert resp_fnf_ok.confidence_score > 0.0
@@ -354,7 +367,7 @@ def test_travel_expense_missing_inputs(supervisor):
     assert resp.confidence_score == 0.0
     assert resp.structured_data == {
         "error": "MISSING_INPUT",
-        "missing": ["claim_id", "employee_id", "expenses"],
+        "missing": ["claim_id", "employee_id", "expenses", "tier", "has_approved_travel_request"],
     }
     assert _has_no_figures(resp.reply_text)
 
@@ -367,6 +380,8 @@ def test_travel_expense_missing_inputs(supervisor):
             "claim_id": "CLM-55",
             "employee_id": "EMP-TRV",
             "expenses": [{"id": "EXP-1", "category": "MEAL", "amount": "1500.00", "has_receipt": True}],
+            "tier": "METRO",
+            "has_approved_travel_request": True,
         },
     )
     assert resp_ok.confidence_score > 0.0
@@ -379,6 +394,7 @@ def test_no_reply_contains_invented_figures_when_context_is_empty(supervisor):
         ("Calculate salary structure for employee", Jurisdiction.INDIA),
         ("Calculate salary structure for employee", Jurisdiction.UAE),
         ("Calculate UAE end of service gratuity", Jurisdiction.UAE),
+        ("Run statutory compliance audit for employees", Jurisdiction.INDIA),
         ("Apply leave for 3 days", Jurisdiction.INDIA),
         ("Check impossible travel punch anomaly", Jurisdiction.INDIA),
         ("Match candidate resume and give ats score", Jurisdiction.INDIA),
@@ -396,6 +412,7 @@ def test_no_reply_contains_invented_figures_when_context_is_empty(supervisor):
         assert "1200000" not in resp.reply_text, f"1200000 found in reply for {msg}: {resp.reply_text}"
         assert "15000" not in resp.reply_text, f"15000 found in reply for {msg}: {resp.reply_text}"
         assert "3.5" not in resp.reply_text, f"3.5 found in reply for {msg}: {resp.reply_text}"
+        assert "Engineering" not in resp.reply_text, f"Engineering found in reply for {msg}: {resp.reply_text}"
         if resp.structured_data and resp.structured_data.get("error") == "MISSING_INPUT":
             assert _has_no_figures(resp.reply_text), f"Figures found in missing input reply: {resp.reply_text}"
 
@@ -456,3 +473,338 @@ def test_http_chat_non_agentic_missing_input_and_supplied(make_client, bearer):
     assert _has_no_figures(data_eosb["reply_text"])
     assert "15000" not in data_eosb["reply_text"]
     assert "3.5" not in data_eosb["reply_text"]
+
+
+# 11. Compliance Audit Missing Inputs
+def test_compliance_audit_missing_inputs(supervisor):
+    # Empty context
+    resp_empty = supervisor.process_message(
+        message="Run statutory compliance audit for employees",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={},
+    )
+    assert resp_empty.intent == UserIntent.COMPLIANCE_AUDIT
+    assert resp_empty.routed_agent == "ComplianceAgent"
+    assert resp_empty.confidence_score == 0.0
+    assert resp_empty.structured_data == {"error": "MISSING_INPUT", "missing": ["employees"]}
+    assert _has_no_figures(resp_empty.reply_text)
+
+    # Empty list
+    resp_list = supervisor.process_message(
+        message="Run statutory compliance audit for employees",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"employees": []},
+    )
+    assert resp_list.confidence_score == 0.0
+    assert resp_list.structured_data == {"error": "MISSING_INPUT", "missing": ["employees"]}
+
+    # None value
+    resp_none = supervisor.process_message(
+        message="Run statutory compliance audit for employees",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"employees": None},
+    )
+    assert resp_none.confidence_score == 0.0
+    assert resp_none.structured_data == {"error": "MISSING_INPUT", "missing": ["employees"]}
+
+    # Supplied employee records
+    resp_ok = supervisor.process_message(
+        message="Run statutory compliance audit for employees",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"employees": [{"employee_id": "EMP-01", "basic_salary": 25000.0, "gross_salary": 50000.0}]},
+    )
+    assert resp_ok.confidence_score > 0.0
+    assert "is_compliant" in resp_ok.structured_data
+
+
+# 12. Leave Apply Leave Type Required
+def test_leave_apply_leave_type_required(supervisor):
+    # Missing leave_type when others provided
+    resp_no_lt = supervisor.process_message(
+        message="Apply leave for vacation request",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"employee_id": "EMP-001", "requested_days": 2.0, "current_balance": 10.0},
+    )
+    assert resp_no_lt.confidence_score == 0.0
+    assert resp_no_lt.structured_data == {"error": "MISSING_INPUT", "missing": ["leave_type"]}
+    assert _has_no_figures(resp_no_lt.reply_text)
+
+    # leave_type is None
+    resp_none = supervisor.process_message(
+        message="Apply leave for vacation request",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"employee_id": "EMP-001", "requested_days": 2.0, "current_balance": 10.0, "leave_type": None},
+    )
+    assert resp_none.confidence_score == 0.0
+    assert resp_none.structured_data == {"error": "MISSING_INPUT", "missing": ["leave_type"]}
+
+    # Supplied leave_type works
+    resp_ok = supervisor.process_message(
+        message="Apply leave for vacation request",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"employee_id": "EMP-001", "requested_days": 2.0, "current_balance": 10.0, "leave_type": "CASUAL"},
+    )
+    assert resp_ok.confidence_score > 0.0
+    assert resp_ok.structured_data["leave_type"] == "CASUAL"
+
+
+# 13. Exit Clearance Invented Defaults Removed
+def test_exit_clearance_invented_defaults_removed(supervisor):
+    # Missing finance_cleared
+    resp_no_fin = supervisor.process_message(
+        message="Process exit clearance for offboard employee",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context={"employee_id": "EMP-01", "employee_name": "Sara", "returned_assets": [], "pending_assets": []},
+    )
+    assert resp_no_fin.confidence_score == 0.0
+    assert resp_no_fin.structured_data == {"error": "MISSING_INPUT", "missing": ["finance_cleared"]}
+
+    # Missing returned_assets
+    resp_no_ret = supervisor.process_message(
+        message="Process exit clearance for offboard employee",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context={"employee_id": "EMP-01", "employee_name": "Sara", "pending_assets": [], "finance_cleared": True},
+    )
+    assert resp_no_ret.confidence_score == 0.0
+    assert resp_no_ret.structured_data == {"error": "MISSING_INPUT", "missing": ["returned_assets"]}
+
+    # Missing pending_assets
+    resp_no_pend = supervisor.process_message(
+        message="Process exit clearance for offboard employee",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context={"employee_id": "EMP-01", "employee_name": "Sara", "returned_assets": [], "finance_cleared": True},
+    )
+    assert resp_no_pend.confidence_score == 0.0
+    assert resp_no_pend.structured_data == {"error": "MISSING_INPUT", "missing": ["pending_assets"]}
+
+    # Boundary: finance_cleared=False is a valid boolean value
+    resp_fin_false = supervisor.process_message(
+        message="Process exit clearance for offboard employee",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context={"employee_id": "EMP-01", "employee_name": "Sara", "returned_assets": [], "pending_assets": [],
+                 "finance_cleared": False},
+    )
+    assert resp_fin_false.confidence_score > 0.0
+    assert resp_fin_false.structured_data["is_fully_cleared"] is False
+
+    # Department optional: when omitted, never invent "Engineering"
+    resp_no_dept = supervisor.process_message(
+        message="Process exit clearance for offboard employee",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context={
+            "employee_id": "EMP-01",
+            "employee_name": "Sara",
+            "returned_assets": ["Badge"],
+            "pending_assets": [],
+            "finance_cleared": True,
+        },
+    )
+    assert resp_no_dept.confidence_score > 0.0
+    assert resp_no_dept.structured_data["is_fully_cleared"] is True
+    assert "Engineering" not in (resp_no_dept.structured_data.get("relieving_letter_draft") or "")
+
+    # Department supplied: included in relieving letter
+    resp_dept = supervisor.process_message(
+        message="Process exit clearance for offboard employee",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context={
+            "employee_id": "EMP-01",
+            "employee_name": "Sara",
+            "returned_assets": ["Badge"],
+            "pending_assets": [],
+            "finance_cleared": True,
+            "department": "Finance",
+        },
+    )
+    assert resp_dept.confidence_score > 0.0
+    assert "Finance" in (resp_dept.structured_data.get("relieving_letter_draft") or "")
+
+
+# 14. Final Settlement Unused Leave and Unpaid Work Days Required
+def test_final_settlement_unused_leave_and_unpaid_work_days_required(supervisor):
+    base_ctx = {
+        "employee_id": "EMP-01",
+        "employee_name": "Tariq",
+        "basic_wage_monthly": 12000.0,
+        "gross_wage_monthly": 20000.0,
+        "tenure_years": 3.0,
+    }
+    # Missing both
+    resp_both = supervisor.process_message(
+        message="Calculate final settlement fnf for employee resignation",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context=base_ctx,
+    )
+    assert resp_both.confidence_score == 0.0
+    assert resp_both.structured_data == {
+        "error": "MISSING_INPUT",
+        "missing": ["unused_leave_days", "unpaid_work_days"],
+    }
+
+    # Missing unused_leave_days only
+    ctx_no_leave = dict(base_ctx, unpaid_work_days=0)
+    resp_no_leave = supervisor.process_message(
+        message="Calculate final settlement fnf for employee resignation",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context=ctx_no_leave,
+    )
+    assert resp_no_leave.confidence_score == 0.0
+    assert resp_no_leave.structured_data == {"error": "MISSING_INPUT", "missing": ["unused_leave_days"]}
+
+    # Missing unpaid_work_days only
+    ctx_no_unpaid = dict(base_ctx, unused_leave_days=5.0)
+    resp_no_unpaid = supervisor.process_message(
+        message="Calculate final settlement fnf for employee resignation",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context=ctx_no_unpaid,
+    )
+    assert resp_no_unpaid.confidence_score == 0.0
+    assert resp_no_unpaid.structured_data == {"error": "MISSING_INPUT", "missing": ["unpaid_work_days"]}
+
+    # Boundary: 0 and 0.0 are valid supplied values
+    ctx_zeros = dict(base_ctx, unused_leave_days=0.0, unpaid_work_days=0)
+    resp_zeros = supervisor.process_message(
+        message="Calculate final settlement fnf for employee resignation",
+        jurisdiction=Jurisdiction.UAE,
+        auth=ADMIN,
+        context=ctx_zeros,
+    )
+    assert resp_zeros.confidence_score > 0.0
+    assert "total_net_payable" in resp_zeros.structured_data
+
+
+# 15. Onboarding Provisioning Department Optional Not Invented
+def test_onboarding_provisioning_department_optional_not_invented(supervisor):
+    # Department omitted -> structured_data["department"] is None, never "Engineering"
+    resp_no_dept = supervisor.process_message(
+        message="Generate provision plan for new hire",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={"candidate_name": "Rashid", "employee_id": "EMP-900", "role": "DevOps Engineer"},
+    )
+    assert resp_no_dept.confidence_score > 0.0
+    assert resp_no_dept.structured_data.get("department") is None
+    assert "Engineering" not in resp_no_dept.reply_text
+
+    # Department supplied -> preserved
+    resp_dept = supervisor.process_message(
+        message="Generate provision plan for new hire",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={
+            "candidate_name": "Rashid",
+            "employee_id": "EMP-900",
+            "role": "DevOps Engineer",
+            "department": "Infrastructure",
+        },
+    )
+    assert resp_dept.confidence_score > 0.0
+    assert resp_dept.structured_data.get("department") == "Infrastructure"
+
+
+# 16. Travel Expense Tier and Pre-auth Required
+def test_travel_expense_tier_and_preauth_required(supervisor):
+    base_ctx = {
+        "claim_id": "CLM-55",
+        "employee_id": "EMP-TRV",
+        "expenses": [{"id": "EXP-1", "category": "MEAL", "amount": "1500.00", "has_receipt": True}],
+    }
+    # Missing both tier and has_approved_travel_request
+    resp_both = supervisor.process_message(
+        message="Audit travel expense claim and reimbursement claim",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context=base_ctx,
+    )
+    assert resp_both.confidence_score == 0.0
+    assert resp_both.structured_data == {
+        "error": "MISSING_INPUT",
+        "missing": ["tier", "has_approved_travel_request"],
+    }
+
+    # Missing tier only
+    resp_no_tier = supervisor.process_message(
+        message="Audit travel expense claim and reimbursement claim",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context=dict(base_ctx, has_approved_travel_request=True),
+    )
+    assert resp_no_tier.confidence_score == 0.0
+    assert resp_no_tier.structured_data == {"error": "MISSING_INPUT", "missing": ["tier"]}
+
+    # Missing has_approved_travel_request only
+    resp_no_preauth = supervisor.process_message(
+        message="Audit travel expense claim and reimbursement claim",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context=dict(base_ctx, tier="METRO"),
+    )
+    assert resp_no_preauth.confidence_score == 0.0
+    assert resp_no_preauth.structured_data == {"error": "MISSING_INPUT", "missing": ["has_approved_travel_request"]}
+
+    # Boundary: has_approved_travel_request=False is valid (disallows flights/hotels)
+    resp_unapproved = supervisor.process_message(
+        message="Audit travel expense claim and reimbursement claim",
+        jurisdiction=Jurisdiction.INDIA,
+        auth=ADMIN,
+        context={
+            "claim_id": "CLM-55",
+            "employee_id": "EMP-TRV",
+            "expenses": [{"id": "EXP-1", "category": "FLIGHT", "amount": "5000.00", "has_receipt": True}],
+            "tier": "METRO",
+            "has_approved_travel_request": False,
+        },
+    )
+    assert resp_unapproved.confidence_score > 0.0
+    assert resp_unapproved.structured_data["is_fully_approved"] is False
+
+
+# 17. HTTP non-agentic endpoint checks for compliance and clearance missing inputs
+def test_http_chat_compliance_and_clearance_missing_input(make_client, bearer):
+    client = make_client()
+    headers = bearer(roles=["hr_manager"])
+
+    # Compliance audit missing employees
+    res_comp = client.post(
+        "/v1/chat",
+        headers=headers,
+        json={"message": "Run statutory compliance audit for employees", "jurisdiction": "IN", "agentic": False,
+              "context": {}},
+    )
+    assert res_comp.status_code == 200
+    data_comp = res_comp.json()
+    assert data_comp["confidence_score"] == 0.0
+    assert data_comp["structured_data"] == {"error": "MISSING_INPUT", "missing": ["employees"]}
+
+    # Exit clearance missing inputs
+    res_clr = client.post(
+        "/v1/chat",
+        headers=headers,
+        json={"message": "Process exit clearance for offboard employee", "jurisdiction": "AE", "agentic": False,
+              "context": {}},
+    )
+    assert res_clr.status_code == 200
+    data_clr = res_clr.json()
+    assert data_clr["confidence_score"] == 0.0
+    assert data_clr["structured_data"] == {
+        "error": "MISSING_INPUT",
+        "missing": ["employee_id", "employee_name", "returned_assets", "pending_assets", "finance_cleared"],
+    }
+    assert _has_no_figures(data_clr["reply_text"])
+    assert "Engineering" not in data_clr["reply_text"]

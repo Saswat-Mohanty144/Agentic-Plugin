@@ -85,7 +85,11 @@ def test_compliance_audit_uses_token_tenant_not_context(monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(agent.compliance_agent, "audit_employees", spy)
-    resp = agent.process_message("run compliance audit", context={"tenant_id": "malicious_corp"}, auth=auth(R.HR_ADMIN))
+    resp = agent.process_message(
+        "run compliance audit",
+        context={"employees": [{"employee_id": "EMP-01"}], "tenant_id": "malicious_corp"},
+        auth=auth(R.HR_ADMIN),
+    )
     assert seen["tenant_id"] == "acme"
     assert "malicious_corp" not in resp.reply_text
 
@@ -96,14 +100,18 @@ def test_compliance_audit_without_context_tenant_uses_token_tenant(monkeypatch):
     original = agent.compliance_agent.audit_employees
     monkeypatch.setattr(agent.compliance_agent, "audit_employees",
                         lambda *a, **k: seen.setdefault("tenant_id", k.get("tenant_id")) and original(*a, **k))
-    agent.process_message("run compliance audit", context={}, auth=auth(R.HR_ADMIN))
+    agent.process_message(
+        "run compliance audit",
+        context={"employees": [{"employee_id": "EMP-01"}]},
+        auth=auth(R.HR_ADMIN),
+    )
     assert seen["tenant_id"] == "acme"
 
 
 def test_http_non_agentic_audit_ignores_context_tenant(make_client, bearer):
     res = make_client().post("/v1/chat", headers=bearer(roles=["hr_manager"]), json={
         "message": "run compliance audit", "jurisdiction": "IN", "agentic": False,
-        "context": {"tenant_id": "malicious_corp"}})
+        "context": {"employees": [{"employee_id": "EMP-01"}], "tenant_id": "malicious_corp"}})
     assert res.status_code == 200
     assert "malicious_corp" not in res.json()["reply_text"]
     assert "acme" in res.json()["reply_text"]

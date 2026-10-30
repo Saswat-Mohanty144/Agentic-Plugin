@@ -1064,7 +1064,13 @@ def test_supervisor_agent_routing_and_uncovered_paths():
     clr_res = supervisor.process_message(
         message="Process exit clearance for offboard employee",
         jurisdiction=Jurisdiction.UAE,
-        context={"employee_id": "EMP-500", "employee_name": "Rashid", "finance_cleared": True},
+        context={
+            "employee_id": "EMP-500",
+            "employee_name": "Rashid",
+            "returned_assets": ["Badge"],
+            "pending_assets": [],
+            "finance_cleared": True,
+        },
         auth=HR_MGR_AUTH,
     )
     assert clr_res.intent == UserIntent.OFFBOARDING_FNF

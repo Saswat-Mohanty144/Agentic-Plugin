@@ -216,3 +216,252 @@ FAILED tests/unit/test_gap_a.py::test_travel_expense_missing_inputs - Asserti...
 FAILED tests/unit/test_gap_a.py::test_no_reply_contains_invented_figures_when_context_is_empty
 FAILED tests/unit/test_gap_a.py::test_http_chat_non_agentic_missing_input_and_supplied
 10 failed in 0.95s
+..F...FF..FFFFFFF                                                        [100%]
+=================================== FAILURES ===================================
+_______________________ test_leave_apply_missing_inputs ________________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x1142691d0>
+
+    def test_leave_apply_missing_inputs(supervisor):
+        resp = supervisor.process_message(
+            message="Apply leave for vacation request",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.LEAVE_APPLY
+        assert resp.routed_agent == "LeaveAttendanceAgent"
+        assert resp.confidence_score == 0.0
+>       assert resp.structured_data == {
+            "error": "MISSING_INPUT",
+            "missing": ["employee_id", "leave_type", "requested_days", "current_balance"],
+        }
+E       AssertionError: assert {'error': 'MI...ent_balance']} == {'error': 'MI...ent_balance']}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'missing': ['employee_id', 'requested_days', 'current_balance']} != {'missing': ['employee_id', 'leave_type', 'requested_days', 'current_balance']}
+E         Use -v to get more diff
+
+tests/unit/test_gap_a.py:142: AssertionError
+_______________________ test_offboarding_missing_inputs ________________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x1142696d0>
+
+    def test_offboarding_missing_inputs(supervisor):
+        # 7a. Article 53 settlement timeline
+        resp_timeline = supervisor.process_message(
+            message="Check Article 53 statutory settlement timeline deadline",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp_timeline.intent == UserIntent.OFFBOARDING_FNF
+        assert resp_timeline.routed_agent == "OffboardingAgent"
+        assert resp_timeline.confidence_score == 0.0
+        assert resp_timeline.structured_data == {
+            "error": "MISSING_INPUT",
+            "missing": ["employee_id", "employee_name", "last_working_day"],
+        }
+        assert _has_no_figures(resp_timeline.reply_text)
+    
+        # 7b. Exit clearance
+        resp_clr = supervisor.process_message(
+            message="Process exit clearance for offboard employee",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp_clr.intent == UserIntent.OFFBOARDING_FNF
+        assert resp_clr.confidence_score == 0.0
+>       assert resp_clr.structured_data == {
+            "error": "MISSING_INPUT",
+            "missing": ["employee_id", "employee_name", "returned_assets", "pending_assets", "finance_cleared"],
+        }
+E       AssertionError: assert {'error': 'MI...ployee_name']} == {'error': 'MI...nce_cleared']}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'missing': ['employee_id', 'employee_name']} != {'missing': ['employee_id', 'employee_name', 'returned_assets', 'pending_assets', 'finance_cleared']}
+E         Use -v to get more diff
+
+tests/unit/test_gap_a.py:309: AssertionError
+______________________ test_travel_expense_missing_inputs ______________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x11426bf10>
+
+    def test_travel_expense_missing_inputs(supervisor):
+        resp = supervisor.process_message(
+            message="Audit travel expense claim and reimbursement claim",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp.intent == UserIntent.TRAVEL_EXPENSE
+        assert resp.routed_agent == "TravelExpenseAgent"
+        assert resp.confidence_score == 0.0
+>       assert resp.structured_data == {
+            "error": "MISSING_INPUT",
+            "missing": ["claim_id", "employee_id", "expenses", "tier", "has_approved_travel_request"],
+        }
+E       AssertionError: assert {'error': 'MI..., 'expenses']} == {'error': 'MI...vel_request']}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'missing': ['claim_id', 'employee_id', 'expenses']} != {'missing': ['claim_id', 'employee_id', 'expenses', 'tier', 'has_approved_travel_request']}
+E         Use -v to get more diff
+
+tests/unit/test_gap_a.py:368: AssertionError
+_____________________ test_compliance_audit_missing_inputs _____________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x1140017d0>
+
+    def test_compliance_audit_missing_inputs(supervisor):
+        # Empty context
+        resp_empty = supervisor.process_message(
+            message="Run statutory compliance audit for employees",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={},
+        )
+        assert resp_empty.intent == UserIntent.COMPLIANCE_AUDIT
+        assert resp_empty.routed_agent == "ComplianceAgent"
+>       assert resp_empty.confidence_score == 0.0
+E       AssertionError: assert 0.9 == 0.0
+E        +  where 0.9 = AgentResponse(intent=<UserIntent.COMPLIANCE_AUDIT: 'COMPLIANCE_AUDIT'>, routed_agent='ComplianceAgent', reply_text='Co...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:489: AssertionError
+_____________________ test_leave_apply_leave_type_required _____________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x114416cd0>
+
+    def test_leave_apply_leave_type_required(supervisor):
+        # Missing leave_type when others provided
+        resp_no_lt = supervisor.process_message(
+            message="Apply leave for vacation request",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={"employee_id": "EMP-001", "requested_days": 2.0, "current_balance": 10.0},
+        )
+>       assert resp_no_lt.confidence_score == 0.0
+E       AssertionError: assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.LEAVE_APPLY: 'LEAVE_APPLY'>, routed_agent='LeaveAttendanceAgent', reply_text='Leave a...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:533: AssertionError
+________________ test_exit_clearance_invented_defaults_removed _________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x115221950>
+
+    def test_exit_clearance_invented_defaults_removed(supervisor):
+        # Missing finance_cleared
+        resp_no_fin = supervisor.process_message(
+            message="Process exit clearance for offboard employee",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN,
+            context={"employee_id": "EMP-01", "employee_name": "Sara", "returned_assets": [], "pending_assets": []},
+        )
+>       assert resp_no_fin.confidence_score == 0.0
+E       AssertionError: assert 0.93 == 0.0
+E        +  where 0.93 = AgentResponse(intent=<UserIntent.OFFBOARDING_FNF: 'OFFBOARDING_FNF'>, routed_agent='OffboardingAgent', reply_text='Exi...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:567: AssertionError
+_______ test_final_settlement_unused_leave_and_unpaid_work_days_required _______
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x11520ffd0>
+
+    def test_final_settlement_unused_leave_and_unpaid_work_days_required(supervisor):
+        base_ctx = {
+            "employee_id": "EMP-01",
+            "employee_name": "Tariq",
+            "basic_wage_monthly": 12000.0,
+            "gross_wage_monthly": 20000.0,
+            "tenure_years": 3.0,
+        }
+        # Missing both
+        resp_both = supervisor.process_message(
+            message="Calculate final settlement fnf for employee resignation",
+            jurisdiction=Jurisdiction.UAE,
+            auth=ADMIN,
+            context=base_ctx,
+        )
+>       assert resp_both.confidence_score == 0.0
+E       AssertionError: assert 0.93 == 0.0
+E        +  where 0.93 = AgentResponse(intent=<UserIntent.OFFBOARDING_FNF: 'OFFBOARDING_FNF'>, routed_agent='OffboardingAgent', reply_text='Fin...meframe)'], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:652: AssertionError
+________ test_onboarding_provisioning_department_optional_not_invented _________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x11526bc90>
+
+    def test_onboarding_provisioning_department_optional_not_invented(supervisor):
+        # Department omitted -> structured_data["department"] is None, never "Engineering"
+        resp_no_dept = supervisor.process_message(
+            message="Generate provision plan for new hire",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context={"candidate_name": "Rashid", "employee_id": "EMP-900", "role": "DevOps Engineer"},
+        )
+        assert resp_no_dept.confidence_score > 0.0
+>       assert resp_no_dept.structured_data.get("department") is None
+E       AssertionError: assert 'Engineering' is None
+E        +  where 'Engineering' = <built-in method get of dict object at 0x1153146c0>('department')
+E        +    where <built-in method get of dict object at 0x1153146c0> = {'employee_id': 'EMP-900', 'employee_name': 'Rashid', 'department': 'Engineering', 'it_assets': ['Corporate Laptop (En...d SSD)', 'Security Access Keycard', 'Workstation Monitor & Peripherals', 'Hardware 2FA Security Token (YubiKey)'], ...}.get
+E        +      where {'employee_id': 'EMP-900', 'employee_name': 'Rashid', 'department': 'Engineering', 'it_assets': ['Corporate Laptop (En...d SSD)', 'Security Access Keycard', 'Workstation Monitor & Peripherals', 'Hardware 2FA Security Token (YubiKey)'], ...} = AgentResponse(intent=<UserIntent.ONBOARDING: 'ONBOARDING'>, routed_agent='OnboardingAgent', reply_text='Provisioning p...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).structured_data
+
+tests/unit/test_gap_a.py:702: AssertionError
+________________ test_travel_expense_tier_and_preauth_required _________________
+
+supervisor = <hrms_plugin.agents.supervisor.SupervisorAgent object at 0x1153b8dd0>
+
+    def test_travel_expense_tier_and_preauth_required(supervisor):
+        base_ctx = {
+            "claim_id": "CLM-55",
+            "employee_id": "EMP-TRV",
+            "expenses": [{"id": "EXP-1", "category": "MEAL", "amount": "1500.00", "has_receipt": True}],
+        }
+        # Missing both tier and has_approved_travel_request
+        resp_both = supervisor.process_message(
+            message="Audit travel expense claim and reimbursement claim",
+            jurisdiction=Jurisdiction.INDIA,
+            auth=ADMIN,
+            context=base_ctx,
+        )
+>       assert resp_both.confidence_score == 0.0
+E       AssertionError: assert 0.92 == 0.0
+E        +  where 0.92 = AgentResponse(intent=<UserIntent.TRAVEL_EXPENSE: 'TRAVEL_EXPENSE'>, routed_agent='TravelExpenseAgent', reply_text='Exp...tations=[], suggested_actions=[], thought_process=[], tool_calls=[], truncated=False, partial=False, history_trimmed=0).confidence_score
+
+tests/unit/test_gap_a.py:735: AssertionError
+____________ test_http_chat_compliance_and_clearance_missing_input _____________
+
+make_client = <function make_client.<locals>._make at 0x11522c7c0>
+bearer = <function bearer.<locals>._headers at 0x11522cae0>
+
+    def test_http_chat_compliance_and_clearance_missing_input(make_client, bearer):
+        client = make_client()
+        headers = bearer(roles=["hr_manager"])
+    
+        # Compliance audit missing employees
+        res_comp = client.post(
+            "/v1/chat",
+            headers=headers,
+            json={"message": "Run statutory compliance audit for employees", "jurisdiction": "IN", "agentic": False,
+                  "context": {}},
+        )
+        assert res_comp.status_code == 200
+        data_comp = res_comp.json()
+>       assert data_comp["confidence_score"] == 0.0
+E       assert 0.9 == 0.0
+
+tests/unit/test_gap_a.py:786: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_a.py::test_leave_apply_missing_inputs - AssertionE...
+FAILED tests/unit/test_gap_a.py::test_offboarding_missing_inputs - AssertionE...
+FAILED tests/unit/test_gap_a.py::test_travel_expense_missing_inputs - Asserti...
+FAILED tests/unit/test_gap_a.py::test_compliance_audit_missing_inputs - Asser...
+FAILED tests/unit/test_gap_a.py::test_leave_apply_leave_type_required - Asser...
+FAILED tests/unit/test_gap_a.py::test_exit_clearance_invented_defaults_removed
+FAILED tests/unit/test_gap_a.py::test_final_settlement_unused_leave_and_unpaid_work_days_required
+FAILED tests/unit/test_gap_a.py::test_onboarding_provisioning_department_optional_not_invented
+FAILED tests/unit/test_gap_a.py::test_travel_expense_tier_and_preauth_required
+FAILED tests/unit/test_gap_a.py::test_http_chat_compliance_and_clearance_missing_input
+10 failed, 7 passed in 0.81s

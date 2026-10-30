@@ -55,7 +55,7 @@ class DocumentChecklistResult(BaseModel):
 class ProvisioningPlanResult(BaseModel):
     employee_id: str
     employee_name: str
-    department: str
+    department: Optional[str] = None
     it_assets: List[str] = Field(default_factory=list)
     system_accounts: List[str] = Field(default_factory=list)
     buddy_assigned: Optional[str] = None
@@ -226,8 +226,8 @@ class OnboardingAgent:
         self,
         employee_id: str,
         employee_name: str,
-        department: str,
-        role: str,
+        department: Optional[str] = None,
+        role: str = "",
         buddy_name: Optional[str] = None,
     ) -> ProvisioningPlanResult:
         """Generate first-day hardware, IT accounts, and orientation scheduling plan."""

@@ -147,6 +147,15 @@ _MISSING_INPUT_FIELD_LABELS: Dict[str, str] = {
     "gross_wage_monthly": "monthly gross wage",
     "claim_id": "claim ID",
     "expenses": "expense items",
+    "employees": "employee records",
+    "leave_type": "leave type",
+    "returned_assets": "returned assets",
+    "pending_assets": "pending assets",
+    "finance_cleared": "finance clearance status",
+    "unused_leave_days": "unused leave days",
+    "unpaid_work_days": "unpaid work days",
+    "tier": "travel tier",
+    "has_approved_travel_request": "approved travel request status",
 }
 
 
@@ -286,7 +295,9 @@ class SupervisorAgent:
         # 3. Compliance Audit
         elif intent == UserIntent.COMPLIANCE_AUDIT:
             tenant_id = auth.tenant_id  # never from request context (agy F1)
-            employees = ctx.get("employees", [])
+            employees = ctx.get("employees")
+            if not employees:
+                return _missing_input_response(intent, "ComplianceAgent", ["employees"])
             audit_res = self.compliance_agent.audit_employees(
                 tenant_id=tenant_id, jurisdiction=jur, employees=employees
             )
@@ -320,6 +331,8 @@ class SupervisorAgent:
             missing = []
             if ctx.get("employee_id") is None:
                 missing.append("employee_id")
+            if ctx.get("leave_type") is None:
+                missing.append("leave_type")
             if ctx.get("requested_days") is None:
                 missing.append("requested_days")
             if ctx.get("current_balance") is None:
@@ -327,7 +340,7 @@ class SupervisorAgent:
             if missing:
                 return _missing_input_response(intent, "LeaveAttendanceAgent", missing)
             emp_id = str(ctx["employee_id"])
-            leave_type = str(ctx.get("leave_type", "ANNUAL"))
+            leave_type = str(ctx["leave_type"])
             req_days = float(ctx["requested_days"])
             cur_bal = float(ctx["current_balance"])
             leave_res = self.leave_agent.evaluate_leave_request(
@@ -465,7 +478,7 @@ class SupervisorAgent:
                     return _missing_input_response(intent, "OnboardingAgent", missing)
                 cand_name = str(ctx["candidate_name"])
                 emp_id = str(ctx["employee_id"])
-                dept = str(ctx.get("department", "Engineering"))
+                dept = str(ctx["department"]) if ctx.get("department") is not None else None
                 role = str(ctx["role"])
                 buddy = ctx.get("buddy_name")
                 prov_res = self.onboarding_agent.generate_provisioning_plan(
@@ -563,14 +576,20 @@ class SupervisorAgent:
                     missing.append("employee_id")
                 if ctx.get("employee_name") is None:
                     missing.append("employee_name")
+                if ctx.get("returned_assets") is None:
+                    missing.append("returned_assets")
+                if ctx.get("pending_assets") is None:
+                    missing.append("pending_assets")
+                if ctx.get("finance_cleared") is None:
+                    missing.append("finance_cleared")
                 if missing:
                     return _missing_input_response(intent, "OffboardingAgent", missing)
                 emp_id = str(ctx["employee_id"])
                 emp_name = str(ctx["employee_name"])
-                dept = str(ctx.get("department", "Engineering"))
-                returned = ctx.get("returned_assets", [])
-                pending = ctx.get("pending_assets", [])
-                fin_cleared = bool(ctx.get("finance_cleared", True))
+                dept = str(ctx["department"]) if ctx.get("department") is not None else None
+                returned = list(ctx["returned_assets"])
+                pending = list(ctx["pending_assets"])
+                fin_cleared = bool(ctx["finance_cleared"])
                 clr_res = self.offboarding_agent.evaluate_exit_clearance(
                     employee_id=emp_id,
                     employee_name=emp_name,
@@ -607,6 +626,10 @@ class SupervisorAgent:
                 tenure_val = ctx.get("tenure_years") if ctx.get("tenure_years") is not None else ctx.get("tenure")
                 if tenure_val is None:
                     missing.append("tenure_years")
+                if ctx.get("unused_leave_days") is None:
+                    missing.append("unused_leave_days")
+                if ctx.get("unpaid_work_days") is None:
+                    missing.append("unpaid_work_days")
                 if missing:
                     return _missing_input_response(intent, "OffboardingAgent", missing)
                 emp_id = str(ctx["employee_id"])
@@ -614,8 +637,8 @@ class SupervisorAgent:
                 basic = float(basic_val)
                 gross = float(gross_val)
                 tenure = float(tenure_val)
-                leave_days = float(ctx.get("unused_leave_days", 0.0))
-                unpaid_days = int(ctx.get("unpaid_work_days", 0))
+                leave_days = float(ctx["unused_leave_days"])
+                unpaid_days = int(ctx["unpaid_work_days"])
                 fnf_res = self.offboarding_agent.compute_final_settlement(
                     employee_id=emp_id,
                     employee_name=emp_name,
@@ -649,14 +672,18 @@ class SupervisorAgent:
                 missing.append("employee_id")
             if ctx.get("expenses") is None:
                 missing.append("expenses")
+            if ctx.get("tier") is None:
+                missing.append("tier")
+            if ctx.get("has_approved_travel_request") is None:
+                missing.append("has_approved_travel_request")
             if missing:
                 return _missing_input_response(intent, "TravelExpenseAgent", missing)
             claim_id = str(ctx["claim_id"])
             emp_id = str(ctx["employee_id"])
             expenses = ctx["expenses"]
             cur_code = str(ctx.get("currency", "INR" if jur == Jurisdiction.INDIA else "AED"))
-            tier = str(ctx.get("tier", "METRO"))
-            has_pre_auth = bool(ctx.get("has_approved_travel_request", True))
+            tier = str(ctx["tier"])
+            has_pre_auth = bool(ctx["has_approved_travel_request"])
             exp_res = self.travel_agent.audit_claim(
                 claim_id=claim_id,
                 employee_id=emp_id,

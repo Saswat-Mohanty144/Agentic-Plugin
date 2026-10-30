@@ -191,17 +191,17 @@ class OffboardingAgent:
         self,
         employee_id: str,
         employee_name: str,
-        department: str,
-        returned_assets: List[str],
-        pending_assets: List[str],
+        department: Optional[str] = None,
+        returned_assets: Optional[List[str]] = None,
+        pending_assets: Optional[List[str]] = None,
         finance_cleared: bool = True,
     ) -> OffboardingClearance:
         """Evaluate exit clearance across IT, Finance, and HR operations."""
-        pending = list(pending_assets)
+        pending = list(pending_assets or [])
         if not finance_cleared:
             pending.append("Outstanding corporate expense or travel advance reconciliation")
 
-        completed = list(returned_assets)
+        completed = list(returned_assets or [])
         if finance_cleared:
             completed.append("Finance & expense reconciliation verified")
 
@@ -216,11 +216,12 @@ class OffboardingAgent:
 
         relieving_draft = None
         if is_cleared:
+            dept_part = f" in the {department} department" if department else ""
             relieving_draft = (
                 f"EXPERIENCE & RELIEVING CERTIFICATE\n\n"
                 f"To Whom It May Concern,\n\n"
-                f"This is to certify that {employee_name} (Employee ID: {employee_id}) was employed with us "
-                f"in the {department} department. All organizational dues and property have been satisfactorily "
+                f"This is to certify that {employee_name} (Employee ID: {employee_id}) was employed with us"
+                f"{dept_part}. All organizational dues and property have been satisfactorily "
                 f"cleared. We wish them success in their future endeavors.\n\n"
                 f"Authorized Signatory, HR Operations."
             )

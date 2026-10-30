@@ -123,6 +123,7 @@ def test_process_travel_message(supervisor):
             ],
             "currency": "INR",
             "tier": "METRO",
+            "has_approved_travel_request": True,
         },
     )
 
