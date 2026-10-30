@@ -665,3 +665,218 @@ FAILED tests/unit/test_gap_c.py::test_run_stream_applies_classification_and_pii_
 FAILED tests/unit/test_gap_c.py::test_default_orchestrator_resolver_is_none
 FAILED tests/unit/test_gap_c.py::test_wiring_with_real_mapping_store_and_host_registry
 28 failed, 1 passed in 0.94s
+.............................FF.F...FF.................................. [ 66%]
+...........................FFFFFFFFFF                                    [100%]
+=================================== FAILURES ===================================
+___________ test_orchestrator_rejects_classification_resolver_alias ____________
+
+    def test_orchestrator_rejects_classification_resolver_alias():
+>       with pytest.raises(TypeError, match="unexpected keyword argument 'classification_resolver'"):
+E       Failed: DID NOT RAISE TypeError
+
+tests/unit/test_gap_c.py:476: Failed
+____________ test_supervisor_rejects_classification_resolver_alias _____________
+
+    def test_supervisor_rejects_classification_resolver_alias():
+>       with pytest.raises(TypeError, match="unexpected keyword argument 'classification_resolver'"):
+E       Failed: DID NOT RAISE TypeError
+
+tests/unit/test_gap_c.py:481: Failed
+_____________ test_orchestrator_does_not_touch_pii_private_members _____________
+
+    def test_orchestrator_does_not_touch_pii_private_members():
+        code = Path("hrms_plugin/agents/orchestrator.py").read_text(encoding="utf-8")
+>       assert "._known" not in code, "orchestrator.py must not access PiiSession._known"
+E       AssertionError: orchestrator.py must not access PiiSession._known
+E       assert '._known' not in '"""Autonomo...te).value}\n'
+E         
+E         '._known' is contained here:
+E                  pii._known[text.casefold()] = kind
+E         ?           +++++++
+E               elif isinstance(value, dict):
+E                   for nested in value.values():
+E                       _learn_classified_pii(pii, nested, kind)...
+E         
+E         ...Full output truncated, use '-vv' to show
+
+tests/unit/test_gap_c.py:496: AssertionError
+__ test_make_classification_resolver_invalid_registry_logs_warning_no_values ___
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-363/test_make_classification_resol1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107ecdc10>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x107ecc950>
+
+    def test_make_classification_resolver_invalid_registry_logs_warning_no_values(tmp_path, monkeypatch, caplog):
+        bad_yaml = tmp_path / "bad_hosts.yaml"
+        bad_yaml.write_text("tenants: [invalid: yaml: {", encoding="utf-8")
+        monkeypatch.setenv("HRMS_HOSTS", str(bad_yaml))
+        store = MappingStore(backend=MemoryKeyValueStore())
+        resolver = app_module.make_classification_resolver(store)
+        with caplog.at_level(logging.WARNING):
+            res = resolver("secret_tenant", "SECRET_ENTITY")
+        assert res is None
+>       assert len(caplog.records) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+E        +    where [] = <_pytest.logging.LogCaptureFixture object at 0x107ecc950>.records
+
+tests/unit/test_gap_c.py:550: AssertionError
+____ test_make_classification_resolver_store_failure_logs_warning_no_values ____
+
+tmp_path = PosixPath('/private/var/folders/p8/9qyhvtv944z5d6bclltwxkwc0000gn/T/pytest-of-satosh/pytest-363/test_make_classification_resol2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107ed0a50>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x107ed0c50>
+
+    def test_make_classification_resolver_store_failure_logs_warning_no_values(tmp_path, monkeypatch, caplog):
+        hosts_yaml = tmp_path / "hosts.yaml"
+        hosts_yaml.write_text(
+            """
+    tenants:
+      - tenant_id: acme
+        vendor: frappe
+        base_url: https://frappe.acme.test
+        timeout_seconds: 5
+    """,
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HRMS_HOSTS", str(hosts_yaml))
+        store = MagicMock(spec=MappingStore)
+        store.active_classification.side_effect = RuntimeError("database connection failed")
+        resolver = app_module.make_classification_resolver(store)
+        with caplog.at_level(logging.WARNING):
+            res = resolver("acme", "EMPLOYEE")
+        assert res is None
+>       assert len(caplog.records) >= 1
+E       assert 0 >= 1
+E        +  where 0 = len([])
+E        +    where [] = <_pytest.logging.LogCaptureFixture object at 0x107ed0c50>.records
+
+tests/unit/test_gap_c.py:576: AssertionError
+________________ test_learn_value_positive_strings_and_numbers _________________
+
+    def test_learn_value_positive_strings_and_numbers():
+        s = PiiSession()
+>       s.learn_value("SecretBadge123", "BADGE")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:207: AttributeError
+________________ test_learn_value_negative_and_boundary_cases[] ________________
+
+value = ''
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________ test_learn_value_negative_and_boundary_cases[   ] _______________
+
+value = '   '
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+_______________ test_learn_value_negative_and_boundary_cases[A] ________________
+
+value = 'A'
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+_______________ test_learn_value_negative_and_boundary_cases[1] ________________
+
+value = 1
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________ test_learn_value_negative_and_boundary_cases[True] ______________
+
+value = True
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+_____________ test_learn_value_negative_and_boundary_cases[False] ______________
+
+value = False
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________ test_learn_value_negative_and_boundary_cases[None] ______________
+
+value = None
+
+    @pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+    def test_learn_value_negative_and_boundary_cases(value):
+        s = PiiSession()
+>       s.learn_value(value, "IGNORED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:220: AttributeError
+______________________ test_learn_value_nested_structures ______________________
+
+    def test_learn_value_nested_structures():
+        s = PiiSession()
+>       s.learn_value({"a": ["NestedVal1", {"b": "NestedVal2", "c": 54321}]}, "NESTED")
+        ^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_value'
+
+tests/unit/test_pii.py:228: AttributeError
+___________________________ test_learn_compensation ____________________________
+
+    def test_learn_compensation():
+        s = PiiSession(tokenize_compensation=True)
+>       s.learn_compensation("75000")
+        ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'PiiSession' object has no attribute 'learn_compensation'
+
+tests/unit/test_pii.py:238: AttributeError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_c.py::test_orchestrator_rejects_classification_resolver_alias
+FAILED tests/unit/test_gap_c.py::test_supervisor_rejects_classification_resolver_alias
+FAILED tests/unit/test_gap_c.py::test_orchestrator_does_not_touch_pii_private_members
+FAILED tests/unit/test_gap_c.py::test_make_classification_resolver_invalid_registry_logs_warning_no_values
+FAILED tests/unit/test_gap_c.py::test_make_classification_resolver_store_failure_logs_warning_no_values
+FAILED tests/unit/test_pii.py::test_learn_value_positive_strings_and_numbers
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[   ]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[A]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[1]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[True]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[False]
+FAILED tests/unit/test_pii.py::test_learn_value_negative_and_boundary_cases[None]
+FAILED tests/unit/test_pii.py::test_learn_value_nested_structures - Attribute...
+FAILED tests/unit/test_pii.py::test_learn_compensation - AttributeError: 'Pii...
+15 failed, 94 passed in 1.25s

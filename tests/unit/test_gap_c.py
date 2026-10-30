@@ -14,8 +14,11 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -464,3 +467,124 @@ tenants:
     assert "department=Security" in sent_text
     assert "TOP-SECRET-001" not in sent_text
     assert TOKEN_RE.search(sent_text) is not None
+
+
+# 8. Follow-up Review Findings Tests ----------------------------------------------------------------
+
+
+def test_orchestrator_rejects_classification_resolver_alias():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'classification_resolver'"):
+        AgenticOrchestrator(classification_resolver=lambda t, e: None)
+
+
+def test_supervisor_rejects_classification_resolver_alias():
+    with pytest.raises(TypeError, match="unexpected keyword argument 'classification_resolver'"):
+        SupervisorAgent(classification_resolver=lambda t, e: None)
+
+
+def test_orchestrator_and_supervisor_accept_classification_for():
+    def resolver(t, e):
+        return {"field": {"data_class": "PII"}}
+
+    orch = AgenticOrchestrator(classification_for=resolver)
+    assert orch.classification_for is resolver
+    sup = SupervisorAgent(classification_for=resolver)
+    assert sup.classification_for is resolver
+    assert sup.get_orchestrator().classification_for is resolver
+
+
+def test_orchestrator_does_not_touch_pii_private_members():
+    code = Path("hrms_plugin/agents/orchestrator.py").read_text(encoding="utf-8")
+    assert "._known" not in code, "orchestrator.py must not access PiiSession._known"
+    assert "._learn_money" not in code, "orchestrator.py must not access PiiSession._learn_money"
+
+
+def test_make_classification_resolver_missing_hrms_hosts_returns_none_quietly(monkeypatch, caplog):
+    monkeypatch.delenv("HRMS_HOSTS", raising=False)
+    store = MappingStore(backend=MemoryKeyValueStore())
+    resolver = app_module.make_classification_resolver(store)
+    with caplog.at_level(logging.WARNING):
+        res = resolver("acme", "EMPLOYEE")
+    assert res is None
+    assert len(caplog.records) == 0
+
+
+def test_make_classification_resolver_empty_hrms_hosts_returns_none_quietly(monkeypatch, caplog):
+    monkeypatch.setenv("HRMS_HOSTS", "")
+    store = MappingStore(backend=MemoryKeyValueStore())
+    resolver = app_module.make_classification_resolver(store)
+    with caplog.at_level(logging.WARNING):
+        res = resolver("acme", "EMPLOYEE")
+    assert res is None
+    assert len(caplog.records) == 0
+
+
+def test_make_classification_resolver_tenant_without_host_returns_none_quietly(tmp_path, monkeypatch, caplog):
+    hosts_yaml = tmp_path / "hosts.yaml"
+    hosts_yaml.write_text(
+        """
+tenants:
+  - tenant_id: acme
+    vendor: frappe
+    base_url: https://frappe.acme.test
+    api_key_env: FRAPPE_API_KEY
+    api_secret_env: FRAPPE_API_SECRET
+    timeout_seconds: 10
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HRMS_HOSTS", str(hosts_yaml))
+    monkeypatch.setenv("FRAPPE_API_KEY", "dummy_key")
+    monkeypatch.setenv("FRAPPE_API_SECRET", "dummy_secret")
+    store = MappingStore(backend=MemoryKeyValueStore())
+    resolver = app_module.make_classification_resolver(store)
+    with caplog.at_level(logging.WARNING):
+        res = resolver("unknown_tenant", "EMPLOYEE")
+    assert res is None
+    assert len(caplog.records) == 0
+
+
+def test_make_classification_resolver_invalid_registry_logs_warning_no_values(tmp_path, monkeypatch, caplog):
+    bad_yaml = tmp_path / "bad_hosts.yaml"
+    bad_yaml.write_text("tenants: [invalid: yaml: {", encoding="utf-8")
+    monkeypatch.setenv("HRMS_HOSTS", str(bad_yaml))
+    store = MappingStore(backend=MemoryKeyValueStore())
+    resolver = app_module.make_classification_resolver(store)
+    with caplog.at_level(logging.WARNING):
+        res = resolver("secret_tenant", "SECRET_ENTITY")
+    assert res is None
+    assert len(caplog.records) >= 1
+    for record in caplog.records:
+        assert record.levelno == logging.WARNING
+        assert "secret_tenant" not in record.message
+        assert "SECRET_ENTITY" not in record.message
+
+
+def test_make_classification_resolver_store_failure_logs_warning_no_values(tmp_path, monkeypatch, caplog):
+    hosts_yaml = tmp_path / "hosts.yaml"
+    hosts_yaml.write_text(
+        """
+tenants:
+  - tenant_id: acme
+    vendor: frappe
+    base_url: https://frappe.acme.test
+    api_key_env: FRAPPE_API_KEY
+    api_secret_env: FRAPPE_API_SECRET
+    timeout_seconds: 10
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HRMS_HOSTS", str(hosts_yaml))
+    monkeypatch.setenv("FRAPPE_API_KEY", "dummy_key")
+    monkeypatch.setenv("FRAPPE_API_SECRET", "dummy_secret")
+    store = MagicMock(spec=MappingStore)
+    store.active_classification.side_effect = RuntimeError("database connection failed")
+    resolver = app_module.make_classification_resolver(store)
+    with caplog.at_level(logging.WARNING):
+        res = resolver("acme", "EMPLOYEE")
+    assert res is None
+    assert len(caplog.records) >= 1
+    for record in caplog.records:
+        assert record.levelno == logging.WARNING
+        assert "acme" not in record.message
+        assert "EMPLOYEE" not in record.message

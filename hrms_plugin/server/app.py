@@ -112,6 +112,8 @@ def make_classification_resolver(
     """Resolve active field classification for a tenant and entity type using the tenant's host vendor."""
 
     def classification_for(tenant_id: str, entity: str) -> Optional[Dict[str, Any]]:
+        if not os.environ.get("HRMS_HOSTS"):
+            return None
         try:
             from hrms_plugin.integrations.host_registry import load_host_registry_from_env
 
@@ -120,6 +122,7 @@ def make_classification_resolver(
                 return None
             return store.active_classification(tenant_id, host.vendor, entity)
         except Exception:
+            logger.warning("Failed to resolve field classification")
             return None
 
     return classification_for

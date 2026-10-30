@@ -1,6 +1,7 @@
 """PII detectors, request-scoped sessions and stream restoration (piece C §3.1, §4)."""
 
 import re
+from decimal import Decimal
 
 import pytest
 
@@ -197,3 +198,50 @@ def test_inconsistent_grouping_with_bad_checksum_not_aadhaar(text):
 @pytest.mark.parametrize("text", ["card 4111 1111 1111 1111", "ref 1234 2345 6789 0124"])
 def test_grouped_aadhaar_not_matched_inside_longer_grouped_numbers(text):
     assert "AADHAAR" not in kinds(text)
+
+
+# Public learning methods: learn_value and learn_compensation ---------------------------------
+
+def test_learn_value_positive_strings_and_numbers():
+    s = PiiSession()
+    s.learn_value("SecretBadge123", "BADGE")
+    s.learn_value(987654, "CODE")
+    s.learn_value(Decimal("123.45"), "AMOUNT")
+    red = s.redact_text("badge SecretBadge123 with code 987654 and amount 123.45")
+    assert "SecretBadge123" not in red
+    assert "987654" not in red
+    assert "123.45" not in red
+    assert s.restore(red) == "badge SecretBadge123 with code 987654 and amount 123.45"
+
+
+@pytest.mark.parametrize("value", ["", "   ", "A", 1, True, False, None])
+def test_learn_value_negative_and_boundary_cases(value):
+    s = PiiSession()
+    s.learn_value(value, "IGNORED")
+    text = "A quick test with 1 and True or False"
+    assert s.redact_text(text) == text
+    assert s.find_pii(text) == []
+
+
+def test_learn_value_nested_structures():
+    s = PiiSession()
+    s.learn_value({"a": ["NestedVal1", {"b": "NestedVal2", "c": 54321}]}, "NESTED")
+    red = s.redact_text("Contains NestedVal1 and NestedVal2 and 54321")
+    assert "NestedVal1" not in red
+    assert "NestedVal2" not in red
+    assert "54321" not in red
+    assert s.restore(red) == "Contains NestedVal1 and NestedVal2 and 54321"
+
+
+def test_learn_compensation():
+    s = PiiSession(tokenize_compensation=True)
+    s.learn_compensation("75000")
+    s.learn_compensation(Decimal("1200000"))
+    red = s.redact_text("Stipend 75,000.00 and CTC 12,00,000")
+    assert "75,000.00" not in red
+    assert "12,00,000" not in red
+    assert "[PII_COMPENSATION_" in red
+
+    s_disabled = PiiSession(tokenize_compensation=False)
+    s_disabled.learn_compensation("75000")
+    assert s_disabled.redact_text("Stipend 75000") == "Stipend 75000"

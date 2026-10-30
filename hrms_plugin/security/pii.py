@@ -278,6 +278,27 @@ class PiiSession:
             for nested in value:
                 self._learn_money(nested)
 
+    def learn_value(self, value: Any, kind: str) -> None:
+        """Learn a scalar or nested value as a known identifier of the given kind."""
+        if isinstance(value, bool):
+            return
+        if isinstance(value, (str, int, float, Decimal)):
+            text = normalise(str(value)).strip()
+            if len(text) >= 2:
+                self._known[text.casefold()] = kind
+        elif isinstance(value, dict):
+            for nested in value.values():
+                self.learn_value(nested, kind)
+        elif isinstance(value, (list, tuple, set)):
+            for nested in value:
+                self.learn_value(nested, kind)
+
+    def learn_compensation(self, value: Any) -> None:
+        """Learn compensation / money amount(s) when compensation tokenisation is enabled."""
+        if not self._tokenize_compensation:
+            return
+        self._learn_money(value)
+
     def learn(self, obj: Any) -> None:
         if isinstance(obj, dict):
             for key, value in obj.items():

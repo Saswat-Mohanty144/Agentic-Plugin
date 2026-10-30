@@ -139,9 +139,8 @@ class SupervisorAgent:
         travel_agent: Optional[TravelExpenseAgent] = None,
         llm_gateway: Optional[Any] = None,
         tool_registry: Optional[Any] = None,
-        classification_for: Optional[Callable[[str, str], Optional[Dict[str, Any]]]] = None,
         *,
-        classification_resolver: Optional[Callable[[str, str], Optional[Dict[str, Any]]]] = None,
+        classification_for: Optional[Callable[[str, str], Optional[Dict[str, Any]]]] = None,
     ):
         self.kb = kb or StatutoryKnowledgeBase()
         self.payroll_agent = payroll_agent or StatutoryPayrollAgent(kb=self.kb)
@@ -153,7 +152,7 @@ class SupervisorAgent:
         self.travel_agent = travel_agent or TravelExpenseAgent()
         self.llm_gateway = llm_gateway
         self.tool_registry = tool_registry
-        self.classification_for = classification_for or classification_resolver
+        self.classification_for = classification_for
         self._orchestrator = None
         self._rbac = RbacPolicyEnforcer()
 
