@@ -371,3 +371,37 @@ Every substantive claim across `README.md` was evaluated and mapped to executabl
    - *Reason*: Live cloud sandbox environments were not online during this audit run in the worktree. Read/write operations and write-back flows were tested against the full Frappe HTTP client specifications and recorded fixtures.
 4. **Physical Headless Browser Rendering (Playwright/Puppeteer)**:
    - *Reason*: The copilot SDK is tested under Node.js 24 using native unit tests and JSDOM fixtures. Full visual regression and layout engine tests require external browser binaries outside this worktree's test harness.
+
+## 8. Orchestrator verification (2026-10-30)
+
+The orchestrator re-ran every finding against the code before any fix. This section overrides the sections above
+where they disagree.
+
+| Finding | Verdict | Fix (decision) |
+|---|---|---|
+| BUG-1 introspect never reports missing fields | Real: `inspect_response` was called without `check_missing=True` | A1 |
+| BUG-2 MCP profile with an approved mapping fails | Real: `overlay()` re-validated as `EntitySpec` | A2: keeps the spec's class |
+| BUG-3 field entry without `name` gives 500 | Real: `f["name"]` | A3: 422 `INVALID_ARGUMENT` (also non-object items, non-string names) |
+| BUG-4 schema routes return `{"detail": ...}` | Real: `HTTPException` (400, 404) | A4: 422 `INVALID_ARGUMENT`, 404 `NOT_FOUND`; no `HTTPException` left in `hrms_plugin/server/` |
+| BUG-5 deploy files lack `HRMS_DISCLOSURE_KEY_FILE` | Real | A5: compose passthrough, k8s optional Secret |
+| BUG-6 widget drops `thinking` frames | Not a defect: `KNOWN_SSE_EVENTS` is an allow-list on purpose; `thinking` carries raw model reasoning | A9: test now pins the allow-list |
+| Q1 unknown entity types | Doc gap only: 14 accepted types, 4 built on the fly, others 422 `INVALID_DOMAIN` | A7 README |
+| Q2 re-approving an approved shape or fingerprint | Real: opened a new two-person request | A6: 200 `ALREADY_APPROVED` |
+| Q3 rate limit on MCP `ping`/notifications | Intended (flood protection) | A8 README |
+
+Problems in the report itself:
+
+- 38 of the 44 test names cited in section 6 do not exist; section 6 is not evidence.
+- Several code quotes are invented (for example `check_missing=False` as a default, and the README quote in Q1).
+- Section 5 counts are wrong: the orchestrator's full run on `audit/k` before the fixes gave 2,493 tests and 9 failed
+  (6 audit tests proving the findings, 3 existing tests broken by audit test pollution).
+- Pollution cause: `test_requisition_shape_approval_guards` wrote a malformed approved shape directly into the shared
+  store and never removed it. A10: `tests/audit/conftest.py` snapshots and restores the store around every audit test.
+- Section 4 timings are thresholds the tests assert (rules < 100 ms, value check < 50 ms, lookup over 10,000 rows
+  < 200 ms); the tests print nothing, so the exact figures quoted were not reproduced.
+- Two existing tests in `tests/unit/test_gap_e.py` reused a fingerprint that another test file leaves approved; with
+  A6 that fingerprint now answers `ALREADY_APPROVED`, so they were given distinct fingerprints.
+
+Fix proof: red output in `2026-10-30-audit-fix-red.txt`; after the fixes `tests/audit` 44 passed, pollution check
+(`tests/audit` + e2e API flows + gap D + piece I) 185 passed, touched-area tests 432 passed, node audit tests 5 passed,
+ruff clean. Full-suite numbers are in README section 19.
