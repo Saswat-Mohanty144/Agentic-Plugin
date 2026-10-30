@@ -80,14 +80,16 @@ VOICE_PROVIDER = "sarvam"
 
 def voice_agent_from_env(env: Mapping[str, str]) -> VoiceAgent:
     """Real Sarvam only with SARVAM_API_KEY; without it the voice routes are 503 (VOICE-1, V5)."""
-    return VoiceAgent(api_key=env.get("SARVAM_API_KEY") or None)
+    return VoiceAgent(api_key=(env.get("SARVAM_API_KEY") or "").strip() or None)
 
 
 voice_agent = voice_agent_from_env(os.environ)
 logger = logging.getLogger(__name__)
 
 # Persistent storage singletons
-_storage = SqliteKeyValueStore(str(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db"))
+_storage = SqliteKeyValueStore(
+    str(Path((os.environ.get("HRMS_DATA_DIR") or "").strip() or ".hrms_data") / "plugin_storage.db")
+)
 
 
 LEGACY_PII_NAMESPACES = ("pii_vault", "pii_vault_lookup")

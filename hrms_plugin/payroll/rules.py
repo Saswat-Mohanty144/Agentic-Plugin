@@ -130,7 +130,7 @@ def load_payroll_rules(path: Union[str, Path]) -> PayrollRulesRegistry:
 
 def load_payroll_rules_from_env(env: Optional[Mapping[str, str]] = None) -> PayrollRulesRegistry:
     env = os.environ if env is None else env
-    path = env.get(RULES_ENV_VAR)
+    path = (env.get(RULES_ENV_VAR) or "").strip()
     if not path:
         raise RulesError(f"{RULES_ENV_VAR} is not set")
     return load_payroll_rules(path)

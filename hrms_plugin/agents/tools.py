@@ -581,7 +581,9 @@ class AgenticToolRegistry:
             from hrms_plugin.payroll.service import PayrollService
             from hrms_plugin.storage.sqlite_store import SqliteKeyValueStore
 
-            store = SqliteKeyValueStore(Path(os.environ.get("HRMS_DATA_DIR", ".hrms_data")) / "plugin_storage.db")
+            store = SqliteKeyValueStore(
+                Path((os.environ.get("HRMS_DATA_DIR") or "").strip() or ".hrms_data") / "plugin_storage.db"
+            )
             self._payroll_service = PayrollService(store=store)
         return self._payroll_service
 

@@ -222,12 +222,18 @@ def test_model_and_effort_overrides(clean_env):
     assert (config.model, config.effort) == ("claude-sonnet-5-5", "high")
 
 
-@pytest.mark.parametrize("effort", ["", "HIGH", "extreme"])
+@pytest.mark.parametrize("effort", ["HIGH", "extreme"])
 def test_invalid_effort_raises(clean_env, effort):
     clean_env.setenv("ANTHROPIC_API_KEY", "k")
     clean_env.setenv("LLM_EFFORT", effort)
     with pytest.raises(LLMNotConfigured):
         LLMGateway()
+
+
+def test_empty_effort_defaults_to_medium(clean_env):
+    clean_env.setenv("ANTHROPIC_API_KEY", "k")
+    clean_env.setenv("LLM_EFFORT", "")
+    assert LLMGateway().config.effort == "medium"
 
 
 # E7 — retries, client reuse, Gemini key header ------------------------------------------------------------
