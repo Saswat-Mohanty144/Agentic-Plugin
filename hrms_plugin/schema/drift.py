@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
 
 from hrms_plugin.schema.canonical import EntityType
-from hrms_plugin.schema.mapping import EntityMapping
+from hrms_plugin.schema.mapping import EntityMapping, resolve_path
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +61,26 @@ class SchemaDriftInterceptor:
         if not isinstance(resp, dict):
             return events
 
+        def _add_source(src: Any) -> None:
+            if isinstance(src, str):
+                known_host_fields.add(src)
+                top = src.split(".")[0].split("[")[0]
+                if top:
+                    known_host_fields.add(top)
+            elif isinstance(src, (list, tuple)):
+                for item in src:
+                    _add_source(item)
+
         known_host_fields: Set[str] = set()
         if isinstance(mapping, EntityMapping):
             for fm in mapping.fields:
-                if isinstance(fm.source, (list, tuple)):
-                    known_host_fields.update(fm.source)
-                elif isinstance(fm.source, str):
-                    known_host_fields.add(fm.source)
+                _add_source(fm.source)
             if mapping.id_path:
-                known_host_fields.add(mapping.id_path)
+                _add_source(mapping.id_path)
         elif isinstance(mapping, dict):
-            known_host_fields.update(mapping.keys())
+            for k, v in mapping.items():
+                _add_source(k)
+                _add_source(v)
 
         actual_fields = set(resp.keys())
 
@@ -90,6 +99,43 @@ class SchemaDriftInterceptor:
             )
             events.append(event)
             self.history.append(event)
+
+        # 2. Detect Missing Expected Host Fields (resolving dotted paths)
+        expected_fields = kwargs.get("expected_fields")
+        if expected_fields:
+            for exp in expected_fields:
+                if isinstance(exp, str):
+                    val = resolve_path(resp, exp) if "." in exp else resp.get(exp)
+                    if val is None:
+                        event = DriftEvent(
+                            entity_type=entity_type,
+                            severity=DriftSeverity.WARNING,
+                            detected_at=datetime.now(timezone.utc).isoformat(),
+                            field_name=exp,
+                            description=f"Host response missing expected field '{exp}'.",
+                            suggested_patch={"action": "ADD_REQUIRED_FIELD", "missing_field": exp},
+                        )
+                        events.append(event)
+                        self.history.append(event)
+        elif kwargs.get("check_missing") and isinstance(mapping, EntityMapping):
+            for fm in mapping.fields:
+                sources = fm.source if isinstance(fm.source, (list, tuple)) else [fm.source]
+                found = any(
+                    (resolve_path(resp, s) is not None if "." in s else s in resp)
+                    for s in sources
+                    if isinstance(s, str)
+                )
+                if not found and isinstance(fm.source, str):
+                    event = DriftEvent(
+                        entity_type=entity_type,
+                        severity=DriftSeverity.WARNING,
+                        detected_at=datetime.now(timezone.utc).isoformat(),
+                        field_name=fm.source,
+                        description=f"Host response missing expected field '{fm.source}'.",
+                        suggested_patch={"action": "ADD_REQUIRED_FIELD", "missing_field": fm.source},
+                    )
+                    events.append(event)
+                    self.history.append(event)
 
         return events
 

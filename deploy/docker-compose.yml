@@ -31,6 +31,16 @@ services:
       # Tenant issuer registry (spec §6.1). Required: compose refuses to start if the host path is not given.
       - ${HRMS_TENANT_REGISTRY_FILE:?set HRMS_TENANT_REGISTRY_FILE to your tenant registry YAML}:/etc/hrms/tenants.yaml:ro
       - hrms-data:/var/lib/hrms
+      # Dedicated configuration directory mount for optional operator configs:
+      # - audit signing key (audit_ed25519.pem)
+      # - host mappings (hosts.yaml)
+      # - payroll rules (payroll_rules.yaml)
+      # Design choice: Dedicated directory mount with unset-means-unset semantics.
+      # If HRMS_CONFIG_DIR is unset, it defaults to ./config without breaking `docker compose config`.
+      # Bare environment pass-through variables (HRMS_AUDIT_SIGNING_KEY_FILE, HRMS_HOSTS, HRMS_PAYROLL_RULES)
+      # ensure that unset means unset: when the operator sets them (e.g. to /etc/hrms/config/audit_ed25519.pem,
+      # /etc/hrms/config/hosts.yaml, /etc/hrms/config/payroll_rules.yaml), the app loads them; otherwise they stay unset.
+      - ${HRMS_CONFIG_DIR:-./config}:/etc/hrms/config:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 30s

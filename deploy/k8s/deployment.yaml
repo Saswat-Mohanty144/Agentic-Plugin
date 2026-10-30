@@ -47,9 +47,21 @@ spec:
               value: /etc/hrms/tenants.yaml
             - name: HRMS_DATA_DIR
               value: /var/lib/hrms
+            - name: HRMS_AUDIT_SIGNING_KEY_FILE
+              value: /etc/hrms/audit/audit_ed25519.pem
+            - name: HRMS_HOSTS
+              value: /etc/hrms/config/hosts.yaml
+            - name: HRMS_PAYROLL_RULES
+              value: /etc/hrms/config/payroll_rules.yaml
           volumeMounts:
             - name: tenant-registry
               mountPath: /etc/hrms
+              readOnly: true
+            - name: audit-key
+              mountPath: /etc/hrms/audit
+              readOnly: true
+            - name: app-config
+              mountPath: /etc/hrms/config
               readOnly: true
             - name: hrms-data
               mountPath: /var/lib/hrms
@@ -82,6 +94,14 @@ spec:
             items:
               - key: tenants.yaml
                 path: tenants.yaml
+        - name: audit-key
+          secret:
+            secretName: hrms-plugin-audit-key
+            optional: true
+        - name: app-config
+          configMap:
+            name: hrms-plugin-config
+            optional: true
         - name: hrms-data
           persistentVolumeClaim:
             claimName: hrms-data

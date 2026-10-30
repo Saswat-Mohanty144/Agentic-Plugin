@@ -224,13 +224,22 @@ def _learn_context(
 ClassificationResolver = Callable[[str, str], Optional[Dict[str, Any]]]
 
 
-def _result_data(state: _RunState, *, partial: bool = False, truncated: bool = False) -> Dict[str, Any]:
-    return {
+def _result_data(
+    state: _RunState,
+    *,
+    partial: bool = False,
+    truncated: bool = False,
+    refused: bool = False,
+) -> Dict[str, Any]:
+    data = {
         "statutory_citations": list(dict.fromkeys(state.citations)),
         "suggested_actions": state.actions,
         "partial": partial,
         "truncated": truncated,
     }
+    if refused:
+        data["refused"] = True
+    return data
 
 
 class AgenticOrchestrator:
@@ -464,11 +473,13 @@ class AgenticOrchestrator:
             messages=messages, tools=tools, task_class=TaskClass.AGENT_REACT, tenant_id=tenant_id, pii=state.pii,
             text_only=True,
         )
-        _collect_from_text(final_resp.content or "", state)
+        if final_resp.finish_reason != "refusal":
+            _collect_from_text(final_resp.content or "", state)
         reply = final_resp.content or (
             "I reached the step limit before finishing. The tool results gathered so far are attached."
         )
-        response = self._response(state, reply, 0.60)
+        confidence = 0.0 if final_resp.finish_reason == "refusal" else 0.60
+        response = self._response(state, reply, confidence)
         response.partial = True
         response.truncated = final_resp.finish_reason in LENGTH_STOP_REASONS
         return response
@@ -502,6 +513,9 @@ class AgenticOrchestrator:
                 for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
                     yield {"event": "token", "data": piece}
                 truncated = llm_resp.finish_reason in LENGTH_STOP_REASONS
+                refused = llm_resp.finish_reason == "refusal"
+                if not refused:
+                    _collect_from_text(llm_resp.content or "", state)
                 yield {
                     "event": "done",
                     "data": {
@@ -509,7 +523,10 @@ class AgenticOrchestrator:
                         "truncated": truncated,
                     },
                 }
-                yield {"event": "result", "data": _result_data(state, partial=False, truncated=truncated)}
+                yield {
+                    "event": "result",
+                    "data": _result_data(state, partial=False, truncated=truncated, refused=refused),
+                }
                 yield {"event": "intent", "data": self._intent(state).value}
                 return
 
@@ -533,13 +550,22 @@ class AgenticOrchestrator:
         yield {"event": "partial", "data": True}
         # Same tools as earlier turns so the cached prefix matches; the gateway forbids their use here (agy H-F1).
         truncated = False
+        refused = False
+        collected_tokens: List[str] = []
         async for chunk in self.llm_gateway.chat_stream(messages, tools=tools, tenant_id=tenant_id, pii=state.pii):
-            if chunk.get("event") == "done":
+            if chunk.get("event") == "token":
+                collected_tokens.append(chunk.get("data") or "")
+                yield chunk
+            elif chunk.get("event") == "done":
                 data = dict(chunk.get("data") or {})
                 truncated = data.get("finish_reason") in LENGTH_STOP_REASONS
+                if data.get("finish_reason") == "refusal":
+                    refused = True
                 data["truncated"] = truncated
                 yield {**chunk, "data": data}
             else:
                 yield chunk
-        yield {"event": "result", "data": _result_data(state, partial=True, truncated=truncated)}
+        if not refused:
+            _collect_from_text("".join(collected_tokens), state)
+        yield {"event": "result", "data": _result_data(state, partial=True, truncated=truncated, refused=refused)}
         yield {"event": "intent", "data": self._intent(state).value}
