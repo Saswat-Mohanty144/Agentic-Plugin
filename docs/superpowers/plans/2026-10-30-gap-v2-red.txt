@@ -1,0 +1,1531 @@
+FFF...FFFFFFFFFFFFFFFFFFFFF                                              [100%]
+=================================== FAILURES ===================================
+____________________ test_profile_protocol_defaults_to_rest ____________________
+
+    def test_profile_protocol_defaults_to_rest():
+        raw = make_mcp_raw()
+        del raw["protocol"]
+        # If protocol is rest, entity needs pagination and request_fields/id_from
+        raw["entities"]["REQUISITION"]["pagination"] = {
+            "kind": "offset", "start_param": "offset", "size_param": "limit", "size": 50
+        }
+        del raw["entities"]["REQUISITION"]["tool"]
+        del raw["entities"]["REQUISITION"]["arguments"]
+        prof = parse_profile(raw)
+>       assert prof.protocol == "rest"
+               ^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = VendorProfileSpec(vendor='iceipts', auth='bearer', entities={'REQUISITION': EntitySpec(path='/mcp', request_fields=Fal...uired=None), 'hiring_manager_ref': FieldSpec(source='manager', type='str', map=None, transform=None, required=None)})})
+item = 'protocol'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'VendorProfileSpec' object has no attribute 'protocol'
+
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/pydantic/main.py:1105: AttributeError
+_____________________ test_profile_protocol_explicit_rest ______________________
+
+data = {'protocol': 'rest', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'items_at': '...: 'int'}, 'status': {'from': 'status', 'map': {'OPEN': 'OPEN', 'CLOSED': 'CLOSED', 'PENDING': 'PENDING'}}, ...}, ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 1 validation error for VendorProfileSpec
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='rest', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    def test_profile_protocol_explicit_rest():
+        raw = make_mcp_raw({"pagination": {"kind": "offset", "start_param": "offset", "size_param": "limit", "size": 50}},
+                           {"protocol": "rest"})
+        del raw["entities"]["REQUISITION"]["tool"]
+        del raw["entities"]["REQUISITION"]["arguments"]
+>       prof = parse_profile(raw)
+               ^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:227: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'rest', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'items_at': '...: 'int'}, 'status': {'from': 'status', 'map': {'OPEN': 'OPEN', 'CLOSED': 'CLOSED', 'PENDING': 'PENDING'}}, ...}, ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 1 validation error for VendorProfileSpec
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='rest', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_________ test_frappe_and_iceipts_profiles_have_explicit_protocol_rest _________
+
+    def test_frappe_and_iceipts_profiles_have_explicit_protocol_rest():
+        frappe = load_profile("frappe")
+        iceipts = load_profile("iceipts")
+>       assert frappe.protocol == "rest"
+               ^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:234: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = VendorProfileSpec(vendor='frappe', auth='frappe_token', entities={'REQUISITION': EntitySpec(path='/api/resource/Job Re...=None), 'hiring_manager_ref': FieldSpec(source='requested_by', type='str', map=None, transform=None, required=None)})})
+item = 'protocol'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+>                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'VendorProfileSpec' object has no attribute 'protocol'
+
+../Agentic-Plugin-main/.venv/lib/python3.11/site-packages/pydantic/main.py:1105: AttributeError
+___________ test_mcp_profile_cursor_paging_requires_both_or_neither ____________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ..._at': 'pagination.next'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='pagination.next', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    def test_mcp_profile_cursor_paging_requires_both_or_neither():
+        raw1 = make_mcp_raw(entity_overrides={"cursor_param": "cursor"})
+        with pytest.raises(ProfileError):
+            parse_profile(raw1)
+    
+        raw2 = make_mcp_raw(entity_overrides={"next_cursor_at": "pagination.next"})
+        with pytest.raises(ProfileError):
+            parse_profile(raw2)
+    
+        raw3 = make_mcp_raw(entity_overrides={"cursor_param": "cursor", "next_cursor_at": "pagination.next"})
+>       prof = parse_profile(raw3)
+               ^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ..._at': 'pagination.next'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='pagination.next', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+___________________________ test_transports_exported ___________________________
+
+    def test_transports_exported():
+>       assert RestTransport is not None, "RestTransport must be exported"
+E       AssertionError: RestTransport must be exported
+E       assert None is not None
+
+tests/unit/test_gap_v2.py:274: AssertionError
+_____________________ test_mcp_happy_path_with_session_id ______________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_happy_path_with_session_id():
+        server = FakeMcpServer(
+            tool_results=[{"structuredContent": {"records": [mcp_record("R-1"), mcp_record("R-2")]}}],
+            session_id="session-xyz-789",
+        )
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:286: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_________________________ test_mcp_sse_framed_response _________________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_sse_framed_response():
+        server = FakeMcpServer(
+            tool_results=[{"structuredContent": {"records": [mcp_record("SSE-1")]}}],
+            sse_framed=True,
+        )
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:330: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_________________ test_mcp_structured_content_vs_text_content __________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_structured_content_vs_text_content():
+        # 1. structuredContent
+        s1 = FakeMcpServer(tool_results=[{"structuredContent": {"records": [mcp_record("SC-1")]}}])
+>       c1 = make_connector(s1)
+             ^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:341: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+________________ test_mcp_items_at_optional_when_result_is_list ________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'id_from': 'id', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 5 validation errors for VendorProfileSpec
+E           entities.REQUISITION.items_at
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_items_at_optional_when_result_is_list():
+        raw = make_mcp_raw()
+        del raw["entities"]["REQUISITION"]["items_at"]
+>       prof = parse_profile(raw)
+               ^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:363: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'id_from': 'id', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 5 validation errors for VendorProfileSpec
+E           entities.REQUISITION.items_at
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+______________________ test_mcp_cursor_paging_zero_pages _______________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_cursor_paging_zero_pages():
+>       prof = make_mcp_profile(entity_overrides={"cursor_param": "cursor", "next_cursor_at": "next_cursor"})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_______________________ test_mcp_cursor_paging_one_page ________________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_cursor_paging_one_page():
+>       prof = make_mcp_profile(entity_overrides={"cursor_param": "cursor", "next_cursor_at": "next_cursor"})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_______________________ test_mcp_cursor_paging_two_pages _______________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_cursor_paging_two_pages():
+>       prof = make_mcp_profile(entity_overrides={"cursor_param": "cursor", "next_cursor_at": "next_cursor"})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:400: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+______________ test_mcp_cursor_paging_too_many_pages_fails_loudly ______________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_cursor_paging_too_many_pages_fails_loudly():
+>       prof = make_mcp_profile(entity_overrides={"cursor_param": "cursor", "next_cursor_at": "next_cursor"})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 6 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...rsor_at': 'next_cursor'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.cursor_param
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.next_cursor_at
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='next_cursor', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_________ test_mcp_tool_is_error_raises_host_error_no_body_text_leaked _________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_tool_is_error_raises_host_error_no_body_text_leaked():
+        secret_leak = "DATABASE_PASSWORD_LEAKED_SECRET_HERE"
+        server = FakeMcpServer(tool_is_error=True, error_message=secret_leak)
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:440: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_________ test_mcp_jsonrpc_error_raises_host_error_no_body_text_leaked _________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_jsonrpc_error_raises_host_error_no_body_text_leaked():
+        secret_leak = "INTERNAL_RPC_PRIVATE_KEY_DATA"
+        server = FakeMcpServer(jsonrpc_error={"code": -32603, "message": secret_leak})
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:453: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+______ test_mcp_bad_items_at_type_raises_inconsistent_payload[not-a-list] ______
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+bad_val = 'not-a-list'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_val", ["not-a-list", 123, {"a": 1}, [1, 2, 3], ["not-a-dict"]])
+    async def test_mcp_bad_items_at_type_raises_inconsistent_payload(bad_val):
+        server = FakeMcpServer(tool_results=[{"structuredContent": {"records": bad_val}}])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_________ test_mcp_bad_items_at_type_raises_inconsistent_payload[123] __________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+bad_val = 123
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_val", ["not-a-list", 123, {"a": 1}, [1, 2, 3], ["not-a-dict"]])
+    async def test_mcp_bad_items_at_type_raises_inconsistent_payload(bad_val):
+        server = FakeMcpServer(tool_results=[{"structuredContent": {"records": bad_val}}])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_______ test_mcp_bad_items_at_type_raises_inconsistent_payload[bad_val2] _______
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+bad_val = {'a': 1}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_val", ["not-a-list", 123, {"a": 1}, [1, 2, 3], ["not-a-dict"]])
+    async def test_mcp_bad_items_at_type_raises_inconsistent_payload(bad_val):
+        server = FakeMcpServer(tool_results=[{"structuredContent": {"records": bad_val}}])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_______ test_mcp_bad_items_at_type_raises_inconsistent_payload[bad_val3] _______
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+bad_val = [1, 2, 3]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_val", ["not-a-list", 123, {"a": 1}, [1, 2, 3], ["not-a-dict"]])
+    async def test_mcp_bad_items_at_type_raises_inconsistent_payload(bad_val):
+        server = FakeMcpServer(tool_results=[{"structuredContent": {"records": bad_val}}])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_______ test_mcp_bad_items_at_type_raises_inconsistent_payload[bad_val4] _______
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+bad_val = ['not-a-dict']
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_val", ["not-a-list", 123, {"a": 1}, [1, 2, 3], ["not-a-dict"]])
+    async def test_mcp_bad_items_at_type_raises_inconsistent_payload(bad_val):
+        server = FakeMcpServer(tool_results=[{"structuredContent": {"records": bad_val}}])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:466: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+________________ test_mcp_non_200_http_status_raises_host_error ________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_non_200_http_status_raises_host_error():
+        server = FakeMcpServer(tool_status=500)
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:476: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+____________ test_mcp_bad_json_response_raises_inconsistent_payload ____________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_bad_json_response_raises_inconsistent_payload():
+        server = FakeMcpServer(bad_json=True)
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:486: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+_______________ test_mcp_shared_record_conversion_and_rejections _______________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_shared_record_conversion_and_rejections():
+        server = FakeMcpServer(tool_results=[{
+            "structuredContent": {
+                "records": [
+                    mcp_record("VALID-1"),
+                    mcp_record("REJ-1", headcount="not-an-int"),
+                    mcp_record("REJ-2", status="UNMAPPED_STATUS_X"),
+                ]
+            }
+        }])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:506: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+___________________________ test_mcp_observed_shape ____________________________
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+>           return VendorProfileSpec.model_validate(data)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           pydantic_core._pydantic_core.ValidationError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:138: ValidationError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.asyncio
+    async def test_mcp_observed_shape():
+        raw_rows = [mcp_record("R-1"), mcp_record("R-2")]
+        server = FakeMcpServer(tool_results=[{"structuredContent": {"records": raw_rows}}])
+>       conn = make_connector(server)
+               ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_gap_v2.py:521: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/unit/test_gap_v2.py:188: in make_connector
+    prof = profile or make_mcp_profile()
+                      ^^^^^^^^^^^^^^^^^^
+tests/unit/test_gap_v2.py:173: in make_mcp_profile
+    return parse_profile(make_mcp_raw(entity_overrides, profile_overrides))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+data = {'protocol': 'mcp', 'vendor': 'iceipts', 'auth': 'bearer', 'entities': {'REQUISITION': {'path': '/mcp', 'tool': 'list_requisitions', 'arguments': {'tenant': 'primary'}, 'items_at': 'records', ...}}}
+
+    def parse_profile(data: Any) -> VendorProfileSpec:
+        try:
+            return VendorProfileSpec.model_validate(data)
+        except ValidationError as exc:
+>           raise ProfileError(str(exc)) from exc
+E           hrms_plugin.integrations.declarative.ProfileError: 4 validation errors for VendorProfileSpec
+E           entities.REQUISITION.pagination
+E             Field required [type=missing, input_value={'path': '/mcp', 'tool': ...': {'from': 'manager'}}}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/missing
+E           entities.REQUISITION.tool
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='list_requisitions', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           entities.REQUISITION.arguments
+E             Extra inputs are not permitted [type=extra_forbidden, input_value={'tenant': 'primary'}, input_type=dict]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E           protocol
+E             Extra inputs are not permitted [type=extra_forbidden, input_value='mcp', input_type=str]
+E               For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+hrms_plugin/integrations/declarative.py:140: ProfileError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_v2.py::test_profile_protocol_defaults_to_rest - At...
+FAILED tests/unit/test_gap_v2.py::test_profile_protocol_explicit_rest - hrms_...
+FAILED tests/unit/test_gap_v2.py::test_frappe_and_iceipts_profiles_have_explicit_protocol_rest
+FAILED tests/unit/test_gap_v2.py::test_mcp_profile_cursor_paging_requires_both_or_neither
+FAILED tests/unit/test_gap_v2.py::test_transports_exported - AssertionError: ...
+FAILED tests/unit/test_gap_v2.py::test_mcp_happy_path_with_session_id - hrms_...
+FAILED tests/unit/test_gap_v2.py::test_mcp_sse_framed_response - hrms_plugin....
+FAILED tests/unit/test_gap_v2.py::test_mcp_structured_content_vs_text_content
+FAILED tests/unit/test_gap_v2.py::test_mcp_items_at_optional_when_result_is_list
+FAILED tests/unit/test_gap_v2.py::test_mcp_cursor_paging_zero_pages - hrms_pl...
+FAILED tests/unit/test_gap_v2.py::test_mcp_cursor_paging_one_page - hrms_plug...
+FAILED tests/unit/test_gap_v2.py::test_mcp_cursor_paging_two_pages - hrms_plu...
+FAILED tests/unit/test_gap_v2.py::test_mcp_cursor_paging_too_many_pages_fails_loudly
+FAILED tests/unit/test_gap_v2.py::test_mcp_tool_is_error_raises_host_error_no_body_text_leaked
+FAILED tests/unit/test_gap_v2.py::test_mcp_jsonrpc_error_raises_host_error_no_body_text_leaked
+FAILED tests/unit/test_gap_v2.py::test_mcp_bad_items_at_type_raises_inconsistent_payload[not-a-list]
+FAILED tests/unit/test_gap_v2.py::test_mcp_bad_items_at_type_raises_inconsistent_payload[123]
+FAILED tests/unit/test_gap_v2.py::test_mcp_bad_items_at_type_raises_inconsistent_payload[bad_val2]
+FAILED tests/unit/test_gap_v2.py::test_mcp_bad_items_at_type_raises_inconsistent_payload[bad_val3]
+FAILED tests/unit/test_gap_v2.py::test_mcp_bad_items_at_type_raises_inconsistent_payload[bad_val4]
+FAILED tests/unit/test_gap_v2.py::test_mcp_non_200_http_status_raises_host_error
+FAILED tests/unit/test_gap_v2.py::test_mcp_bad_json_response_raises_inconsistent_payload
+FAILED tests/unit/test_gap_v2.py::test_mcp_shared_record_conversion_and_rejections
+FAILED tests/unit/test_gap_v2.py::test_mcp_observed_shape - hrms_plugin.integ...
+24 failed, 3 passed in 1.19s

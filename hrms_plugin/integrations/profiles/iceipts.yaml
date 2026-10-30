@@ -1,5 +1,6 @@
 # iCeipts HRMS. Source: tests/fixtures/iceipts_swagger.yaml — GET /job/getAllRequisition/{userId},
 # rows at data.pageData, page/size paging (size 1-100), data.totalPages; schema JobRequisitionDetails.
+protocol: rest
 vendor: iceipts
 auth: bearer
 entities:
