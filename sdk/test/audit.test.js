@@ -67,12 +67,11 @@ test('describeHttpError formats error status and code', () => {
 });
 
 // ==============================================================================
-// CONFIRMED BUGS
+// DECISION A9: ALLOW-LIST VERIFICATION
 // ==============================================================================
 
-test('BUG-6: parseSseFrames must preserve thinking and history_trimmed events emitted by backend', () => {
-  // Backend orchestrator (orchestrator.py:192, 196) emits "thinking" and "history_trimmed" events.
-  // In sdk/copilot.js:156, KNOWN_SSE_EVENTS omits them, so parseSseFrames silently drops them.
+test('A9: parseSseFrames enforces allow-list dropping thinking and history_trimmed frames while preserving known events', () => {
+  // Decision A9: The widget renders an allow-list; thinking carries raw model reasoning and stays out of the browser.
   const text = [
     'data: {"event":"thinking","data":"Synthesizing payroll rules..."}\n\n',
     'data: {"event":"history_trimmed","data":{"dropped_turns":2}}\n\n',
@@ -83,11 +82,15 @@ test('BUG-6: parseSseFrames must preserve thinking and history_trimmed events em
   const eventTypes = result.events.map(e => e.event);
 
   assert.ok(
-    eventTypes.includes('thinking'),
-    `parseSseFrames dropped 'thinking' event. Parsed events: ${JSON.stringify(eventTypes)}`
+    !eventTypes.includes('thinking'),
+    `parseSseFrames should drop 'thinking' event. Parsed events: ${JSON.stringify(eventTypes)}`
   );
   assert.ok(
-    eventTypes.includes('history_trimmed'),
-    `parseSseFrames dropped 'history_trimmed' event. Parsed events: ${JSON.stringify(eventTypes)}`
+    !eventTypes.includes('history_trimmed'),
+    `parseSseFrames should drop 'history_trimmed' event. Parsed events: ${JSON.stringify(eventTypes)}`
+  );
+  assert.ok(
+    eventTypes.includes('token'),
+    `parseSseFrames should preserve known 'token' event. Parsed events: ${JSON.stringify(eventTypes)}`
   );
 });

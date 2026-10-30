@@ -1,0 +1,567 @@
+FFFFFF                                                                   [100%]
+=================================== FAILURES ===================================
+_______________ test_docker_compose_declares_disclosure_key_file _______________
+
+    def test_docker_compose_declares_disclosure_key_file():
+        """BUG-5 (LOW): deploy/docker-compose.yml must declare HRMS_DISCLOSURE_KEY_FILE in its environment.
+    
+        In deploy/docker-compose.yml:26-29, the environment block passes through:
+            - HRMS_HOSTS
+            - HRMS_PAYROLL_RULES
+            - HRMS_AUDIT_SIGNING_KEY_FILE
+            - HRMS_AUDIT_KEY_ID
+        but omits HRMS_DISCLOSURE_KEY_FILE. Consequently, operators providing HRMS_DISCLOSURE_KEY_FILE
+        in their environment will not have it forwarded into the container, disabling disclosure lookups.
+        """
+        compose_path = Path("deploy/docker-compose.yml")
+        assert compose_path.is_file(), "deploy/docker-compose.yml not found"
+        data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    
+        services = data.get("services", {})
+        api_service = services.get("hrms-plugin-api", {})
+        env_list = api_service.get("environment", [])
+    
+>       assert "HRMS_DISCLOSURE_KEY_FILE" in env_list, (
+            f"deploy/docker-compose.yml environment section is missing HRMS_DISCLOSURE_KEY_FILE. "
+            f"Found: {env_list}"
+        )
+E       AssertionError: deploy/docker-compose.yml environment section is missing HRMS_DISCLOSURE_KEY_FILE. Found: ['PORT=8000', 'HRMS_TENANT_REGISTRY=/etc/hrms/tenants.yaml', 'HRMS_DATA_DIR=/var/lib/hrms', 'LLM_PROVIDER', 'LLM_MODEL', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'NVIDIA_API_KEY', 'SARVAM_API_KEY', 'HRMS_HOSTS', 'HRMS_PAYROLL_RULES', 'HRMS_AUDIT_SIGNING_KEY_FILE', 'HRMS_AUDIT_KEY_ID']
+E       assert 'HRMS_DISCLOSURE_KEY_FILE' in ['PORT=8000', 'HRMS_TENANT_REGISTRY=/etc/hrms/tenants.yaml', 'HRMS_DATA_DIR=/var/lib/hrms', 'LLM_PROVIDER', 'LLM_MODEL', 'OPENAI_API_KEY', ...]
+
+tests/audit/test_audit_disclosure_egress.py:240: AssertionError
+_____________ test_overlay_mcp_entity_spec_preserves_mcp_protocol ______________
+
+    def test_overlay_mcp_entity_spec_preserves_mcp_protocol():
+        """BUG-2 (HIGH): DeclarativeMappingOverlay crashes with OverlayError on McpEntitySpec.
+    
+        Decision D8 / README section 12: Declarative connector supports both REST and MCP protocols.
+        In hrms_plugin/integrations/mapping_overlay.py:65, overlay() unconditionally executes:
+            merged = EntitySpec.model_validate(...)
+        instead of adapting to McpEntitySpec when the vendor profile uses protocol: mcp.
+        Because McpEntitySpec lacks EntitySpec fields (method, pagination) and has extra fields (tool, arguments),
+        Pydantic ValidationError is raised and re-wrapped into an unhandled OverlayError.
+        """
+        mcp_spec = McpEntitySpec(
+            path="/mcp",
+            tool="get_requisitions",
+            arguments={},
+            id_from="req_id",
+            fields={"title": FieldSpec.model_validate({"from": "job_title", "type": "str"})},
+        )
+        mapping = EntityMapping(
+            vendor="iceipts",
+            entity_type="requisition",
+            id_path="req_id",
+            fields=(FieldMap(target="title", source="custom_job_title"),),
+        )
+    
+        # When overlay is called on an McpEntitySpec with an approved mapping, it MUST return an McpEntitySpec
+>       merged, overridden = overlay(mcp_spec, mapping)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/audit/test_audit_mcp_overlay.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+spec = McpEntitySpec(path='/mcp', tool='get_requisitions', arguments={}, items_at=None, cursor_param=None, next_cursor_at=None, id_from='req_id', fields={'title': FieldSpec(source='job_title', type='str', map=None, transform=None, required=None)})
+mapping = EntityMapping(vendor='iceipts', entity_type='requisition', id_path='req_id', version_path=None, fields=(FieldMap(targe...'custom_job_title', transform='string', default=None, required=False, values={}),), collection_path=None, writeback={})
+
+    def overlay(spec: EntitySpec, mapping: EntityMapping) -> Tuple[EntitySpec, List[str]]:
+        fields = dict(spec.fields)
+        overridden: List[str] = []
+        for fm in mapping.fields:
+            fields[fm.target] = _field_spec(fm)  # type: ignore[index]
+            overridden.append(fm.target)
+        try:
+            merged = EntitySpec.model_validate({**spec.model_dump(by_alias=True), "fields": {
+                name: fs.model_dump(by_alias=True, exclude_none=True) for name, fs in fields.items()}})
+        except ValidationError as exc:
+            message = "; ".join(str(e["msg"]) for e in exc.errors())
+>           raise OverlayError(overridden[0] if len(overridden) == 1 else ",".join(overridden), message) from None
+E           hrms_plugin.integrations.mapping_overlay.OverlayError: title: Input should be a valid string; Field required; Extra inputs are not permitted; Extra inputs are not permitted; Extra inputs are not permitted; Extra inputs are not permitted
+
+hrms_plugin/integrations/mapping_overlay.py:69: OverlayError
+_____________ test_introspect_detects_missing_expected_field_drift _____________
+
+make_client = <function make_client.<locals>._make at 0x107796020>
+auth_headers = {'Authorization': 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUtcnNhIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2lkcC5hY21l...sXAA_ScjNKqn3BtSRP4gnNkszvrLFHuLF2LUqMi1zqTI3XpbiHBqLD3h5w3AfROavKhRU4z3fvWhLHn452KDMB9CcBiLHb7IXvriCrqbgcgFa_u8ax9Zw'}
+approver_headers = {'Authorization': 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUtcnNhIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2lkcC5hY21l...RY_IhzZ0L_MvoRBr511w2dD43skiKMbLRvSQxLtqMnbRr07jXoF0nQ4sQ2B5Cn506YgSXYBMM31J2L_tpgkfDRW_1c8GsaE4qYlM34mCjJwh3GjTKsUSw'}
+
+    def test_introspect_detects_missing_expected_field_drift(make_client, auth_headers, approver_headers):
+        """BUG-1 (HIGH): Introspect must detect missing expected field drift against active mapping.
+    
+        README §12 step 1: introspect runs drift detection against active mapping.
+        Decision D5: SchemaDriftInterceptor inspects response and detects missing fields.
+        In app.py:552-556, inspect_response() is called without check_missing=True and without expected_fields,
+        causing missing expected fields to be completely ignored.
+        """
+        client = make_client()
+    
+        # 1. Setup an active mapping expecting "id" (mapped to "job_id") and "title" (mapped to "job_title")
+        mapping = EntityMapping(
+            vendor="vendor_drift",
+            entity_type="requisition",
+            id_path="job_id",
+            fields=(
+                FieldMap(target="id", source="job_id"),
+                FieldMap(target="title", source="job_title"),
+            ),
+        )
+        ver = mapping_store.propose_mapping(
+            tenant_id="acme",
+            mapping=mapping,
+            proposed_by="admin-1",
+            coverage={"score": 1.0, "fields": {}},
+        )
+        mapping_store.approve_version(
+            tenant_id="acme",
+            vendor="vendor_drift",
+            entity_type="requisition",
+            version=ver,
+            approver="approver-2",
+        )
+    
+        # 2. Introspect sample records that omit "job_title" completely
+        resp = client.post(
+            "/v1/schema/introspect",
+            json={
+                "vendor": "vendor_drift",
+                "sample_records": {
+                    "REQUISITION": [{"job_id": "REQ-101"}]  # missing expected field "job_title"
+                },
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+    
+        # The drift list MUST report the missing field
+        assert "drift" in data
+        missing_drifts = [d for d in data["drift"] if d.get("field_name") == "job_title" or "missing" in str(d).lower()]
+>       assert len(missing_drifts) > 0, "Expected missing field drift for 'job_title', but drift list was empty"
+E       AssertionError: Expected missing field drift for 'job_title', but drift list was empty
+E       assert 0 > 0
+E        +  where 0 = len([])
+
+tests/audit/test_audit_schema.py:312: AssertionError
+_____ test_synthesize_malformed_discovered_field_missing_name_returns_422 ______
+
+make_client = <function make_client.<locals>._make at 0x107795bc0>
+auth_headers = {'Authorization': 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUtcnNhIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2lkcC5hY21l...sXAA_ScjNKqn3BtSRP4gnNkszvrLFHuLF2LUqMi1zqTI3XpbiHBqLD3h5w3AfROavKhRU4z3fvWhLHn452KDMB9CcBiLHb7IXvriCrqbgcgFa_u8ax9Zw'}
+
+    def test_synthesize_malformed_discovered_field_missing_name_returns_422(make_client, auth_headers):
+        """BUG-3 (MEDIUM): Synthesize crashes with 500 KeyError when discovered_field lacks 'name'.
+    
+        In app.py:589, _prepare_synthesis_discovered performs `name = f['name']`.
+        Because SynthesizeRequest defines discovered_fields as List[Dict[str, Any]] without item validation,
+        omitting 'name' raises an unhandled KeyError returning 500 instead of 422.
+        """
+        client = make_client(raise_server_exceptions=False)
+        resp = client.post(
+            "/v1/schema/synthesize",
+            json={
+                "vendor": "custom_hr",
+                "domain": "REQUISITION",
+                "discovered_fields": [
+                    {"path": "raw.field", "sample_values": [123]}  # missing "name"
+                ],
+                "sample_records": [{"raw": {"field": 123}}],
+            },
+            headers=auth_headers,
+        )
+>       assert resp.status_code == 422, f"Expected 422 Unprocessable Entity, got {resp.status_code}: {resp.text}"
+E       AssertionError: Expected 422 Unprocessable Entity, got 500: Internal Server Error
+E       assert 500 == 422
+E        +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+tests/audit/test_audit_schema.py:335: AssertionError
+________ test_introspect_no_swagger_or_samples_standard_error_envelope _________
+
+make_client = <function make_client.<locals>._make at 0x10782da80>
+auth_headers = {'Authorization': 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUtcnNhIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2lkcC5hY21l...sXAA_ScjNKqn3BtSRP4gnNkszvrLFHuLF2LUqMi1zqTI3XpbiHBqLD3h5w3AfROavKhRU4z3fvWhLHn452KDMB9CcBiLHb7IXvriCrqbgcgFa_u8ax9Zw'}
+
+    def test_introspect_no_swagger_or_samples_standard_error_envelope(make_client, auth_headers):
+        """BUG-4 (MEDIUM): Introspect with no swagger or samples raises HTTPException bypassing error envelope.
+    
+        README lines 827-835: all error responses return {"error": "<CODE>", "detail": ...}.
+        In app.py:576, HTTPException(status_code=400, detail=...) is raised, producing {"detail": ...}.
+        """
+        client = make_client()
+        resp = client.post(
+            "/v1/schema/introspect",
+            json={
+                "vendor": "custom_hr",
+                # neither swagger_dict nor sample_records provided
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 400
+        data = resp.json()
+>       assert "error" in data, f"Expected error envelope with 'error' key, got: {data}"
+E       AssertionError: Expected error envelope with 'error' key, got: {'detail': 'Must provide swagger_dict or sample_records'}
+E       assert 'error' in {'detail': 'Must provide swagger_dict or sample_records'}
+
+tests/audit/test_audit_schema.py:355: AssertionError
+______________ test_get_mapping_not_found_standard_error_envelope ______________
+
+make_client = <function make_client.<locals>._make at 0x10787a520>
+auth_headers = {'Authorization': 'Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6ImFjbWUtcnNhIiwidHlwIjoiSldUIn0.eyJpc3MiOiJodHRwczovL2lkcC5hY21l...sXAA_ScjNKqn3BtSRP4gnNkszvrLFHuLF2LUqMi1zqTI3XpbiHBqLD3h5w3AfROavKhRU4z3fvWhLHn452KDMB9CcBiLHb7IXvriCrqbgcgFa_u8ax9Zw'}
+
+    def test_get_mapping_not_found_standard_error_envelope(make_client, auth_headers):
+        """BUG-4 (MEDIUM): GET mapping not found raises HTTPException bypassing error envelope.
+    
+        README lines 827-835: all error responses return {"error": "<CODE>", "detail": ...}.
+        In app.py:707, HTTPException(status_code=404, detail=...) is raised, producing {"detail": ...}.
+        """
+        client = make_client()
+        resp = client.get(
+            "/v1/schema/mappings/nonexistent_vendor/requisition",
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+        data = resp.json()
+>       assert "error" in data, f"Expected error envelope with 'error' key, got: {data}"
+E       AssertionError: Expected error envelope with 'error' key, got: {'detail': 'No mapping found for nonexistent_vendor/requisition'}
+E       assert 'error' in {'detail': 'No mapping found for nonexistent_vendor/requisition'}
+
+tests/audit/test_audit_schema.py:372: AssertionError
+=========================== short test summary info ============================
+FAILED tests/audit/test_audit_disclosure_egress.py::test_docker_compose_declares_disclosure_key_file
+FAILED tests/audit/test_audit_mcp_overlay.py::test_overlay_mcp_entity_spec_preserves_mcp_protocol
+FAILED tests/audit/test_audit_schema.py::test_introspect_detects_missing_expected_field_drift
+FAILED tests/audit/test_audit_schema.py::test_synthesize_malformed_discovered_field_missing_name_returns_422
+FAILED tests/audit/test_audit_schema.py::test_introspect_no_swagger_or_samples_standard_error_envelope
+FAILED tests/audit/test_audit_schema.py::test_get_mapping_not_found_standard_error_envelope
+6 failed in 1.45s
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_______________________ test_no_http_exception_in_server _______________________
+
+    def test_no_http_exception_in_server():
+        """A4: Assert no HTTPException( remains anywhere in hrms_plugin/server/."""
+        server_dir = Path("hrms_plugin/server")
+        offenders = []
+        for py_file in server_dir.glob("*.py"):
+            content = py_file.read_text(encoding="utf-8")
+            if "HTTPException(" in content:
+                offenders.append(str(py_file))
+>       assert not offenders, f"Found HTTPException( in server files: {offenders}"
+E       AssertionError: Found HTTPException( in server files: ['hrms_plugin/server/app.py']
+E       assert not ['hrms_plugin/server/app.py']
+
+tests/audit/test_audit_fixes.py:34: AssertionError
+____________ test_synthesize_non_string_name_returns_422_with_index ____________
+
+make_client = <function make_client.<locals>._make at 0x112d89580>
+bearer = <function bearer.<locals>._headers at 0x112db4c20>
+
+    def test_synthesize_non_string_name_returns_422_with_index(make_client, bearer):
+        """A3: discovered_fields item with a non-string name returns 422 INVALID_ARGUMENT naming the item index."""
+        client = make_client(raise_server_exceptions=False)
+        h_admin = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        resp = client.post(
+            "/v1/schema/synthesize",
+            json={
+                "vendor": "custom_hr",
+                "domain": "REQUISITION",
+                "discovered_fields": [
+                    {"name": "valid_field", "path": "raw.valid"},
+                    {"name": 12345, "path": "raw.invalid"},
+                ],
+                "sample_records": [{"raw": {"valid": "ok"}}],
+            },
+            headers=h_admin,
+        )
+>       assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+E       AssertionError: Expected 422, got 500: Internal Server Error
+E       assert 500 == 422
+E        +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+tests/audit/test_audit_fixes.py:54: AssertionError
+_____________ test_synthesize_non_dict_item_returns_422_with_index _____________
+
+make_client = <function make_client.<locals>._make at 0x112db4fe0>
+bearer = <function bearer.<locals>._headers at 0x112db5440>
+
+    def test_synthesize_non_dict_item_returns_422_with_index(make_client, bearer):
+        """A3: discovered_fields item that is not a dict returns 422 INVALID_ARGUMENT naming the item index."""
+        client = make_client(raise_server_exceptions=False)
+        h_admin = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        resp = client.post(
+            "/v1/schema/synthesize",
+            json={
+                "vendor": "custom_hr",
+                "domain": "REQUISITION",
+                "discovered_fields": [
+                    "not-a-dict",
+                ],
+                "sample_records": [{"raw": {"valid": "ok"}}],
+            },
+            headers=h_admin,
+        )
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+        data = resp.json()
+>       assert data.get("error") == "INVALID_ARGUMENT", f"Expected error INVALID_ARGUMENT, got {data}"
+E       AssertionError: Expected error INVALID_ARGUMENT, got {'detail': [{'type': 'dict_type', 'loc': ['body', 'discovered_fields', 0], 'msg': 'Input should be a valid dictionary', 'input': 'not-a-dict'}]}
+E       assert None == 'INVALID_ARGUMENT'
+E        +  where None = <built-in method get of dict object at 0x112e8a0c0>('error')
+E        +    where <built-in method get of dict object at 0x112e8a0c0> = {'detail': [{'type': 'dict_type', 'loc': ['body', 'discovered_fields', 0], 'msg': 'Input should be a valid dictionary', 'input': 'not-a-dict'}]}.get
+
+tests/audit/test_audit_fixes.py:78: AssertionError
+___________ test_shape_approve_already_approved_and_new_fingerprint ____________
+
+make_client = <function make_client.<locals>._make at 0x112db5580>
+bearer = <function bearer.<locals>._headers at 0x112e39300>
+
+    def test_shape_approve_already_approved_and_new_fingerprint(make_client, bearer):
+        """A6: Re-approving already-approved shape fingerprint -> 200 ALREADY_APPROVED with no pending record.
+    
+        A different fingerprint still returns 202 PENDING_CONFIRMATION and then executes with a second person.
+        """
+        client = make_client()
+        h_admin1 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        h_admin2 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-2")
+        fp1 = "sha256:" + "1" * 64
+        fp2 = "sha256:" + "2" * 64
+        key = _shape_key("acme", "frappe")
+    
+        # 1. Observe fp1
+        _storage.set(
+            "observed_shapes",
+            key,
+            {"fingerprint": fp1, "shape": {"title": {"present": True, "types": ["str"]}}},
+        )
+    
+        # 2. First person proposes fp1 -> 202
+        r1 = client.post("/v1/hosts/requisitions/shape/approve", json={"fingerprint": fp1}, headers=h_admin1)
+>       assert r1.status_code == 202
+E       assert 409 == 202
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+tests/audit/test_audit_fixes.py:103: AssertionError
+____ test_payroll_fingerprint_approve_already_approved_and_new_fingerprint _____
+
+make_client = <function make_client.<locals>._make at 0x112e38ea0>
+bearer = <function bearer.<locals>._headers at 0x112e38900>
+
+    def test_payroll_fingerprint_approve_already_approved_and_new_fingerprint(make_client, bearer):
+        """A6: Re-approving already-approved payroll fingerprint -> 200 ALREADY_APPROVED with no pending record.
+    
+        A different fingerprint still returns 202 PENDING_CONFIRMATION and then executes with a second person.
+        """
+        client = make_client()
+        h_admin1 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        h_admin2 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-2")
+        fp1 = "sha256:" + "3" * 64
+        fp2 = "sha256:" + "4" * 64
+        key = "acme:frappe:Salary Slip"
+    
+        # 1. First person proposes fp1 -> 202
+        r1 = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp1},
+            headers=h_admin1,
+        )
+        assert r1.status_code == 202
+        assert r1.json()["status"] == "PENDING_CONFIRMATION"
+    
+        # 2. Second person approves fp1 -> 200 APPROVED
+        r2 = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp1},
+            headers=h_admin2,
+        )
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "APPROVED"
+        assert payroll_service._store.get(PENDING_NS, key) is None
+        assert payroll_service._store.get(APPROVED_NS, key) is not None
+    
+        # 3. Re-approve fp1 (already approved) -> 200 ALREADY_APPROVED and no pending record
+        r_reapprove = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp1},
+            headers=h_admin1,
+        )
+>       assert r_reapprove.status_code == 200
+E       assert 202 == 200
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+tests/audit/test_audit_fixes.py:177: AssertionError
+=========================== short test summary info ============================
+FAILED tests/audit/test_audit_fixes.py::test_no_http_exception_in_server - As...
+FAILED tests/audit/test_audit_fixes.py::test_synthesize_non_string_name_returns_422_with_index
+FAILED tests/audit/test_audit_fixes.py::test_synthesize_non_dict_item_returns_422_with_index
+FAILED tests/audit/test_audit_fixes.py::test_shape_approve_already_approved_and_new_fingerprint
+FAILED tests/audit/test_audit_fixes.py::test_payroll_fingerprint_approve_already_approved_and_new_fingerprint
+5 failed in 1.08s
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_______________________ test_no_http_exception_in_server _______________________
+
+    def test_no_http_exception_in_server():
+        """A4: Assert no HTTPException( remains anywhere in hrms_plugin/server/."""
+        server_dir = Path("hrms_plugin/server")
+        offenders = []
+        for py_file in server_dir.glob("*.py"):
+            content = py_file.read_text(encoding="utf-8")
+            if "HTTPException(" in content:
+                offenders.append(str(py_file))
+>       assert not offenders, f"Found HTTPException( in server files: {offenders}"
+E       AssertionError: Found HTTPException( in server files: ['hrms_plugin/server/app.py']
+E       assert not ['hrms_plugin/server/app.py']
+
+tests/audit/test_audit_fixes.py:63: AssertionError
+____________ test_synthesize_non_string_name_returns_422_with_index ____________
+
+make_client = <function make_client.<locals>._make at 0x10f1edbc0>
+bearer = <function bearer.<locals>._headers at 0x10f1ee160>
+
+    def test_synthesize_non_string_name_returns_422_with_index(make_client, bearer):
+        """A3: discovered_fields item with a non-string name returns 422 INVALID_ARGUMENT naming the item index."""
+        client = make_client(raise_server_exceptions=False)
+        h_admin = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        resp = client.post(
+            "/v1/schema/synthesize",
+            json={
+                "vendor": "custom_hr",
+                "domain": "REQUISITION",
+                "discovered_fields": [
+                    {"name": "valid_field", "path": "raw.valid"},
+                    {"name": 12345, "path": "raw.invalid"},
+                ],
+                "sample_records": [{"raw": {"valid": "ok"}}],
+            },
+            headers=h_admin,
+        )
+>       assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+E       AssertionError: Expected 422, got 500: Internal Server Error
+E       assert 500 == 422
+E        +  where 500 = <Response [500 Internal Server Error]>.status_code
+
+tests/audit/test_audit_fixes.py:83: AssertionError
+_____________ test_synthesize_non_dict_item_returns_422_with_index _____________
+
+make_client = <function make_client.<locals>._make at 0x10f209260>
+bearer = <function bearer.<locals>._headers at 0x10f2099e0>
+
+    def test_synthesize_non_dict_item_returns_422_with_index(make_client, bearer):
+        """A3: discovered_fields item that is not a dict returns 422 INVALID_ARGUMENT naming the item index."""
+        client = make_client(raise_server_exceptions=False)
+        h_admin = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        resp = client.post(
+            "/v1/schema/synthesize",
+            json={
+                "vendor": "custom_hr",
+                "domain": "REQUISITION",
+                "discovered_fields": [
+                    "not-a-dict",
+                ],
+                "sample_records": [{"raw": {"valid": "ok"}}],
+            },
+            headers=h_admin,
+        )
+        assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+        data = resp.json()
+>       assert data.get("error") == "INVALID_ARGUMENT", f"Expected error INVALID_ARGUMENT, got {data}"
+E       AssertionError: Expected error INVALID_ARGUMENT, got {'detail': [{'type': 'dict_type', 'loc': ['body', 'discovered_fields', 0], 'msg': 'Input should be a valid dictionary', 'input': 'not-a-dict'}]}
+E       assert None == 'INVALID_ARGUMENT'
+E        +  where None = <built-in method get of dict object at 0x10f2a39c0>('error')
+E        +    where <built-in method get of dict object at 0x10f2a39c0> = {'detail': [{'type': 'dict_type', 'loc': ['body', 'discovered_fields', 0], 'msg': 'Input should be a valid dictionary', 'input': 'not-a-dict'}]}.get
+
+tests/audit/test_audit_fixes.py:107: AssertionError
+___________ test_shape_approve_already_approved_and_new_fingerprint ____________
+
+make_client = <function make_client.<locals>._make at 0x10f164860>
+bearer = <function bearer.<locals>._headers at 0x10f209800>
+
+    def test_shape_approve_already_approved_and_new_fingerprint(make_client, bearer):
+        """A6: Re-approving already-approved shape fingerprint -> 200 ALREADY_APPROVED with no pending record.
+    
+        A different fingerprint still returns 202 PENDING_CONFIRMATION and then executes with a second person.
+        """
+        client = make_client()
+        h_admin1 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        h_admin2 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-2")
+        fp1 = "sha256:" + "1" * 64
+        fp2 = "sha256:" + "2" * 64
+        key = _shape_key("acme", "frappe")
+    
+        # 1. Observe fp1
+        _storage.set(
+            "observed_shapes",
+            key,
+            {"fingerprint": fp1, "shape": {"title": {"present": True, "types": ["str"]}}},
+        )
+    
+        # 2. First person proposes fp1 -> 202
+        r1 = client.post("/v1/hosts/requisitions/shape/approve", json={"fingerprint": fp1}, headers=h_admin1)
+        assert r1.status_code == 202
+        assert r1.json()["status"] == "PENDING_CONFIRMATION"
+    
+        # 3. Second person approves fp1 -> 200 APPROVED
+        r2 = client.post("/v1/hosts/requisitions/shape/approve", json={"fingerprint": fp1}, headers=h_admin2)
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "APPROVED"
+        assert _storage.get("pending_shapes", key) is None
+    
+        # 4. Re-approve fp1 (already approved) -> 200 ALREADY_APPROVED and no pending record created
+        r_reapprove = client.post("/v1/hosts/requisitions/shape/approve", json={"fingerprint": fp1}, headers=h_admin1)
+>       assert r_reapprove.status_code == 200
+E       assert 202 == 200
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+tests/audit/test_audit_fixes.py:143: AssertionError
+____ test_payroll_fingerprint_approve_already_approved_and_new_fingerprint _____
+
+make_client = <function make_client.<locals>._make at 0x10f209a80>
+bearer = <function bearer.<locals>._headers at 0x10f299260>
+
+    def test_payroll_fingerprint_approve_already_approved_and_new_fingerprint(make_client, bearer):
+        """A6: Re-approving already-approved payroll fingerprint -> 200 ALREADY_APPROVED with no pending record.
+    
+        A different fingerprint still returns 202 PENDING_CONFIRMATION and then executes with a second person.
+        """
+        client = make_client()
+        h_admin1 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-1")
+        h_admin2 = bearer(tenant="acme", roles=["platform_admin"], sub="admin-2")
+        fp1 = "sha256:" + "3" * 64
+        fp2 = "sha256:" + "4" * 64
+        key = "acme:frappe:Salary Slip"
+    
+        # 1. First person proposes fp1 -> 202
+        r1 = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp1},
+            headers=h_admin1,
+        )
+        assert r1.status_code == 202
+        assert r1.json()["status"] == "PENDING_CONFIRMATION"
+    
+        # 2. Second person approves fp1 -> 200 APPROVED
+        r2 = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp1},
+            headers=h_admin2,
+        )
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "APPROVED"
+        assert payroll_service._store.get(PENDING_NS, key) is None
+        assert payroll_service._store.get(APPROVED_NS, key) is not None
+    
+        # 3. Re-approve fp1 (already approved) -> 200 ALREADY_APPROVED and no pending record
+        r_reapprove = client.post(
+            "/v1/schema/fingerprints/approve",
+            json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp1},
+            headers=h_admin1,
+        )
+>       assert r_reapprove.status_code == 200
+E       assert 202 == 200
+E        +  where 202 = <Response [202 Accepted]>.status_code
+
+tests/audit/test_audit_fixes.py:206: AssertionError
+=========================== short test summary info ============================
+FAILED tests/audit/test_audit_fixes.py::test_no_http_exception_in_server - As...
+FAILED tests/audit/test_audit_fixes.py::test_synthesize_non_string_name_returns_422_with_index
+FAILED tests/audit/test_audit_fixes.py::test_synthesize_non_dict_item_returns_422_with_index
+FAILED tests/audit/test_audit_fixes.py::test_shape_approve_already_approved_and_new_fingerprint
+FAILED tests/audit/test_audit_fixes.py::test_payroll_fingerprint_approve_already_approved_and_new_fingerprint
+5 failed in 0.90s

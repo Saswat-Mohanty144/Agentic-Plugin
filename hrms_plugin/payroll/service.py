@@ -52,6 +52,9 @@ class PayrollService:
         self, tenant_id: str, vendor: str, doctype: str, fingerprint: str, approved_by: str
     ) -> Dict[str, Any]:
         key = self._key(tenant_id, vendor, doctype)
+        approved = self._store.get(APPROVED_NS, key)
+        if approved and approved.get("fingerprint") == fingerprint:
+            return {"status": "ALREADY_APPROVED", "fingerprint": fingerprint}
         pending = self._store.get(PENDING_NS, key)
         requested_at = pending.get("requested_at") if pending else None
         is_expired = requested_at is not None and (self._clock() > requested_at + 24 * 3600)

@@ -204,14 +204,15 @@ def test_payroll_fingerprint_approval_two_person_and_question_q2(make_client, be
     assert res2.status_code == 200
     assert res2.json()["status"] == "APPROVED"
 
-    # Question Q2 Behavior: A third call for the same fingerprint resets to 202 PENDING_CONFIRMATION
+    # Decision A6 Behavior: A third call for the already-approved fingerprint returns 200 ALREADY_APPROVED
     res_reapprove = client.post(
         "/v1/schema/fingerprints/approve",
         json={"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": valid_fp},
         headers=h_admin1,
     )
-    assert res_reapprove.status_code == 202
-    assert res_reapprove.json()["status"] == "PENDING_CONFIRMATION"
+    assert res_reapprove.status_code == 200
+    assert res_reapprove.json()["status"] == "ALREADY_APPROVED"
+    assert res_reapprove.json()["fingerprint"] == valid_fp
 
 
 def test_requisition_shape_approval_guards(make_client, bearer):
@@ -232,34 +233,40 @@ def test_requisition_shape_approval_guards(make_client, bearer):
 
     # 2. Record observed shape in storage
     from hrms_plugin.server.app import _shape_key, _storage
-    _storage.set("observed_shapes", _shape_key("acme", "frappe"), {"fingerprint": test_fp, "shape": {"title": "str"}})
+    key = _shape_key("acme", "frappe")
+    try:
+        _storage.set("observed_shapes", key, {"fingerprint": test_fp, "shape": {"title": "str"}})
 
-    # 3. First approval -> 202 PENDING_CONFIRMATION
-    res1 = client.post(
-        "/v1/hosts/requisitions/shape/approve",
-        json={"fingerprint": test_fp},
-        headers=h_admin1,
-    )
-    assert res1.status_code == 202
-    assert res1.json()["status"] == "PENDING_CONFIRMATION"
+        # 3. First approval -> 202 PENDING_CONFIRMATION
+        res1 = client.post(
+            "/v1/hosts/requisitions/shape/approve",
+            json={"fingerprint": test_fp},
+            headers=h_admin1,
+        )
+        assert res1.status_code == 202
+        assert res1.json()["status"] == "PENDING_CONFIRMATION"
 
-    # 4. Same person approval -> 403 SAME_PERSON
-    res_same = client.post(
-        "/v1/hosts/requisitions/shape/approve",
-        json={"fingerprint": test_fp},
-        headers=h_admin1,
-    )
-    assert res_same.status_code == 403
-    assert res_same.json()["error"] == "SAME_PERSON"
+        # 4. Same person approval -> 403 SAME_PERSON
+        res_same = client.post(
+            "/v1/hosts/requisitions/shape/approve",
+            json={"fingerprint": test_fp},
+            headers=h_admin1,
+        )
+        assert res_same.status_code == 403
+        assert res_same.json()["error"] == "SAME_PERSON"
 
-    # 5. Second person approval -> 200 APPROVED
-    res2 = client.post(
-        "/v1/hosts/requisitions/shape/approve",
-        json={"fingerprint": test_fp},
-        headers=h_admin2,
-    )
-    assert res2.status_code == 200
-    assert res2.json()["status"] == "APPROVED"
+        # 5. Second person approval -> 200 APPROVED
+        res2 = client.post(
+            "/v1/hosts/requisitions/shape/approve",
+            json={"fingerprint": test_fp},
+            headers=h_admin2,
+        )
+        assert res2.status_code == 200
+        assert res2.json()["status"] == "APPROVED"
+    finally:
+        _storage.delete("observed_shapes", key)
+        _storage.delete("pending_shapes", key)
+        _storage.delete("approved_shapes", key)
 
 
 def test_ed25519_audit_attribution_signing_and_tampering(audit_signing_env):

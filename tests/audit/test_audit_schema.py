@@ -336,11 +336,7 @@ def test_synthesize_malformed_discovered_field_missing_name_returns_422(make_cli
 
 
 def test_introspect_no_swagger_or_samples_standard_error_envelope(make_client, auth_headers):
-    """BUG-4 (MEDIUM): Introspect with no swagger or samples raises HTTPException bypassing error envelope.
-
-    README lines 827-835: all error responses return {"error": "<CODE>", "detail": ...}.
-    In app.py:576, HTTPException(status_code=400, detail=...) is raised, producing {"detail": ...}.
-    """
+    """A4: Introspect with no swagger or samples raises ApiError(422) with standard error envelope."""
     client = make_client()
     resp = client.post(
         "/v1/schema/introspect",
@@ -350,7 +346,7 @@ def test_introspect_no_swagger_or_samples_standard_error_envelope(make_client, a
         },
         headers=auth_headers,
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 422
     data = resp.json()
     assert "error" in data, f"Expected error envelope with 'error' key, got: {data}"
     assert data["error"] == "INVALID_ARGUMENT"

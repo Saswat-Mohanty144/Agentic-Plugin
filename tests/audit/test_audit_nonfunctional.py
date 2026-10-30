@@ -278,12 +278,12 @@ def test_benchmark_value_check_50_records():
     assert elapsed_ms < 50.0, f"Value check too slow: {elapsed_ms:.2f} ms > 50 ms"
 
 
-def test_benchmark_disclosure_lookup_10k_rows():
+def test_benchmark_disclosure_lookup_10k_rows(monkeypatch):
     """Performance: Subject lookup in an EgressLog with 10,000 rows must execute in under 200 ms."""
     tmp = tempfile.NamedTemporaryFile("wb", delete=False)
     tmp.write(secrets.token_bytes(32))
     tmp.close()
-    os.environ["HRMS_DISCLOSURE_KEY_FILE"] = tmp.name
+    monkeypatch.setenv("HRMS_DISCLOSURE_KEY_FILE", tmp.name)
 
     try:
         store = MemoryKeyValueStore()

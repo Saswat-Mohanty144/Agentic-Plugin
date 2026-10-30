@@ -243,7 +243,7 @@ def test_rollback_http_two_person_flow(make_client, bearer, monkeypatch, tmp_pat
 def test_schema_fingerprint_approval_two_person_rule(make_client, bearer, test_ed25519_key):
     """POST /v1/schema/fingerprints/approve: 202 PENDING_CONFIRMATION -> 403 SAME_PERSON -> 200 APPROVED."""
     client = make_client()
-    fp_a = "sha256:" + "a" * 64
+    fp_a = "sha256:" + "e1" * 32
     body_a = {"vendor": "frappe", "doctype": "Salary Slip", "fingerprint": fp_a}
 
     # Step 1: User 1 requests approval -> 202 PENDING_CONFIRMATION
@@ -275,8 +275,8 @@ def test_schema_fingerprint_approval_two_person_rule(make_client, bearer, test_e
 def test_schema_fingerprint_replacement_of_pending(make_client, bearer, test_ed25519_key):
     """Requesting a different fingerprint replaces the pending one."""
     client = make_client()
-    fp_a = "sha256:" + "a" * 64
-    fp_b = "sha256:" + "b" * 64
+    fp_a = "sha256:" + "e3" * 32
+    fp_b = "sha256:" + "e4" * 32
 
     # User 1 requests fingerprint A
     r1 = client.post(

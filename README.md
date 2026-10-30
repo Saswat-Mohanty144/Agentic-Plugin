@@ -672,7 +672,7 @@ flowchart LR
    name (0.90), normalised synonym (0.85), substring (0.75). Mapped fields with confidence ≥ 0.8 and a single source
    become writable back. The result is saved as a **PROPOSED** (draft) version.
    Canonical types: requisition, candidate, employee, leave request, leave balance, punch, payslip, expense claim,
-   asset, attendance request; others get a spec built on the fly.
+   asset, attendance request; the four supported types without a canonical spec (interview, offer, payroll run, appraisal) get one built on the fly; any other domain -> 422 INVALID_DOMAIN.
 3. **Coverage report.** Every draft stores `coverage`, returned by synthesize and by `GET /v1/schema/mappings`. For
    each canonical field: `status`, `source`, `confidence`, `origin` (RULE, LLM or MANUAL), `rationale`, `required`
    `accepted_by` and `suggested_classification` ([section 6.1](#61-classification-rules-which-fields-are-personal-data));
@@ -834,7 +834,7 @@ Errors are JSON `{"error": "<CODE>", ...}`. Common codes:
 | 403 | `FORBIDDEN`, `TENANT_MISMATCH`, `LLM_NOT_ALLOWED_FOR_TENANT`, `DATA_TIER_NOT_ALLOWED`, `DATA_RESIDENCY_MISMATCH`, `VOICE_NOT_ALLOWED_FOR_TENANT`, `SAME_PERSON`, `ORIGIN_NOT_ALLOWED` |
 | 404 | `NOT_FOUND`, `SLIP_NOT_FOUND` |
 | 409 | `HOST_NOT_CONFIGURED`, `SCHEMA_DRIFT`, `MAPPING_NOT_APPROVED`, `MAPPING_NOT_APPLICABLE`, `PROBE_FAILED`, `REVIEW_REQUIRED`, `CONFLICT`, `INVALID_STATE`, `FINGERPRINT_NOT_OBSERVED` |
-| 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE`, `REVIEW_INVALID` |
+| 422 | `MESSAGE_TOO_LONG`, `PII_EGRESS_BLOCKED`, `INVALID_ARGUMENT`, `INVALID_DOMAIN`, `JURISDICTION_NOT_SUPPORTED`, `CLASSIFICATION_UNKNOWN_FIELD`, `SENSITIVE_FIELD_LLM_VISIBLE`, `REVIEW_INVALID` |
 | 429 | `RATE_LIMITED`, `LLM_BUDGET_EXHAUSTED` |
 | 502 / 504 | `HOST_ERROR`, `VOICE_UPSTREAM_ERROR`, `VOICE_UPSTREAM_TIMEOUT` |
 | 503 | `AUTH_UNAVAILABLE`, `LLM_NOT_CONFIGURED`, `VOICE_NOT_CONFIGURED`, `COMPLIANCE_SOURCE_NOT_CONNECTED`, `AUDIT_SIGNING_NOT_CONFIGURED`, `DISCLOSURE_INDEX_NOT_CONFIGURED` |
@@ -848,7 +848,8 @@ HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message p
 
 - **Headers.** `Authorization: Bearer <token>` (same sign-in as every route, permission `USE_COPILOT`),
   `X-HRMS-Jurisdiction: IN|AE|SA|US` (required), optional `MCP-Protocol-Version` (`2025-06-18` or `2025-03-26`). A
-  browser `Origin`, when present, must be one of the caller's tenant's allowed origins. Rate-limited per tenant.
+  browser `Origin`, when present, must be one of the caller's tenant's allowed origins. Rate-limited per tenant
+  (every MCP frame, including `ping` and notifications, counts toward the tenant rate limit to protect against floods).
 - **Tenant opt-in.** MCP hands host data to an external AI client, so it is off by default. `tools/list` and
   `tools/call` need the tenant policy `mcp_enabled: true` and `max_data_tier: 2`, else
   `403 MCP_NOT_ALLOWED_FOR_TENANT`. Each `tools/call` is written to the egress log (provider `mcp-client`, the tool
