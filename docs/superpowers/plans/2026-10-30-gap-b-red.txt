@@ -346,3 +346,152 @@ FAILED tests/unit/test_gap_b.py::test_stream_grounding_refusal_inside_stream_loo
 ERROR tests/unit/test_gap_b.py::test_stream_2_tool_rounds_positive - Assertio...
 ERROR tests/unit/test_gap_b.py::test_stream_boundary_max_iterations_plus_1_partial
 10 failed, 1 passed, 2 errors in 0.40s
+...........FFFFFF                                                        [100%]
+=================================== FAILURES ===================================
+____________________ test_stream_result_event_no_tool_path _____________________
+
+scripted = <function scripted.<locals>._make at 0x105cd1800>
+
+    @pytest.mark.asyncio
+    async def test_stream_result_event_no_tool_path(scripted):
+        """Positive: No-tool path emits empty citations/actions in result event immediately before intent."""
+        gateway, _ = scripted(final("Direct answer."))
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("What is the company policy?", jurisdiction="AE", auth=ADMIN))
+    
+>       assert events[-3]["event"] == "done"
+E       AssertionError: assert 'token' == 'done'
+E         
+E         - done
+E         + token
+
+tests/unit/test_gap_b.py:267: AssertionError
+_______________ test_stream_result_event_no_tool_path_truncated ________________
+
+scripted = <function scripted.<locals>._make at 0x105cd1620>
+
+    @pytest.mark.asyncio
+    async def test_stream_result_event_no_tool_path_truncated(scripted):
+        """Boundary: No-tool path with length stop reason marks truncated=True in result event."""
+        gateway, _ = scripted(
+            LLMResponse(content="Cut off text...", finish_reason="length", model="scripted", provider="scripted")
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Tell me everything", jurisdiction="AE", auth=ADMIN))
+    
+>       assert events[-3]["event"] == "done"
+E       AssertionError: assert 'token' == 'done'
+E         
+E         - done
+E         + token
+
+tests/unit/test_gap_b.py:289: AssertionError
+______________________ test_stream_result_event_tool_path ______________________
+
+scripted = <function scripted.<locals>._make at 0x105d91800>
+
+    @pytest.mark.asyncio
+    async def test_stream_result_event_tool_path(scripted):
+        """Positive: Tool path populates citations and actions in result event and deduplicates citations."""
+        gateway, _ = scripted(
+            tool_call(
+                "audit_statutory_compliance",
+                employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+            ),
+            tool_call("search_labor_regulations", query="probation period limit"),
+            final("Probation is capped at 180 days under Article 9."),
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+    
+>       assert events[-3]["event"] == "done"
+E       AssertionError: assert 'token' == 'done'
+E         
+E         - done
+E         + token
+
+tests/unit/test_gap_b.py:316: AssertionError
+_________________ test_stream_result_event_tool_path_truncated _________________
+
+scripted = <function scripted.<locals>._make at 0x105d932e0>
+
+    @pytest.mark.asyncio
+    async def test_stream_result_event_tool_path_truncated(scripted):
+        """Boundary: Tool path where final response finishes with length reason marks truncated=True."""
+        gateway, _ = scripted(
+            tool_call(
+                "audit_statutory_compliance",
+                employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+            ),
+            LLMResponse(content="Audited...", finish_reason="max_tokens", model="scripted", provider="scripted"),
+        )
+        orch = _orch(gateway)
+        events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+    
+>       assert events[-3]["event"] == "done"
+E       AssertionError: assert 'token' == 'done'
+E         
+E         - done
+E         + token
+
+tests/unit/test_gap_b.py:350: AssertionError
+____________________ test_stream_result_event_partial_path _____________________
+
+scripted = <function scripted.<locals>._make at 0x105d92160>
+
+    @pytest.mark.asyncio
+    async def test_stream_result_event_partial_path(scripted):
+        """Boundary: Partial path (hitting max_iterations) marks partial=True in result event."""
+        gateway, _ = scripted(
+            tool_call(
+                "audit_statutory_compliance",
+                employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+            ),
+            final("Fallback answer after reaching step cap."),
+        )
+        orch = _orch(gateway, max_iterations=1)
+        events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+    
+        # Partial event must be emitted before tokens
+        event_names = [e["event"] for e in events]
+        assert "partial" in event_names
+    
+>       assert events[-3]["event"] == "done"
+E       AssertionError: assert 'token' == 'done'
+E         
+E         - done
+E         + token
+
+tests/unit/test_gap_b.py:378: AssertionError
+_______________ test_stream_result_event_partial_path_truncated ________________
+
+scripted = <function scripted.<locals>._make at 0x105cd1c60>
+
+    @pytest.mark.asyncio
+    async def test_stream_result_event_partial_path_truncated(scripted):
+        """Boundary: Partial path where fallback stream finishes with length reason marks partial=True and truncated=True."""
+        gateway, _ = scripted(
+            tool_call(
+                "audit_statutory_compliance",
+                employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+            ),
+            LLMResponse(content="Fallback truncated...", finish_reason="length", model="scripted", provider="scripted"),
+        )
+        orch = _orch(gateway, max_iterations=1)
+        events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+    
+>       assert events[-3]["event"] == "done"
+E       AssertionError: assert 'token' == 'done'
+E         
+E         - done
+E         + token
+
+tests/unit/test_gap_b.py:402: AssertionError
+=========================== short test summary info ============================
+FAILED tests/unit/test_gap_b.py::test_stream_result_event_no_tool_path - Asse...
+FAILED tests/unit/test_gap_b.py::test_stream_result_event_no_tool_path_truncated
+FAILED tests/unit/test_gap_b.py::test_stream_result_event_tool_path - Asserti...
+FAILED tests/unit/test_gap_b.py::test_stream_result_event_tool_path_truncated
+FAILED tests/unit/test_gap_b.py::test_stream_result_event_partial_path - Asse...
+FAILED tests/unit/test_gap_b.py::test_stream_result_event_partial_path_truncated
+6 failed, 11 passed in 0.48s

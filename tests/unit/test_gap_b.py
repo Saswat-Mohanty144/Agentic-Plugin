@@ -252,3 +252,160 @@ async def test_stream_pii_restoration_in_streamed_tokens(scripted):
     full_streamed = "".join(tokens)
     assert "Tariq Mansoor" in full_streamed
     assert "_PII_" not in full_streamed
+
+
+# Follow-up review finding: stream result event with citations, actions, partial and truncated
+
+
+@pytest.mark.asyncio
+async def test_stream_result_event_no_tool_path(scripted):
+    """Positive: No-tool path emits empty citations/actions in result event immediately before intent."""
+    gateway, _ = scripted(final("Direct answer."))
+    orch = _orch(gateway)
+    events = await _collect(orch.run_stream("What is the company policy?", jurisdiction="AE", auth=ADMIN))
+
+    assert events[-3]["event"] == "done"
+    assert events[-2]["event"] == "result"
+    assert events[-1]["event"] == "intent"
+
+    result_data = events[-2]["data"]
+    assert result_data == {
+        "statutory_citations": [],
+        "suggested_actions": [],
+        "partial": False,
+        "truncated": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_result_event_no_tool_path_truncated(scripted):
+    """Boundary: No-tool path with length stop reason marks truncated=True in result event."""
+    gateway, _ = scripted(
+        LLMResponse(content="Cut off text...", finish_reason="length", model="scripted", provider="scripted")
+    )
+    orch = _orch(gateway)
+    events = await _collect(orch.run_stream("Tell me everything", jurisdiction="AE", auth=ADMIN))
+
+    assert events[-3]["event"] == "done"
+    assert events[-2]["event"] == "result"
+    assert events[-1]["event"] == "intent"
+
+    result_data = events[-2]["data"]
+    assert result_data == {
+        "statutory_citations": [],
+        "suggested_actions": [],
+        "partial": False,
+        "truncated": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_result_event_tool_path(scripted):
+    """Positive: Tool path populates citations and actions in result event and deduplicates citations."""
+    gateway, _ = scripted(
+        tool_call(
+            "audit_statutory_compliance",
+            employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+        ),
+        tool_call("search_labor_regulations", query="probation period limit"),
+        final("Probation is capped at 180 days under Article 9."),
+    )
+    orch = _orch(gateway)
+    events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+
+    assert events[-3]["event"] == "done"
+    assert events[-2]["event"] == "result"
+    assert events[-1]["event"] == "intent"
+
+    result_data = events[-2]["data"]
+    assert result_data["partial"] is False
+    assert result_data["truncated"] is False
+
+    # Citations from tools deduplicated
+    citations = result_data["statutory_citations"]
+    assert len(citations) >= 1
+    assert len(citations) == len(set(citations))
+    assert any("Article 9" in c or "Decree-Law" in c for c in citations)
+
+    # Actions from tool output
+    actions = result_data["suggested_actions"]
+    assert len(actions) == 1
+    assert actions[0]["action"] == "REMEDIATE_PATCH"
+    assert actions[0]["patch"] == {"probation_days": 180}
+
+
+@pytest.mark.asyncio
+async def test_stream_result_event_tool_path_truncated(scripted):
+    """Boundary: Tool path where final response finishes with length reason marks truncated=True."""
+    gateway, _ = scripted(
+        tool_call(
+            "audit_statutory_compliance",
+            employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+        ),
+        LLMResponse(content="Audited...", finish_reason="max_tokens", model="scripted", provider="scripted"),
+    )
+    orch = _orch(gateway)
+    events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+
+    assert events[-3]["event"] == "done"
+    assert events[-2]["event"] == "result"
+    assert events[-1]["event"] == "intent"
+
+    result_data = events[-2]["data"]
+    assert result_data["partial"] is False
+    assert result_data["truncated"] is True
+    assert len(result_data["statutory_citations"]) >= 1
+    assert len(result_data["suggested_actions"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_result_event_partial_path(scripted):
+    """Boundary: Partial path (hitting max_iterations) marks partial=True in result event."""
+    gateway, _ = scripted(
+        tool_call(
+            "audit_statutory_compliance",
+            employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+        ),
+        final("Fallback answer after reaching step cap."),
+    )
+    orch = _orch(gateway, max_iterations=1)
+    events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+
+    # Partial event must be emitted before tokens
+    event_names = [e["event"] for e in events]
+    assert "partial" in event_names
+
+    assert events[-3]["event"] == "done"
+    assert events[-2]["event"] == "result"
+    assert events[-1]["event"] == "intent"
+
+    result_data = events[-2]["data"]
+    assert result_data["partial"] is True
+    assert result_data["truncated"] is False
+    assert len(result_data["statutory_citations"]) >= 1
+    assert len(result_data["suggested_actions"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_result_event_partial_path_truncated(scripted):
+    """Boundary: Partial path where fallback stream finishes with length reason marks partial and truncated."""
+    gateway, _ = scripted(
+        tool_call(
+            "audit_statutory_compliance",
+            employees=[{"employee_id": "EMP-01", "name": "Alice", "probation_days": 200}],
+        ),
+        LLMResponse(content="Fallback truncated...", finish_reason="length", model="scripted", provider="scripted"),
+    )
+    orch = _orch(gateway, max_iterations=1)
+    events = await _collect(orch.run_stream("Audit probation of 200 days for Alice", jurisdiction="AE", auth=ADMIN))
+
+    assert events[-3]["event"] == "done"
+    assert events[-2]["event"] == "result"
+    assert events[-1]["event"] == "intent"
+
+    result_data = events[-2]["data"]
+    assert result_data["partial"] is True
+    assert result_data["truncated"] is True
+    assert len(result_data["statutory_citations"]) >= 1
+    assert len(result_data["suggested_actions"]) == 1
+

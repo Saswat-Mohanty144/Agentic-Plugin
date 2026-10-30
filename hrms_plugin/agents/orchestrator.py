@@ -188,6 +188,15 @@ def _collect_from_text(text: str, state: _RunState) -> None:
                 state.citations.append(line.strip(" -•*"))
 
 
+def _result_data(state: _RunState, *, partial: bool = False, truncated: bool = False) -> Dict[str, Any]:
+    return {
+        "statutory_citations": list(dict.fromkeys(state.citations)),
+        "suggested_actions": state.actions,
+        "partial": partial,
+        "truncated": truncated,
+    }
+
+
 class AgenticOrchestrator:
     """Super Agentic ReAct Engine coordinating multi-step tool reasoning and statutory compliance."""
 
@@ -298,14 +307,15 @@ class AgenticOrchestrator:
         return self.tool_registry.intent_for(state.executed_tools[0]) if state.executed_tools else UserIntent.GENERAL_HR
 
     def _response(self, state: _RunState, reply_text: str, confidence: float) -> AgentResponse:
+        data = _result_data(state)
         return AgentResponse(
             intent=self._intent(state),
             routed_agent="AgenticBrain",
             reply_text=reply_text,
             confidence_score=confidence,
             structured_data=state.last_tool_data,
-            statutory_citations=list(dict.fromkeys(state.citations)),
-            suggested_actions=state.actions,
+            statutory_citations=data["statutory_citations"],
+            suggested_actions=data["suggested_actions"],
             thought_process=[s.thought for s in state.steps if s.thought],
             tool_calls=[s.tool_call for s in state.steps if s.tool_call],
         )
@@ -419,13 +429,15 @@ class AgenticOrchestrator:
             if not llm_resp.tool_calls:
                 for piece in re.findall(r"\S+\s*|\s+", llm_resp.content or ""):
                     yield {"event": "token", "data": piece}
+                truncated = llm_resp.finish_reason in LENGTH_STOP_REASONS
                 yield {
                     "event": "done",
                     "data": {
                         "finish_reason": llm_resp.finish_reason,
-                        "truncated": llm_resp.finish_reason in LENGTH_STOP_REASONS,
+                        "truncated": truncated,
                     },
                 }
+                yield {"event": "result", "data": _result_data(state, partial=False, truncated=truncated)}
                 yield {"event": "intent", "data": self._intent(state).value}
                 return
 
@@ -447,11 +459,15 @@ class AgenticOrchestrator:
 
         # After max_iterations rounds still requesting tools:
         yield {"event": "partial", "data": True}
+        # Same tools as earlier turns so the cached prefix matches; the gateway forbids their use here (agy H-F1).
+        truncated = False
         async for chunk in self.llm_gateway.chat_stream(messages, tools=tools, tenant_id=tenant_id, pii=state.pii):
             if chunk.get("event") == "done":
                 data = dict(chunk.get("data") or {})
-                data["truncated"] = data.get("finish_reason") in LENGTH_STOP_REASONS
+                truncated = data.get("finish_reason") in LENGTH_STOP_REASONS
+                data["truncated"] = truncated
                 yield {**chunk, "data": data}
             else:
                 yield chunk
+        yield {"event": "result", "data": _result_data(state, partial=True, truncated=truncated)}
         yield {"event": "intent", "data": self._intent(state).value}
