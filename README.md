@@ -1067,7 +1067,7 @@ HRMS_FRAPPE_SANDBOX=1 pytest tests/integration   # live Frappe tests (needs the 
 | `tests/integration` | Live Frappe HR v15 sandbox |
 | `sdk/test` | Widget core logic, streaming parser and DOM-level behaviour (217 tests) |
 
-Latest full run on `agentic-ai` (2026-10-30, after the adversarial audit): **2,498 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
+Latest full run on `agentic-ai` (2026-10-30, after the adversarial audit): **2,508 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
 **217 passed**, ruff clean. The last measured line coverage was 98.9% (2026-10-29, before the section-20 fixes).
 
 How quality was established:
