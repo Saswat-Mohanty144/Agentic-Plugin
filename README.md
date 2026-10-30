@@ -372,7 +372,8 @@ personal data items it touched, as keyed fingerprints, never values:
 
 A fingerprint is HMAC-SHA256 over tenant, kind and the normalised value with a secret key
 (`HRMS_DISCLOSURE_KEY_FILE`, at least 32 bytes). A plain hash is never stored, because ID numbers are short enough to
-guess. Without the key, rows carry no fingerprints and the lookup answers `503 DISCLOSURE_INDEX_NOT_CONFIGURED`.
+guess. Generate it with `python -m hrms_plugin.cli gen-disclosure-key <path>` (or `openssl rand -out <path> 32`,
+mode 600). Without the key, rows carry no fingerprints and the lookup answers `503 DISCLOSURE_INDEX_NOT_CONFIGURED`.
 
 `POST /v1/governance/disclosures/lookup` with `{"kind": "PAN", "value": "..."}` answers whether that item left the
 system for the caller's tenant, and when, to which provider and channel, and with which outcome. It is a POST so the
@@ -886,7 +887,7 @@ HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message p
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `NVIDIA_API_KEY` | Provider credentials | none |
 | `SARVAM_API_KEY` | Voice provider key | voice off |
 | `HRMS_AUDIT_SIGNING_KEY_FILE`, `HRMS_AUDIT_KEY_ID` | Ed25519 private key (PEM) for signing host-write audit headers, and its id | host writes refused |
-| `HRMS_DISCLOSURE_KEY_FILE` | Secret (at least 32 bytes) for disclosure fingerprints; a changed file is picked up. Create it yourself (`openssl rand -out disclosure.key 32`, mode 600). Compose passes the variable through; k8s mounts the optional Secret `hrms-plugin-disclosure-key` at `/etc/hrms/disclosure/disclosure.key` | no fingerprints, lookup 503 |
+| `HRMS_DISCLOSURE_KEY_FILE` | Secret (at least 32 bytes) for disclosure fingerprints; a changed file is picked up. Create it yourself (`python -m hrms_plugin.cli gen-disclosure-key <path>` or `openssl rand -out disclosure.key 32`, mode 600). Compose passes the variable through; k8s mounts the optional Secret `hrms-plugin-disclosure-key` at `/etc/hrms/disclosure/disclosure.key` | no fingerprints, lookup 503 |
 | `HRMS_DEMO_ENDPOINTS` | `true` enables demo compliance routes | off |
 | `HRMS_ENABLE_API_DOCS` | `true` serves `/docs`, `/redoc`, `/openapi.json` | off |
 | `HRMS_EVAL_LIVE_APPROVED`, `HRMS_EVAL_TENANT` | Gate for live evals | off |
@@ -1038,6 +1039,7 @@ Before production, note:
 | `calculate-salary` | `--ctc`, `--jurisdiction IN\|AE` (default IN) |
 | `audit-compliance` | `--file` (required in practice; exits 2 if missing or invalid), `--jurisdiction` (default AE) |
 | `check-bias` | `--text` |
+| `gen-disclosure-key` | `<path>` |
 
 **Evals:** `python -m hrms_plugin.evals.runner --live` runs 8 cases against a real provider only if
 `HRMS_EVAL_LIVE_APPROVED=1` and `HRMS_EVAL_TENANT` names a tenant allowed to use that provider. It reports pass rate,
