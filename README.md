@@ -569,7 +569,9 @@ sequenceDiagram
   `ROLLBACK_CONFLICT` if it changed after the write.
 - Approval is idempotent: approving an executed proposal returns it unchanged.
 - **Rollback also needs two people.** The first call records who asked (`202 ROLLBACK_PENDING`); the same person
-  again gets `403 SAME_PERSON`; a different authorised user's call performs it.
+  again gets `403 SAME_PERSON`; a different authorised user's call performs it. A pending request expires after
+  24 hours (as do proposals); after that the next call starts a new request. The same 24-hour expiry applies to
+  pending fingerprint and shape approvals.
 - **Signed audit headers.** Each host write carries `X-Plugin-Version`, `X-Agent-Invocation-Id`, `X-Agent-Name`,
   `X-HITL-Approver-Id`, `X-Tenant-Id`, `X-Reasoning-Hash` (SHA-256 of the change), `X-Trace-Timestamp`,
   `X-Audit-Key-Id` and `X-Audit-Signature`. The signature is Ed25519 over the other eight headers, written as
@@ -755,7 +757,12 @@ HTTP with JSON responses (no server-sent events) and JSON-RPC 2.0, one message p
 
 - **Headers.** `Authorization: Bearer <token>` (same sign-in as every route, permission `USE_COPILOT`),
   `X-HRMS-Jurisdiction: IN|AE|SA|US` (required), optional `MCP-Protocol-Version` (`2025-06-18` or `2025-03-26`). A
-  browser `Origin`, when present, must be one of the tenants' allowed origins. Rate-limited per tenant.
+  browser `Origin`, when present, must be one of the caller's tenant's allowed origins. Rate-limited per tenant.
+- **Tenant opt-in.** MCP hands host data to an external AI client, so it is off by default. `tools/list` and
+  `tools/call` need the tenant policy `mcp_enabled: true` and `max_data_tier: 2`, else
+  `403 MCP_NOT_ALLOWED_FOR_TENANT`. Each `tools/call` is written to the egress log (provider `mcp-client`, the tool
+  name, a hash of the arguments, status). The plugin cannot verify where an external client processes the data; the
+  tenant accepts that when enabling MCP.
 - **Methods.** `initialize`, `ping`, `tools/list`, `tools/call`; notifications such as `notifications/initialized`
   get `202` with no body. `GET /v1/mcp` returns `405`.
 - **Tools.** Named `hrms_<tool>`. Only tools the caller's role permits are listed. Calculators that take amounts typed
@@ -815,6 +822,7 @@ tenants:
       requests_per_minute: 60       # optional
       egress_retention_days: 90     # optional
       tokenize_compensation: false
+      mcp_enabled: false            # true lets MCP clients call tools (also needs max_data_tier: 2)
       voice_providers: [sarvam]     # optional; voice off when absent
 ```
 
@@ -900,8 +908,14 @@ Before production, note:
 - **One replica on purpose.** The store is SQLite (single writer) and rate limits and write-back locks live in the
   process. Running several replicas needs a shared database and shared limits; that is part of the hosting topology
   decision (owner).
-- Create the `hrms-plugin-secrets` Secret with the provider key(s), `SARVAM_API_KEY` if voice is used, and mount the
-  audit signing key file.
+- **Files the service reads.** Compose mounts the folder `HRMS_CONFIG_DIR` (default `deploy/config`) read-only at
+  `/etc/hrms/config`; put `audit_ed25519.pem`, `hosts.yaml` and `payroll_rules.yaml` there and set
+  `HRMS_AUDIT_SIGNING_KEY_FILE`, `HRMS_HOSTS` and `HRMS_PAYROLL_RULES` to those paths. Kubernetes mounts the Secret
+  `hrms-plugin-audit-key` at `/etc/hrms/audit` and the ConfigMap `hrms-plugin-config` at `/etc/hrms/config`, with the
+  three variables already pointing there; create both objects before host reads, PF or write-back are used.
+- Create the `hrms-plugin-secrets` Secret with the provider key(s), `HRMS_AUDIT_KEY_ID`, and `SARVAM_API_KEY` if
+  voice is used. Generate the signing key with `openssl genpkey -algorithm ed25519 -out audit_ed25519.pem` and give
+  the public key to whoever verifies host audit headers.
 - An empty environment variable is treated exactly like an unset one.
 
 **CLI** (`python -m hrms_plugin.cli`):
@@ -940,7 +954,7 @@ HRMS_FRAPPE_SANDBOX=1 pytest tests/integration   # live Frappe tests (needs the 
 | `tests/integration` | Live Frappe HR v15 sandbox |
 | `sdk/test` | Widget core logic, streaming parser and DOM-level behaviour (212 tests) |
 
-Latest full run on `agentic-ai` (2026-10-30): **2,305 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
+Latest full run on `agentic-ai` (2026-10-30): **2,335 tests, 0 failed, 19 skipped** (the live Frappe tests), widget
 **212 passed**, ruff clean. The last measured line coverage was 98.9% (2026-10-29, before the section-20 fixes).
 
 How quality was established:
@@ -974,6 +988,7 @@ failing test recorded first and was checked by mutation):
 | Widget did not stream or show withheld audio | Both done |
 | No persistent volume; unused variables in deploy files | Volume/PVC, hardened pod, unused variables removed |
 | CI on `main` only | Every branch and pull request |
+| Review-round findings (vendor default, MCP data policy, pending-request expiry, deploy mounts, stream citations, tenant-scoped origin, drift on nested fields, currency for SA/US) | Fixed; see the plan file, section "Review round" |
 
 **Remaining gaps:**
 
